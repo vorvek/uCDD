@@ -25,6 +25,23 @@ JEMM_URL = 'https://github.com/Baron-von-Riedesel/Jemm/releases/download/v5.86/J
 JEMM_SHA256 = '94838a1836f94d95dcf84d250f7968dfca2eb6b5cfa7ac664d6e01f22f0d296e'
 
 
+def build_capture(izarra_source):
+    crate = RUN / 'capture'
+    crate.mkdir(parents=True, exist_ok=True)
+    manifest = ['[package]', 'name = "ucdd-audio-capture"', 'version = "0.1.0"',
+                'edition = "2024"', '[[bin]]', 'name = "ucdd-audio-capture"',
+                f'path = {json.dumps((ROOT / "tests/audio_capture.rs").as_posix())}',
+                '[dependencies]']
+    for name in ('izarravm-core', 'izarravm-machine', 'izarravm-firmware'):
+        path = (izarra_source.resolve() / 'crates' / name).as_posix()
+        manifest.append(f'{name} = {{ path = {json.dumps(path)}, default-features = false }}')
+    (crate / 'Cargo.toml').write_text('\n'.join(manifest) + '\n')
+    subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(crate / 'Cargo.toml')],
+                   check=True)
+    return crate / 'target' / 'release' / ('ucdd-audio-capture.exe' if os.name == 'nt'
+                                          else 'ucdd-audio-capture')
+
+
 def verify_capture(path):
     with wave.open(str(path)) as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (2, 2, 44100):
@@ -147,20 +164,8 @@ def main():
     if not passed:
         raise SystemExit('The audio test failed. See the test log.')
     if args.izarra_source:
+        executable = build_capture(args.izarra_source)
         crate = RUN / 'capture'
-        crate.mkdir(exist_ok=True)
-        manifest = ['[package]', 'name = "ucdd-audio-capture"', 'version = "0.1.0"',
-                    'edition = "2024"', '[[bin]]', 'name = "ucdd-audio-capture"',
-                    f'path = {json.dumps((ROOT / "tests/audio_capture.rs").as_posix())}',
-                    '[dependencies]']
-        for name in ('izarravm-core', 'izarravm-machine', 'izarravm-firmware'):
-            path = (args.izarra_source.resolve() / 'crates' / name).as_posix()
-            manifest.append(f'{name} = {{ path = {json.dumps(path)}, default-features = false }}')
-        (crate / 'Cargo.toml').write_text('\n'.join(manifest) + '\n')
-        subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(crate / 'Cargo.toml')],
-                       check=True)
-        executable = crate / 'target' / 'release' / ('ucdd-audio-capture.exe' if os.name == 'nt'
-                                                     else 'ucdd-audio-capture')
         result = subprocess.run([str(executable), str(image), str(RUN / 'audio.wav'),
                                  str(RUN / 'setup.ppm')],
                                 capture_output=True, text=True, timeout=180)

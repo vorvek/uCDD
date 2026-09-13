@@ -18,6 +18,9 @@ def build_audio():
     assemble('tests/audio_share.asm', 'ASHARE.COM')
     assemble('tests/audio_share.asm', 'UCDDTST.COM', ('OUTPUT_TEST=1',))
     assemble('tests/audio_client.asm', 'ACLIENT.COM')
+    assemble('tests/audio_share.asm', 'APSHARE.COM', ('PM_CLIENT=1',))
+    assemble('tests/audio_pm.asm', 'APM.COM')
+    assemble('tests/audio_pm.asm', 'APMNEG.COM', ('NO_ROUTE=1',))
 
 
 if __name__ == '__main__':

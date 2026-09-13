@@ -8,7 +8,7 @@ The first prototype supports ISO data images on a local hard disk. It has been t
 
 CUE/BIN support and Red Book CD-Audio playback are not implemented yet. MS-DOS, MSCDEX, and physical hardware compatibility have not been verified.
 
-A separate audio experiment mixes a preloaded CD-format signal with a test program's audio through the same SB16. Port trapping, DMA polling, sample-rate changes, and virtual DSP resets pass in an interpreted 386 machine. Captured output contains both signals. This experiment does not yet support CD image streaming or general game playback.
+A separate audio experiment mixes a preloaded CD-format signal with a test program's audio through the same SB16. Real-mode and 32-bit protected-mode test clients pass port trapping, DMA polling, sample-rate changes, and virtual DSP resets in an interpreted 386 machine. IRQ routing preserves physical card control when the protected-mode client installs its own handler. Captured output contains both signals. This experiment does not yet support CD image streaming or general game playback.
 
 ## Requirements and estimates
 
@@ -19,7 +19,7 @@ A separate audio experiment mixes a preloaded CD-format signal with a test progr
 | ISO driver memory | 7,088 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
 | Audio memory | Not established. The test machine has 16 MiB. The experiment's temporary buffers do not represent the final resident memory use. |
 | Sound card | The first audio experiment uses SB16 output at 44.1 kHz, 16-bit stereo. SB Pro-compatible output at 22.05 kHz, 8-bit stereo is planned. |
-| Port trapping | The audio experiment requires Jemm with QPIEMU. Protected-mode game support through a compatible DPMI host is not implemented yet. |
+| Port trapping | The audio experiment requires Jemm with QPIEMU. The protected-mode test also requires HDPMI32i. General game support remains unverified. |
 | Image storage | A 60-minute uncompressed CD audio image uses about 635 MB (606 MiB). Data images vary with their contents. |
 | Audio reads | Uncompressed CD audio requires 176,400 source bytes per second, plus the game's disk reads. Output downsampling does not reduce the image size or source read rate. |
 

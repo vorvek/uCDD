@@ -52,4 +52,20 @@ The audio experiment owns the physical SB16 output, IRQ, and 16-bit DMA ring. An
 
 With `--izarra-source`, the runner builds a separate capture executable against that checkout's public machine API. Rust and IzarraVM's native build dependencies are required. It does not change IzarraVM source. The capture machine uses interpreted 386 mode, disables WSS, and mounts no CD image. Audio is drained at short intervals from the emulated card's output. The host checks both CD marker frequencies, channel separation, the client's two rates, and continued CD output while the virtual DSP is reset. Logs, build hashes, a WAV file, and a setup-screen snapshot are stored under `.local/audio/`.
 
-This is a bounded experiment, not a general sound emulator. It supports one polling client with a 4 KiB unsigned 8-bit mono source ring. It does not yet deliver virtual game IRQs, implement full PIC or mixer semantics, support protected-mode clients, or stream disc images. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.
+This is a bounded experiment, not a general sound emulator. It supports one polling client with a 4 KiB unsigned 8-bit mono source ring. It does not yet deliver virtual game IRQs, implement full PIC or mixer semantics, or stream disc images. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.
+
+## Protected-mode audio and IRQ ownership
+
+```powershell
+python scripts/test_audio_pm.py --izarra-source D:\dev\IzarraVM
+```
+
+This runner uses the same interpreted 386 capture machine. It adds HDPMI32i from the pinned SBEMU 1.0.0 beta 6 archive, verifies its SHA-256 hash, and extracts only the DPMI host. It does not load SBEMU or change IzarraVM source.
+
+`APSHARE.COM` starts the physical audio backend and launches `APM.COM`, a 32-bit DPMI test client. HDPMI port traps call the existing real-mode virtual DSP through a temporary bridge. The client installs a competing protected-mode handler for the physical sound IRQ and reads back that vector. A separate HDPMI IRQ route retains control for the audio backend. The test requires 25 to 55 interrupts at that route and none at the competing handler.
+
+The client polls DMA position, changes sample rates, resets its virtual DSP, and checks that its source buffer is unchanged. Host waveform checks cover both CD channels, both game rates, and CD playback during reset. Tests use physical IRQ 5 with DMA 1/5 and IRQ 7 with DMA 3/6. Each configuration runs the protected-mode client twice, then the real-mode client, to check trap and route cleanup. Waveform checks inspect the first protected-mode run in each capture.
+
+A negative control clears IRQ routing and requires the competing handler to receive at least 25 card interrupts. That guest must fail with the specific IRQ-ownership message; an unrelated failure or timeout does not pass the control. Images, WAV files, logs, and hash records are stored under `.local/audio/protected/`.
+
+This establishes a path for protected-mode port interception and physical IRQ ownership. It does not deliver virtual DMA completion interrupts to a game, protect against real-mode vector replacement or PIC reprogramming, or establish compatibility with DOS extenders and games. The mode-switching bridge is test code, not the planned resident audio service.

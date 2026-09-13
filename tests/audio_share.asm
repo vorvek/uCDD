@@ -72,6 +72,12 @@ start:
     mov byte [child_result], 0
     jmp cleanup
 %endif
+%ifdef PM_CLIENT
+    mov [command_tail+3], cs
+    mov [command_tail+7], cs
+    mov al, [sb_irq]
+    mov [command_tail+9], al
+%endif
     mov [exec_block+4], cs
     mov [exec_block+8], cs
     mov [exec_block+12], cs
@@ -125,9 +131,19 @@ failed:
     mov ax, 4c01h
     int 21h
 
+%ifdef PM_CLIENT
+child_name db 'APM.COM',0
+%else
 child_name db 'ACLIENT.COM',0
+%endif
 exec_block dw 0,command_tail,0,5ch,0,6ch,0
+%ifdef PM_CLIENT
+command_tail db 9
+    dw port_callback,0,audio_irq,0
+    db 5,13
+%else
 command_tail db 0,13
+%endif
 %ifdef OUTPUT_TEST
 success db 'The sound test has stopped.',13,10,'$'
 %else
