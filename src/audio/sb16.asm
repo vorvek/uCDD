@@ -259,6 +259,15 @@ audio_irq:
     push es
     push fs
     cld
+    ; A reflected game IRQ must not advance the physical output buffer.
+    mov dx, [sb_base]
+    add dx, 4
+    mov al, 82h
+    call physical_write
+    inc dx
+    call physical_read
+    test al, 2
+    jz .unowned
     mov dx, [sb_base]
     add dx, 0fh
     call physical_read
@@ -281,6 +290,15 @@ audio_irq:
     pop ax
     pop ds
     iret
+.unowned:
+    pop fs
+    pop es
+    popad
+    mov ss, [irq_ss]
+    mov sp, [irq_sp]
+    pop ax
+    pop ds
+    jmp far [cs:old_irq]
 
 old_irq dd 0
 dma_pages db 8bh,89h,8ah

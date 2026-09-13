@@ -53,7 +53,7 @@ def quake_disk(game, pak, alternate=False, quiet=False):
     return bytes(disk.image)
 
 
-def verify_waveform(path, sound, quiet):
+def separate_cd(path):
     pcm = np.array(read_pcm(path), dtype=float)
     active = np.flatnonzero(np.max(np.abs(pcm), axis=1) > 100)
     if not len(active):
@@ -79,12 +79,25 @@ def verify_waveform(path, sound, quiet):
         errors.append(error)
         phases.append(phase)
         game.extend(np.mean(residual, axis=1) if error < 4 else np.zeros(window))
-        if error < 4:
+        if error < 4 and index >= window:
             if last_phase is not None and phase != last_phase:
                 changes.append(dict(seconds=(active+index)/44100,
                                     phase_change_frames=(phase-last_phase) % 4096))
             last_phase = phase
     game = np.array(game)
+    return active, game, errors, phases, changes
+
+
+def verify_cd_continuity(errors, changes):
+    valid = [i for i, error in enumerate(errors) if i and error < 4]
+    if len(valid) < 2 or changes or max(errors[valid[0]:valid[-1]+1]) >= 4:
+        raise ValueError('The CD signal is not continuous.')
+
+
+def verify_waveform(path, sound, quiet):
+    active, game, errors, phases, changes = separate_cd(path)
+    verify_cd_continuity(errors, changes)
+    window = 256
     with wave.open(io.BytesIO(sound)) as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 1, 11025):
             raise ValueError('The reference sound format is not supported.')

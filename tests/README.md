@@ -120,6 +120,19 @@ python scripts/test_audio_launch.py --izarra-source D:\dev\IzarraVM
 
 Paired captures verify live refills at both physical card configurations in interpreted 386 mode. One client uses SB16 C6h commands at 22.05 kHz. Another uses DSP commands 40h, 48h, and 1Ch at 10 kHz, plus the DMA clear-mask command. Both use a 4 KiB source ring and 1 KiB completion blocks. Reports are under `.local/audio/launcher/`. The bridge still uses temporary DOS memory and mode switches; it is not the final resident service.
 
+## Polling client and reflected interrupts
+
+```powershell
+python -m pip install numpy
+python scripts/test_audio_poll.py --izarra-source D:\dev\IzarraVM
+```
+
+The independent polling client leaves the default DPMI sound vector in place. It checks DSP completion status and DMA progress without installing an IRQ handler. The test uses interpreted 386 mode and crosses physical IRQ 5/7 with DMA 1/5 and 3/6. It needs no game files.
+
+When a virtual IRQ reflects through the default vector to the real-mode audio handler, the handler checks the physical SB16 interrupt status. A call without a pending 16-bit DSP interrupt goes to the saved handler. It does not acknowledge the physical DSP, advance the mixer, or send a physical PIC EOI.
+
+The old handler produces a 1,024-frame CD phase change in this test. The regression checks the captured CD phase and requires DSP acknowledgements and continued DMA progress. Some 386 captures repeat one sample, and its occurrence changes with the host capture interval. The check permits at most one frame of total phase change and rejects larger changes. This tolerance does not establish sample-exact continuity. Captures, phase changes, logs, and build hashes are under `.local/audio/poll/`.
+
 ## Optional unmodified Quake audio test
 
 Install NumPy for this host waveform check. Supply your own DOS Quake installation with `QUAKE.EXE` and `ID1/PAK0.PAK`:
@@ -135,6 +148,6 @@ This test uses the interpreted Pentium profile and 16 MiB. Quake requires an FPU
 
 Quake runs with `-dsp 2` and virtual DMA 1. Its 8-bit mono game signal mixes with the preloaded CD-format signal on the physical SB16 at 44.1 kHz, 16-bit stereo. DSP time-constant rounding gives an effective source rate of 10,989 Hz for Quake's requested 11,025 Hz. The relevant game interface is in id Software's [DOS sound source](https://github.com/id-Software/Quake/blob/master/WinQuake/snd_dos.c). WSS and emulator CD playback remain disabled. This test does not use the ISO driver or stream CD audio from a disc image.
 
-The runner checks the guest exit, level and sequence markers in Quake's console log, and the complete reference sound from the supplied PAK. It isolates the mono game signal using the difference between the two known CD channels. The reference match must exceed 0.97 correlation, and both CD channels must retain their phase throughout that sound. A muted-game control must not match the reference. Both physical IRQ/DMA configurations pass; measured correlations were 0.991 and 0.999, compared with 0.137 in the muted control.
+The runner checks the guest exit, level and sequence markers in Quake's console log, and the complete reference sound from the supplied PAK. It isolates the mono game signal using the difference between the two known CD channels. The reference match must exceed 0.97 correlation, and both CD channels must retain their phase throughout that sound. A muted-game control must not match the reference. Both physical IRQ/DMA configurations pass; measured correlations were 0.9995 and 0.9979, compared with 0.137 in the muted control.
 
-The report also records CD phase changes outside the reference sound. The physical IRQ 5 capture has one startup discontinuity; the IRQ 7 capture has none. Startup continuity, longer gameplay under load, Quake's 16-bit stereo mode, other games, abnormal child termination, and physical hardware remain unverified. Captures, console logs, disk exports, and input/build hashes are under `.local/audio/quake/`.
+The Quake check also requires a stable CD phase between the first and last complete signal windows, including game startup. It excludes the first 256-frame capture window and the final output stop. Unlike the polling check, it permits no phase change. The physical IRQ 5 startup discontinuity is fixed by checking the interrupt source before changing the output buffer. Longer gameplay under load, Quake's 16-bit stereo mode, other games, abnormal child termination, and physical hardware remain unverified. Captures, console logs, disk exports, and input/build hashes are under `.local/audio/quake/`.

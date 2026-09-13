@@ -260,7 +260,9 @@ protected_start:
     jne failed
 %endif
 %ifdef VIRTUAL_IRQ
+%ifndef POLL_TEST
     call virtual_client_install
+%endif
 %endif
 
     mov byte [stage], '5'
@@ -269,7 +271,11 @@ protected_start:
     jmp check_result
 %endif
 %ifdef STREAM_TEST
+%ifdef POLL_TEST
+    call poll_test
+%else
     call stream_test
+%endif
     jmp check_result
 %endif
     call reset
@@ -601,6 +607,9 @@ onset_samples:
 %endif
 %ifdef STREAM_TEST
 %include "../tests/audio_refill_client.inc"
+%endif
+%ifdef POLL_TEST
+%include "../tests/audio_poll_client.inc"
 %endif
 %ifdef TIMED_TEST
 test_mark:
