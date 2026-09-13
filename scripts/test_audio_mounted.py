@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Test DOS CUE mounting, installer file copying, and unmodified Quake CD playback."""
 import argparse
 import io

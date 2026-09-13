@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 poll_test:
     in al, 21h
     mov [client_pic_mask], al

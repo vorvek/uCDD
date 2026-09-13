@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 bits 16
 org 100h
 %ifndef EXIT_CODE

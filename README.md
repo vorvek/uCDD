@@ -29,6 +29,10 @@ A user has reported successful standalone BIN playback on a real DOS PC. Shared 
 
 Audio conversion, port trapping, and game execution share the CPU. Disk seeks and refill delays also matter. Real-hardware tests are required to establish supported processor speeds and buffer sizes. The interpreted emulator test does not establish real-386 performance.
 
+The audio queue uses the standard XMS allocation, move, and free calls. HIMEM.SYS compatibility is a target and has not yet been tested. HIMEM alone does not supply the port-trapping interface used by the audio service or the upper-memory blocks used by `LH`. The data driver does not require XMS or port trapping.
+
+[Jemm's documentation](https://github.com/Baron-von-Riedesel/Jemm/blob/master/Readme.txt) supports HIMEM.SYS followed by JEMM386 as an alternative to JEMMEX. This combination still needs QPIEMU and HDPMI32i for the Quake experiment; it remains untested with uCDD. Do not load a separate HIMEM with JEMMEX, which includes its own XMS manager.
+
 ## Build
 
 Use NASM and Python 3.10 or later:
@@ -110,3 +114,15 @@ The audio parent can load high. DMA allocations and the game's DOS allocations a
 ## Tests
 
 See [tests/README.md](tests/README.md) for the FreeDOS guest tests and the optional Quake data check.
+
+## License and external components
+
+Copyright (C) 2026 vorvek. uCDD source code, build and test scripts, and documentation are licensed under [GNU GPL version 3 only](LICENSE) (`GPL-3.0-only`). uCDD is supplied without warranty; see the license for its terms.
+
+External tools retain their own licenses. uCDD packages do not include DOS, memory managers, port-trapping hosts, CD redirectors, sound-card initialization tools, or game files. Install the required tools separately:
+
+- [Jemm 5.86](https://github.com/Baron-von-Riedesel/Jemm/releases/tag/v5.86): JEMMEX, JLOAD, and QPIEMU for the tested audio setup.
+- [HDPMI32i from SBEMU beta 6](https://github.com/crazii/SBEMU/releases/tag/Release_1.0.0-beta.6): the DPMI host with port-trapping support. The SBEMU sound driver is not used.
+- [SHSUCDX](http://adoxa.altervista.org/shsucdx/): the CD redirector. Tests use version 3.09 from suite 3-7.
+
+The test runners download or use private local copies of their dependencies. These copies are excluded from the source repository and distribution packages.

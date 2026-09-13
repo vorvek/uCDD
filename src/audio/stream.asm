@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 %define CD_QUEUE_BYTES 16384
 %define CD_READ_BYTES 4096
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Check live game-buffer refills through the shared Sound Blaster output."""
 
 import argparse

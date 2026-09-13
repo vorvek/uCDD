@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Check protected-mode port trapping and physical IRQ ownership."""
 
 import argparse

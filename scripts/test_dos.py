@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Run guest tests on a disposable FreeDOS disk in interpreted 386 mode."""
 
 import argparse

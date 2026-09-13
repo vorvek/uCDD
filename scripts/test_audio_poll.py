@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Check CD continuity when a DPMI game polls without a sound IRQ handler."""
 
 import argparse

@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 %ifndef OUTPUT_SHIFT
 %define OUTPUT_SHIFT 12
 %endif

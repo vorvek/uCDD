@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 ; ES:DI is one output half. Sources use the current virtual playback state.
 mix_half:
 %ifdef SPEAKER_TEST

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Make disposable FAT16 test disks from an external FreeDOS image."""
 
 import struct

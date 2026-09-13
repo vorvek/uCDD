@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Select an audio track in a single-file, raw-sector CUE/BIN image."""
 
 import argparse

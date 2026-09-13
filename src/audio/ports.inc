@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 %macro trap_range 2
 %ifdef PORT_RANGES
     dw %1,%2

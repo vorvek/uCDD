@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Download the pinned FreeDOS and SHSUCD test dependencies."""
 
 import hashlib

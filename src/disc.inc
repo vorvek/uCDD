@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 %define MAX_UNITS 4
 %define MAX_TRACKS 99
 %define TRACK_SIZE 12

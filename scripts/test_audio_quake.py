@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 vorvek
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Run an unmodified, user-supplied DOS Quake installation through the audio launcher."""
 
 import argparse

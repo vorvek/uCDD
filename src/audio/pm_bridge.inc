@@ -1,3 +1,6 @@
+; SPDX-FileCopyrightText: 2026 vorvek
+; SPDX-License-Identifier: GPL-3.0-only
+
 ; The bridge reuses the real-mode experiment; it is not a resident design.
 port_bridge:
     pushad

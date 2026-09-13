@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 vorvek
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::{error::Error, fs, io::Write};
 
 use izarravm_core::{GswMode, VideoCard, MASTER_CLOCK_HZ};
