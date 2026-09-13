@@ -26,7 +26,7 @@ def sha256(path):
 
 
 def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False,
-              onset=False, quiet=False, refill=None):
+              onset=False, quiet=False, refill=None, launcher=False):
     with zipfile.ZipFile(CACHE / 'FD14-LiteUSB.zip') as archive:
         disk = Fat16(archive.read('FD14LITE.img'))
     kernel, command = disk.read('KERNEL.SYS'), disk.read('COMMAND.COM')
@@ -53,6 +53,11 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
         client = 'AOQUIET.COM' if quiet else 'AOPM.COM'
     if refill:
         client = ('AQ' if quiet else 'AR') + refill + '.COM'
+    if launcher:
+        client = 'ALAUNCH.COM'
+        external = ('AEXTLQ.COM' if quiet else 'AEXTLEG.COM') if refill == 'LEGACY' else (
+            'AEXTQUI.COM' if quiet else 'AEXT.COM')
+        disk.add('GAME.COM', (ROOT / 'build' / external).read_bytes())
     disk.add('APM.COM', (ROOT / 'build' / client).read_bytes())
     if alternate:
         disk.add('UCDD.CFG', b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes([7, 3, 6, 0]))

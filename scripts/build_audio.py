@@ -35,6 +35,17 @@ def build_audio():
     assemble('tests/audio_pm.asm', 'AOQUIET.COM', (*onset, 'ONSET_SILENT=1'))
     refill = ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'STREAM_TEST=1')
     assemble('tests/audio_share.asm', 'ARSHARE.COM', (*refill, 'PM_CLIENT=1'))
+    assemble('tests/audio_launch.asm', 'ALAUNCH.COM')
+    assemble('tests/audio_pm.asm', 'AEXT.COM', (*refill, 'EXTERNAL_BRIDGE=1',
+             'CLIENT_RING_BYTES=4096', 'CLIENT_BLOCK_BYTES=1024', 'CLIENT_RATE=22050'))
+    assemble('tests/audio_pm.asm', 'AEXTQUI.COM', (*refill, 'EXTERNAL_BRIDGE=1', 'STREAM_SILENT=1',
+             'CLIENT_RING_BYTES=4096', 'CLIENT_BLOCK_BYTES=1024', 'CLIENT_RATE=22050'))
+    for name, extra in (('AEXTLEG.COM', ()), ('AEXTLQ.COM', ('STREAM_SILENT=1',))):
+        assemble('tests/audio_pm.asm', name, (*refill, 'EXTERNAL_BRIDGE=1', 'LEGACY_DSP=1',
+                 'CLIENT_RING_BYTES=4096', 'CLIENT_BLOCK_BYTES=1024', 'CLIENT_RATE=10000', *extra))
+    assemble('tests/audio_launch.asm', 'AQUAKE.COM', ('QUAKE_TEST=1',))
+    assemble('tests/audio_share.asm', 'AQSHARE.COM',
+             ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'QUAKE_TEST=1'))
     for name, ring, block, rate in (('4K', 4096, 1024, 22050), ('2BUF', 4096, 2048, 22050),
                                     ('8K', 8192, 2048, 22050),
                                     ('FAST', 2048, 512, 44100), ('BAD', 1024, 512, 44100)):

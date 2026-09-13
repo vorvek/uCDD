@@ -142,6 +142,8 @@ port_callback:
     je .mixer_data
     cmp dx, 0ch
     je .flip_reset
+    cmp dx, 0eh
+    je .clear_mask
     cmp dx, 0ah
     je .mask
     cmp dx, 0bh
@@ -190,6 +192,11 @@ port_callback:
     cmp al, 59h
     jne .unsupported
     jmp .done
+.clear_mask:
+    test al, al
+    jnz .unsupported
+    mov byte [dma_masked], 0
+    jmp .done
 .page:
     mov [dma_page], al
     jmp .done
@@ -209,9 +216,17 @@ port_callback:
     mov [dsp_command], al
     cmp al, 41h
     je .rate
+    cmp al, 40h
+    je .time_constant
+    cmp al, 48h
+    je .rate
+    cmp al, 1ch
+    je .legacy_start
     cmp al, 0c6h
     je .play
     cmp al, 0d0h
+    je .pause
+    cmp al, 0d3h
     je .pause
     cmp al, 0d1h
     je .done
@@ -230,7 +245,17 @@ port_callback:
 .play:
     mov byte [arguments], 3
     jmp .done
+.time_constant:
+    mov byte [arguments], 1
+    jmp .done
+.legacy_start:
+    mov ax, [legacy_block]
+    jmp .validate_start
 .argument:
+    cmp byte [dsp_command], 40h
+    je .set_time_constant
+    cmp byte [dsp_command], 48h
+    je .legacy_length
     cmp byte [dsp_command], 41h
     jne .play_argument
     cmp byte [arguments], 2
@@ -239,6 +264,7 @@ port_callback:
     jmp .argument_done
 .rate_low:
     mov [game_rate], al
+.set_rate:
     cmp word [game_rate], 4000
     jb .unsupported
     cmp word [game_rate], 44100
@@ -256,6 +282,25 @@ port_callback:
     test al, al
     jnz .unsupported
     jmp .argument_done
+.set_time_constant:
+    movzx ecx, al
+    neg ecx
+    add ecx, 256
+    mov eax, 1000000
+    xor edx, edx
+    div ecx
+    cmp eax, 44100
+    ja .unsupported
+    mov [game_rate], ax
+    jmp .set_rate
+.legacy_length:
+    cmp byte [arguments], 2
+    jne .legacy_high
+    mov [legacy_block], al
+    jmp .argument_done
+.legacy_high:
+    mov [legacy_block+1], al
+    jmp .argument_done
 .length:
     cmp byte [arguments], 2
     jne .start
@@ -264,6 +309,7 @@ port_callback:
 .start:
     mov ah, al
     mov al, [block_low]
+.validate_start:
     cmp ax, [dma_count]
     ja .unsupported
     inc ax
@@ -315,6 +361,8 @@ port_callback:
 %endif
     mov byte [game_active], 1
     inc word [virtual_starts]
+    cmp byte [dsp_command], 1ch
+    je .done
 .argument_done:
     dec byte [arguments]
     jmp .done
@@ -408,10 +456,8 @@ port_callback:
     clc
     retf
 
-trap_ports dw 2,3,0ah,0bh,0ch,83h,224h,225h,226h,22ah,22ch,22eh
-%ifdef VIRTUAL_IRQ
-    dw 20h,21h
-%endif
+trap_ports:
+%include "audio/ports.inc"
     dw 0
 trapped_count dw 0
 callback_set db 0
@@ -433,5 +479,6 @@ count_snapshot dw 0
 dsp_command db 0
 arguments db 0
 block_low db 0
+legacy_block dw 0
 reply dw 0
 reply_count db 0

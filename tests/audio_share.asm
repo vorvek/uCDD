@@ -128,6 +128,13 @@ cleanup:
     jne failed
     cmp byte [fault], 0
     jne failed
+%ifdef QUAKE_TEST
+    cmp word [virtual_starts], 1
+    jb failed
+    cmp word [virtual_resets], 2
+    jb failed
+    jmp passed
+%endif
     mov eax, [periods]
 %ifdef PERIOD_SEED
     sub eax, PERIOD_SEED
@@ -168,6 +175,7 @@ cleanup:
 %endif
     jne failed
 %endif
+passed:
     mov dx, success
     mov ah, 9
     int 21h

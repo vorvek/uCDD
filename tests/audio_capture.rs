@@ -1,12 +1,18 @@
 use std::{error::Error, fs, io::Write};
 
-use izarravm_core::{VideoCard, MASTER_CLOCK_HZ};
+use izarravm_core::{GswMode, VideoCard, MASTER_CLOCK_HZ};
 use izarravm_machine::{ExecutionBackend, Machine, MachineProfile, StopReason};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
     izarravm_machine::set_process_execution_backend(ExecutionBackend::Interpreter);
     let mut profile = MachineProfile::gsw_386(16, VideoCard::Vega);
+    profile.cpu = match std::env::var("UCDD_TEST_CPU").as_deref().unwrap_or("386") {
+        "386" => GswMode::Gsw386,
+        "486" => GswMode::Gsw486,
+        "586" => GswMode::Gsw586,
+        _ => return Err("The test CPU is not valid.".into()),
+    };
     profile.wss.enabled = false;
     let mut machine = Machine::new(profile, izarravm_firmware::izarra_bios())?;
     machine.enable_phase_marks();
@@ -17,7 +23,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut pcm = Vec::new();
     let mut phase = 0_u64;
     let mut stop = StopReason::CycleLimit { requested: 0 };
-    for _ in 0..30000 {
+    let steps = std::env::var("UCDD_TEST_STEPS").ok().map(|s| s.parse::<u32>()).transpose()?.unwrap_or(30000);
+    for _ in 0..steps {
         let before = machine.master_ticks();
         stop = machine.run_until_halt_or_cycles(22000)?;
         phase += (machine.master_ticks() - before) * 49716;
@@ -51,6 +58,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::write(std::path::Path::new(&args[2]).with_extension("marks.json"),
               format!("[{}]\n", marks.join(",")))?;
     println!("stop: {stop:?}");
+    if std::env::var_os("UCDD_TEST_DISK_EXPORT").is_some() {
+        if let Some(disk) = machine.eject_hdd() {
+            fs::write(std::path::Path::new(&args[2]).with_extension("disk.img"), disk)?;
+        }
+    }
     if !matches!(stop, StopReason::TestExit { code: 0 }) {
         for row in 0..25 {
             let text: String = (0..80)

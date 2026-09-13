@@ -29,15 +29,16 @@ def verify_refill(signal, quiet, ring, block, rate):
                  if all(abs(delta[j][0]) < 16 for j in range(i, i+32))), None)
     if first is None or last is None or not 480 <= first-start <= 1088 or not 480 <= last-stop <= 1088:
         raise ValueError('A start or stop is outside the buffer interval.')
-    frames_per_block = block*44100//rate
-    blocks = (last-first)//frames_per_block
+    step = (rate << 16)//44100
+    blocks = ((last-first)*step >> 16)//block
     if blocks < 2*ring//block:
         raise ValueError('The capture does not contain two complete ring cycles.')
     for index in range(first+2, last-2):
         relative = index-first
-        if relative % frames_per_block < 2 or relative % frames_per_block >= frames_per_block-2:
+        block_index = (relative*step >> 16)//block
+        if ((relative-2)*step >> 16)//block != block_index or ((relative+2)*step >> 16)//block != block_index:
             continue
-        expected = CODES[(relative//frames_per_block) % len(CODES)]*64
+        expected = CODES[block_index % len(CODES)]*64
         if any(abs(value-expected) > 4 for value in delta[index]):
             raise ValueError(f'A refilled block changed or is out of order at frame {relative}.')
     return dict(ring_bytes=ring, block_bytes=block, rate=rate, complete_blocks=blocks,

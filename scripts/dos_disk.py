@@ -93,3 +93,23 @@ class Fat16:
                 self.image[offset:offset + 32] = item
                 return
         raise ValueError('The root directory is full.')
+
+    def add_directory(self, name, files):
+        if len(files) > self.cluster_bytes//32 - 2:
+            raise ValueError('The test directory is too large.')
+        cluster = self.next_cluster
+        data = bytearray(self.cluster_bytes)
+        data[:11], data[32:43] = b'.          ', b'..         '
+        data[11] = data[43] = 0x10
+        struct.pack_into('<H', data, 26, cluster)
+        root_entry = next(offset for offset in range(self.root, self.root + self.entries*32, 32)
+                          if self.image[offset] == 0)
+        self.add(name, data, 0x10)
+        struct.pack_into('<I', self.image, root_entry+28, 0)
+        directory = self.data + (cluster - 2)*self.cluster_bytes
+        for index, (filename, content) in enumerate(files.items(), 2):
+            entry = next(offset for offset in range(self.root, self.root + self.entries*32, 32)
+                         if self.image[offset] == 0)
+            self.add(filename, content)
+            self.image[directory+index*32:directory+(index+1)*32] = self.image[entry:entry+32]
+            self.image[entry:entry+32] = bytes(32)

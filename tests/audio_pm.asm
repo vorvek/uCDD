@@ -47,10 +47,8 @@ bridge_fault db 0
 cleanup_fault db 0
 playing db 0
 last_count dw 0
-trap_ports dw 2,3,0ah,0bh,0ch,83h,224h,225h,226h,22ah,22ch,22eh
-%ifdef VIRTUAL_IRQ
-    dw 20h,21h
-%endif
+trap_ports:
+%include "audio/ports.inc"
 port_count equ ($-trap_ports)/2
 trap_handles times port_count dd 0
 align 4
@@ -67,6 +65,7 @@ start:
     cld
     mov sp, stack_top
     mov byte [stage], 'A'
+%ifndef EXTERNAL_BRIDGE
 %ifdef VIRTUAL_IRQ
     cmp byte [80h], 13
 %else
@@ -88,6 +87,7 @@ start:
     jne failed_real
 .irq_ok:
     mov [irq_number], al
+%endif
     mov byte [stage], 'B'
     mov bx, (program_end-$$+100h+15)/16
     mov ah, 4ah
@@ -141,6 +141,7 @@ bits 32
 protected_start:
     movzx esp, sp
     mov byte [stage], '1'
+%ifndef EXTERNAL_BRIDGE
     mov esi, vendor
     mov ax, 168ah
     int 2fh
@@ -150,6 +151,7 @@ protected_start:
     mov [vendor_entry+4], es
     push ds
     pop es
+%endif
     mov byte [stage], '2'
     mov ax, 0002h
     mov bx, 40h
@@ -187,6 +189,7 @@ protected_start:
 %endif
     push ds
     pop es
+%ifndef EXTERNAL_BRIDGE
     mov eax, [parent_port]
     mov [port_regs+42], eax
     mov eax, [parent_irq]
@@ -255,6 +258,7 @@ protected_start:
     mov ax, cs
     cmp cx, ax
     jne failed
+%endif
 %ifdef VIRTUAL_IRQ
     call virtual_client_install
 %endif
@@ -290,6 +294,7 @@ protected_start:
 
 check_result:
     mov byte [stage], '6'
+%ifndef EXTERNAL_BRIDGE
     cmp byte [bridge_fault], 0
     jne failed
 %ifdef ONSET_TEST
@@ -330,6 +335,7 @@ check_result:
     ja failed
     cmp dword [stolen_irqs], 0
     jne failed
+%endif
 %ifdef STREAM_TEST
     jmp buffer_checked
 %endif
@@ -417,87 +423,9 @@ cleanup:
     popfd
     ret
 
-; The bridge reuses the real-mode experiment; it is not a resident design.
-port_bridge:
-    pushad
-    push es
-    inc dword [port_calls]
-    mov [port_regs+28], eax
-    shl ecx, 2
-    mov [port_regs+24], ecx
-    mov [port_regs+20], edx
-    mov eax, [parent_port]
-    mov [port_regs+42], eax
-    mov word [port_regs+32], 2
-    mov dword [port_regs+46], 0
-    push ds
-    pop es
-    mov edi, port_regs
-    xor ebx, ebx
-    xor ecx, ecx
-    mov ax, 0301h
-    int 31h
-    jnc .done
-    mov byte [bridge_fault], 1
-.done:
-    mov eax, [port_regs+28]
-    mov [ss:esp+32], eax
-    pop es
-    popad
-    retf
-
-irq_bridge:
-    pushad
-    push ds
-    push es
-    mov ds, [cs:data_selector]
-    push ds
-    pop es
-    inc dword [owned_irqs]
-    mov eax, [parent_irq]
-    mov [irq_regs+42], eax
-    mov word [irq_regs+32], 2
-    mov dword [irq_regs+46], 0
-    mov edi, irq_regs
-    xor ebx, ebx
-    xor ecx, ecx
-    mov ax, 0302h
-    int 31h
-    jc .error
-%ifdef VIRTUAL_IRQ
-%ifndef NO_DELIVERY
-    cmp byte [virtual_vector_set], 0
-    je .done
-    mov eax, [parent_take]
-    mov [irq_regs+42], eax
-    mov word [irq_regs+32], 2
-    mov dword [irq_regs+46], 0
-    mov edi, irq_regs
-    xor ebx, ebx
-    xor ecx, ecx
-    mov ax, 0301h
-    int 31h
-    jc .error
-    cmp word [irq_regs+28], 1
-    jne .done
-    mov bl, 0dh
-    mov ax, 0204h
-    int 31h
-    jc .error
-    mov [game_vector], edx
-    mov [game_vector+4], cx
-    pushfd
-    call far [game_vector]
+%ifndef EXTERNAL_BRIDGE
+%include "audio/pm_bridge.inc"
 %endif
-%endif
-    jmp .done
-.error:
-    mov byte [bridge_fault], 1
-.done:
-    pop es
-    pop ds
-    popad
-    iretd
 
 competing_irq:
     push eax
@@ -561,6 +489,23 @@ play:
     out 0ah, al
     pop ebx
     mov dx, 22ch
+%ifdef LEGACY_DSP
+    xor al, al
+    out 0eh, al
+    mov al, 40h
+    out dx, al
+    mov al, 156
+    out dx, al
+    mov al, 48h
+    out dx, al
+    mov al, (CLIENT_BLOCK_BYTES-1) & 0ffh
+    out dx, al
+    mov al, (CLIENT_BLOCK_BYTES-1) >> 8
+    out dx, al
+    mov al, 1ch
+    out dx, al
+    ret
+%endif
     mov al, 41h
     out dx, al
     mov al, bh

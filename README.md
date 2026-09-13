@@ -14,6 +14,8 @@ An interrupt-driven protected-mode client also passes virtual DMA completion, IR
 
 Further waveform tests preserve the opening samples and check live game-buffer refills across repeated ring cycles. Tested source rings are 2, 4, and 8 KiB, with separate completion blocks. Six starts at each of two physical card configurations measured 13.1 to 20.4 ms from the play command marker to captured output. These are emulator measurements, not physical-card latency results.
 
+A separate launcher now runs an unmodified DOS Quake 1.06 executable with its `-dsp 2` option for 8-bit mono game audio. In an interpreted Pentium machine, the test loads a level, plays a sound, and exits. The complete captured sound matches the original asset while the CD test signal continues through the same SB16. The physical IRQ 5 run has a CD discontinuity during startup; the IRQ 7 run does not. This is a limited integration test, not general game compatibility. Quake's 16-bit stereo sound mode remains unsupported.
+
 ## Requirements and estimates
 
 | Item | Current requirement or planning estimate |

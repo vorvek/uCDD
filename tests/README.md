@@ -109,3 +109,32 @@ The refill client replaces each completed source block in its virtual IRQ handle
 The current virtual DSP accepts unsigned 8-bit mono rings with power-of-two sizes from 512 bytes to 32 KiB. Rings must stay below A0000h and within one 64 KiB DMA window. Completion blocks range from 512 bytes to the ring size. For blocks smaller than the ring, the remaining ring duration must cover at least two physical output periods, so the mixer does not reuse a block before the game can refill it. A negative control requires rejection of a 1 KiB ring with 512-byte blocks at 44.1 kHz while physical output interrupts continue. Full-ring completion blocks remain available for preloaded samples; live refill of that layout is not established.
 
 Reports, paired WAV files, command timestamps, logs, and build hashes are stored in `.local/audio/onset/` and `.local/audio/refill/`. The tested layouts do not establish general game compatibility or tolerance of delayed refills under disk and CPU load.
+
+## Independent protected-mode client
+
+```powershell
+python scripts/test_audio_launch.py --izarra-source D:\dev\IzarraVM
+```
+
+`ALAUNCH.COM` owns the HDPMI port traps and physical IRQ route, then uses DOS EXEC to run a separate DPMI child. The child receives an empty command tail and uses standard DPMI services and Sound Blaster ports. Its build excludes the bridge routines and does not install a vendor port trap or IRQ route. The launcher restores its route and removes its traps after the child exits.
+
+Paired captures verify live refills at both physical card configurations in interpreted 386 mode. One client uses SB16 C6h commands at 22.05 kHz. Another uses DSP commands 40h, 48h, and 1Ch at 10 kHz, plus the DMA clear-mask command. Both use a 4 KiB source ring and 1 KiB completion blocks. Reports are under `.local/audio/launcher/`. The bridge still uses temporary DOS memory and mode switches; it is not the final resident service.
+
+## Optional unmodified Quake audio test
+
+Install NumPy for this host waveform check. Supply your own DOS Quake installation with `QUAKE.EXE` and `ID1/PAK0.PAK`:
+
+```powershell
+python -m pip install numpy
+python scripts/test_audio_quake.py --izarra-source D:\dev\IzarraVM --quake-dir C:\games\quake
+```
+
+The test copies those files unchanged to a disposable FreeDOS disk. It adds a test configuration that loads the start level, stops other game sounds, plays `misc/menu1`, waits, and exits through the console. The source installation is opened read-only. Game binaries, assets, extracted files, and generated disks are not included in the repository.
+
+This test uses the interpreted Pentium profile and 16 MiB. Quake requires an FPU and lists a Pentium as its minimum processor; the initial 386 tests remain unchanged. `--cpu 486` is available for comparison, but the slower test did not preserve the complete sound. This does not establish a hardware speed requirement for uCDD.
+
+Quake runs with `-dsp 2` and virtual DMA 1. Its 8-bit mono game signal mixes with the preloaded CD-format signal on the physical SB16 at 44.1 kHz, 16-bit stereo. DSP time-constant rounding gives an effective source rate of 10,989 Hz for Quake's requested 11,025 Hz. The relevant game interface is in id Software's [DOS sound source](https://github.com/id-Software/Quake/blob/master/WinQuake/snd_dos.c). WSS and emulator CD playback remain disabled. This test does not use the ISO driver or stream CD audio from a disc image.
+
+The runner checks the guest exit, level and sequence markers in Quake's console log, and the complete reference sound from the supplied PAK. It isolates the mono game signal using the difference between the two known CD channels. The reference match must exceed 0.97 correlation, and both CD channels must retain their phase throughout that sound. A muted-game control must not match the reference. Both physical IRQ/DMA configurations pass; measured correlations were 0.991 and 0.999, compared with 0.137 in the muted control.
+
+The report also records CD phase changes outside the reference sound. The physical IRQ 5 capture has one startup discontinuity; the IRQ 7 capture has none. Startup continuity, longer gameplay under load, Quake's 16-bit stereo mode, other games, abnormal child termination, and physical hardware remain unverified. Captures, console logs, disk exports, and input/build hashes are under `.local/audio/quake/`.
