@@ -6,9 +6,11 @@ uCDD is a virtual CD drive for DOS. The aim is a tool similar in use to Daemon T
 
 The first prototype supports ISO data images on a local hard disk. It has been tested with FreeDOS 1.4 and SHSUCDX 3.09 in an interpreted 386 machine in IzarraVM.
 
-CUE/BIN support and Red Book CD-Audio playback are not implemented yet. MS-DOS, MSCDEX, and physical hardware compatibility have not been verified.
+CUE/BIN mounting and game-controlled Red Book playback are not implemented yet. MS-DOS, MSCDEX, and physical hardware compatibility have not been verified.
 
-A separate audio experiment mixes a preloaded CD-format signal with a test program's audio through the same SB16. Real-mode and 32-bit protected-mode test clients pass port trapping, DMA polling, sample-rate changes, and virtual DSP resets in an interpreted 386 machine. IRQ routing preserves physical card control when the protected-mode client installs its own handler. Captured output contains both signals. This experiment does not yet support CD image streaming or general game playback.
+A separate audio experiment mixes CD-format audio with a test program's audio through the same SB16. Real-mode and 32-bit protected-mode test clients pass port trapping, DMA polling, sample-rate changes, and virtual DSP resets in an interpreted 386 machine. IRQ routing preserves physical card control when the protected-mode client installs its own handler. Captured output contains both signals. General game compatibility remains unverified.
+
+The streaming experiment reads raw CD audio from a BIN file through a 16 KiB queue. A host tool selects an audio track from a single-file CUE sheet. Captures verify disk refills, the selected end, and simultaneous stereo test-client audio. `UCDDPLAY.COM` provides standalone playback for testing. Shared streaming currently requires a cooperative client to run foreground refills; it is not yet a resident service for unmodified games.
 
 An interrupt-driven protected-mode client also passes virtual DMA completion, IRQ masking, DSP acknowledgement, and end-of-interrupt checks. CD output continues while the client masks its IRQ or delays acknowledgement. This test uses a 4 KiB output ring with a 512-frame interrupt period, about 11.6 ms at 44.1 kHz. General game compatibility remains unverified.
 
@@ -23,7 +25,7 @@ A separate launcher runs an unmodified DOS Quake 1.06 executable in its normal S
 | Processor | 386 or later for the instruction set. For games with mixed CD audio, budget a Pentium-class CPU initially. This is a planning estimate, not a measured minimum. |
 | DOS | DOS 5 or later interfaces. FreeDOS 1.4 is tested. |
 | ISO driver memory | 7,088 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
-| Audio memory | Not established. The test machine has 16 MiB. The experiment's temporary buffers do not represent the final resident memory use. |
+| Audio memory | Streaming uses a 16 KiB source queue and a 4 KiB output ring, with an 8 KiB allocation for DMA alignment. Code, stacks, and the memory manager use additional memory. These temporary DOS allocations do not establish the final resident footprint. The test machine has 16 MiB. |
 | Sound card | The first audio experiment uses SB16 output at 44.1 kHz, 16-bit stereo. SB Pro-compatible output at 22.05 kHz, 8-bit stereo is planned. |
 | Port trapping | The audio experiment requires Jemm with QPIEMU. The protected-mode test also requires HDPMI32i. General game support remains unverified. |
 | Image storage | A 60-minute uncompressed CD audio image uses about 635 MB (606 MiB). Data images vary with their contents. |

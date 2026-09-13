@@ -32,6 +32,9 @@ launch_sp dw 0
 %include "audio/sb16.asm"
 %include "audio/trap.asm"
 %include "audio/config.asm"
+%ifdef CD_IMAGE_TEST
+%include "audio/stream.asm"
+%endif
 %ifdef VIRTUAL_IRQ
 %include "audio/irq.asm"
 %endif
@@ -48,11 +51,19 @@ start:
     jc failed
     call config_load
     jc failed
+%ifdef CD_IMAGE_TEST
+    call cd_open
+    jc cleanup_cd
+%endif
     mov ax, 1684h
     mov bx, 4354h
     int 2fh
     test al, al
+%ifdef CD_IMAGE_TEST
+    jnz cleanup_cd
+%else
     jnz failed
+%endif
     mov [qpi], di
     mov [qpi+2], es
 %ifdef VIRTUAL_IRQ
@@ -61,13 +72,22 @@ start:
     mov bx, RING_PARAS*2
     mov ah, 48h
     int 21h
+%ifdef CD_IMAGE_TEST
+    jc cleanup_cd
+%else
     jc failed
+%endif
     mov [output_allocation], ax
     add ax, RING_PARAS-1
     and ax, ~(RING_PARAS-1)
     mov [output_segment], ax
     mov es, ax
     xor di, di
+%ifdef CD_IMAGE_TEST
+%ifdef OUTPUT_TEST
+    mov byte [cd_started], 1
+%endif
+%endif
     call mix_half
     call mix_half
     call trap_install
@@ -75,6 +95,34 @@ start:
     call sb_start
     jc cleanup
 %ifdef OUTPUT_TEST
+%ifdef CD_IMAGE_TEST
+    mov dx, cd_prompt
+    mov ah, 9
+    int 21h
+.stream:
+    call cd_pump
+    cmp byte [cd_error], 0
+    jne cleanup
+    mov ah, 1
+    int 16h
+    jz .progress
+    xor ah, ah
+    int 16h
+    cmp al, 27
+    je .stopped
+.progress:
+    mov eax, [cd_consumed]
+    cmp eax, [cd_length]
+    jb .stream
+    mov eax, [periods]
+    add eax, 2
+.drain:
+    cmp [periods], eax
+    jb .drain
+.stopped:
+    mov byte [child_result], 0
+    jmp cleanup
+%else
     push ds
     mov ax, 40h
     mov ds, ax
@@ -88,6 +136,7 @@ start:
     mov byte [child_result], 0
     jmp cleanup
 %endif
+%endif
 %ifdef PM_CLIENT
     mov [command_tail+3], cs
     mov [command_tail+7], cs
@@ -95,6 +144,9 @@ start:
     mov [command_tail+9], al
 %ifdef VIRTUAL_IRQ
     mov [command_tail+12], cs
+%endif
+%ifdef CD_IMAGE_TEST
+    mov [command_tail+16], cs
 %endif
 %endif
     mov [exec_block+4], cs
@@ -124,10 +176,22 @@ cleanup:
     mov es, [output_allocation]
     mov ah, 49h
     int 21h
+%ifdef CD_IMAGE_TEST
+cleanup_cd:
+    call cd_close
+%ifdef CD_REPORT
+    call cd_report
+%endif
+    cmp byte [cd_error], 0
+    jne cd_failed
+%endif
     cmp byte [child_result], 0
     jne failed
     cmp byte [fault], 0
     jne failed
+%ifdef CD_IMAGE_TEST
+    jmp passed
+%endif
 %ifdef QUAKE_TEST
     cmp word [virtual_starts], 1
     jb failed
@@ -188,6 +252,49 @@ failed:
     mov ax, 4c01h
     int 21h
 
+%ifdef CD_IMAGE_TEST
+cd_failed:
+    mov dx, cd_failure
+    cmp byte [cd_error], 2
+    jne .report
+    mov dx, cd_empty
+.report:
+    mov ah, 9
+    int 21h
+    mov ax, 4c01h
+    int 21h
+cd_failure db 'The CD image read failed.',13,10,'$'
+cd_empty db 'The CD audio buffer is empty.',13,10,'$'
+cd_prompt db 'Press Esc to stop.',13,10,'$'
+%endif
+
+%ifdef CD_REPORT
+cd_report:
+    mov dx, cd_report_name
+    xor cx, cx
+    mov ah, 3ch
+    int 21h
+    jc .done
+    mov bx, ax
+    mov dx, cd_error
+    mov cx, 1
+    mov ah, 40h
+    int 21h
+    mov dx, cd_produced
+    mov cx, 12
+    mov ah, 40h
+    int 21h
+    mov dx, fault
+    mov cx, 2
+    mov ah, 40h
+    int 21h
+    mov ah, 3eh
+    int 21h
+.done:
+    ret
+cd_report_name db 'CDSTAT.DAT',0
+%endif
+
 %ifdef PM_CLIENT
 child_name db 'APM.COM',0
 %else
@@ -195,7 +302,9 @@ child_name db 'ACLIENT.COM',0
 %endif
 exec_block dw 0,command_tail,0,5ch,0,6ch,0
 %ifdef PM_CLIENT
-%ifdef VIRTUAL_IRQ
+%ifdef CD_IMAGE_TEST
+command_tail db 17
+%elifdef VIRTUAL_IRQ
 command_tail db 13
 %else
 command_tail db 9
@@ -204,6 +313,9 @@ command_tail db 9
     db 5
 %ifdef VIRTUAL_IRQ
     dw virtual_irq_take,0
+%endif
+%ifdef CD_IMAGE_TEST
+    dw cd_service,0
 %endif
     db 13
 %else
@@ -217,7 +329,9 @@ success db 'The shared audio test passed.',13,10,'$'
 failure db 'The shared audio test failed.',13,10,'$'
 align 4
 cd_samples:
+%ifndef CD_IMAGE_TEST
     incbin "../build/CDTEST.PCM"
+%endif
 times 1024 db 0
 main_stack_top:
 program_end:

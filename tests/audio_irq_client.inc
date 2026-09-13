@@ -80,11 +80,26 @@ wait_ticks:
     mov fs, [ticks_selector]
     mov si, [fs:6ch]
 .wait:
+%ifdef CD_IMAGE_TEST
+%ifndef CD_STARVE
+    call cd_poll
+%else
+    cmp byte [cd_polled], 0
+    jne .no_poll
+    call cd_poll
+    mov byte [cd_polled], 1
+.no_poll:
+%endif
+%endif
     mov ax, [fs:6ch]
     sub ax, si
     cmp ax, cx
     jb .wait
     ret
+
+%ifdef CD_STARVE
+cd_polled db 0
+%endif
 
 read_dsp_irq:
     mov dx, 224h

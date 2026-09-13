@@ -53,6 +53,16 @@ def build_audio():
                  'CLIENT_RING_BYTES=8192', 'CLIENT_BLOCK_BYTES=2048', 'CLIENT_RATE=22050', *quiet))
     assemble('tests/audio_share.asm', 'AQSHARE.COM',
              ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'QUAKE_TEST=1'))
+    image = ('CD_IMAGE_TEST=1', 'OUTPUT_SHIFT=9')
+    assemble('tests/audio_share.asm', 'UCDDPLAY.COM', (*image, 'OUTPUT_TEST=1'))
+    assemble('tests/audio_share.asm', 'ACDSHARE.COM', (*image, 'PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'CD_REPORT=1'))
+    assemble('tests/audio_share.asm', 'ACDPLAY.COM', (*image, 'OUTPUT_TEST=1', 'CD_REPORT=1'))
+    assemble('tests/audio_share.asm', 'ACDERROR.COM',
+             (*image, 'PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'CD_REPORT=1', 'CD_READ_ERROR=1'))
+    for name, extra in (('ACDPM.COM', ()), ('ACDQUIET.COM', ('STREAM_SILENT=1',)),
+                        ('ACDSTALL.COM', ('CD_STARVE=1',)), ('ACDSTQ.COM', ('CD_STARVE=1', 'STREAM_SILENT=1'))):
+        assemble('tests/audio_pm.asm', name, (*image, *refill, 'CLIENT_STEREO=1',
+                 'CLIENT_RING_BYTES=8192', 'CLIENT_BLOCK_BYTES=2048', 'CLIENT_RATE=22050', *extra))
     for name, ring, block, rate in (('4K', 4096, 1024, 22050), ('2BUF', 4096, 2048, 22050),
                                     ('8K', 8192, 2048, 22050),
                                     ('FAST', 2048, 512, 44100), ('BAD', 1024, 512, 44100)):

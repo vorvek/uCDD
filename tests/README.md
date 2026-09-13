@@ -165,3 +165,35 @@ Quake runs in normal SB16 mode with virtual DMA 5 and a signed 16-bit stereo sou
 The runner checks the guest exit, level and sequence markers, DSP version, and DMA channel in Quake's console log, plus the complete reference sound from the supplied PAK. The centered test sound has equal left/right values in both formats, so subtracting the channels isolates the known CD signal. The reference match must exceed 0.97 correlation, and both CD channels must retain their phase throughout that sound. A muted-game control must not match the reference. The independent stereo client checks unequal channels separately.
 
 The Quake and polling checks permit at most one frame of total capture phase change between complete signal windows, including game startup. A window that crosses that single-frame change can contain the two adjacent phases; other interior signal errors fail. This accounts for the capture effect described above and does not prove sample-exact output. The first 256-frame capture window and final output stop are excluded. The earlier 1,024-frame IRQ 5 buffer jump remains rejected. Longer gameplay under load, other games, abnormal child termination, and physical hardware remain unverified. Captures, console logs, disk exports, and input/build hashes are under `.local/audio/quake/` and `.local/audio/quake-legacy/`.
+
+## CD image streaming
+
+```powershell
+python -m unittest discover -s tests -p test_cd_selection.py
+python scripts/test_audio_image.py --izarra-source D:\dev\IzarraVM
+python scripts/test_audio_image.py --izarra-source D:\dev\IzarraVM --cue C:\images\quake.cue
+```
+
+The streaming runner uses an interpreted 386, one physical SB16, and no WSS or emulator CD playback. It reads signed 16-bit stereo samples at 44.1 kHz from a DOS BIN file, starting at a selected byte offset. DOS reads fill a 16 KiB queue in 4 KiB blocks. The sound interrupt consumes published blocks and never calls DOS. The final read is padded with silence; subsequent bytes in the image must not play. Empty buffers and read errors stop the CD source and produce an error result.
+
+The protected-mode stereo client calls a foreground refill service while its virtual IRQ handler refills the game's separate DMA ring. The service uses its own 2 KiB stack, preserves the caller's PSP, and checks InDOS before file access. The image handle belongs to the parent and is not inherited by the client. This is an explicit cooperative interface, not a background scheduler for unmodified games. The existing Quake executable test still uses the preloaded CD test signal.
+
+The main cases stream 220,637 frames, slightly over five seconds, through 216 reads. Paired captures at physical IRQ 5/DMA 1/5 and IRQ 7/DMA 3/6 verify CD samples and 259 complete stereo game blocks, including game output after the selected CD range ends. The optional CUE case copies the opening excerpt of track 2 to a disposable BIN file at its original byte offset; surrounding bytes are test sentinels. It does not copy or play the complete image. The original CUE and BIN are read-only inputs. No game data is distributed.
+
+Controls stop foreground refills after the initial queue, force a DOS read failure after eight successful reads, and reject a short BIN, a missing BIN, and a truncated descriptor. The stalled case must play exactly the initial 16 KiB, then keep its CD output silent while game audio continues. A standalone case checks playback without a DPMI client. The waveform verifier checks both channels and end silence; it excludes the first 256 capture frames and allows at most one frame of phase change, as in the earlier capture tests. Reports include that change rather than claiming sample-exact output. Results, input hashes, guest counters, and captures are under `.local/audio/image/`.
+
+The queue covers about 93 ms at CD rate. It currently uses conventional memory, as do the output allocation and transient program. The standalone player is 6,656 bytes in this build, excluding its PSP, environment, and 24 KiB of buffer allocations. It does not stay resident. XMS buffering, upper-memory audio residency, longer disk stalls, automatic background scheduling, and MSCDEX play/stop/status integration remain unimplemented.
+
+### Standalone hardware test
+
+Build with `python scripts/build_audio.py`. On the host, select a complete audio track and name the BIN's intended DOS path:
+
+```powershell
+python scripts/prepare_cd_stream.py --cue C:\images\disc.cue --track 2 --dos-path C:\IMAGES\DISC.BIN --output build\CDSTREAM.DAT
+```
+
+The selector accepts one `FILE ... BINARY`, sequential tracks with `AUDIO` or `MODE1/2352`, and `INDEX 00`/`INDEX 01`. It ends playback before the next track's index 00, or index 01 if no index 00 exists. Multi-file sheets, compressed audio, synthetic gaps, emphasis flags, and other layouts are rejected. The selected track must contain audio. The original BIN must contain complete 2352-byte sectors and be smaller than 2 GiB. Use DOS 8.3 names on a local hard disk.
+
+Copy the original BIN to that DOS path. Copy `UCDDPLAY.COM`, `CDSTREAM.DAT`, and `UCDDSET.EXE` to the same working directory. In native DOS, load Jemm and QPIEMU, then use `UCDDSET` to save the actual physical SB16 settings to `UCDD.CFG`. Run `UCDDPLAY` from that directory. HDPMI is not required for standalone playback. Press Esc to stop, or let the selected track finish. Exit code 0 indicates normal completion or Esc; code 1 indicates failure. A fresh invocation starts the selected track again.
+
+This test does not install a virtual CD drive or exercise shared audio with an unmodified game. Physical hardware compatibility has not yet been verified.

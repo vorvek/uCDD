@@ -69,7 +69,11 @@ stream_test:
 %endif
     mov al, 40h
     call test_mark
+%ifdef CD_IMAGE_TEST
+    mov cx, 110
+%else
     mov cx, 24
+%endif
     call wait_ticks
     mov dx, 22ch
 %ifdef CLIENT_STEREO

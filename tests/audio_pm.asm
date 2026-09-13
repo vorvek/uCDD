@@ -90,7 +90,9 @@ start:
     mov sp, stack_top
     mov byte [stage], 'A'
 %ifndef EXTERNAL_BRIDGE
-%ifdef VIRTUAL_IRQ
+%ifdef CD_IMAGE_TEST
+    cmp byte [80h], 17
+%elifdef VIRTUAL_IRQ
     cmp byte [80h], 13
 %else
     cmp byte [80h], 9
@@ -103,6 +105,10 @@ start:
 %ifdef VIRTUAL_IRQ
     mov eax, [8ah]
     mov [parent_take], eax
+%endif
+%ifdef CD_IMAGE_TEST
+    mov eax, [8eh]
+    mov [cd_entry], eax
 %endif
     mov al, [89h]
     cmp al, 5
@@ -162,6 +168,29 @@ failed_real:
     int 21h
 
 bits 32
+%ifdef CD_IMAGE_TEST
+cd_poll:
+    pushad
+    push es
+    push ds
+    pop es
+    mov eax, [cd_entry]
+    mov [cd_regs+42], eax
+    mov dword [cd_regs+46], 0
+    mov word [cd_regs+32], 2
+    mov edi, cd_regs
+    xor bx, bx
+    xor cx, cx
+    mov ax, 0301h
+    int 31h
+    pop es
+    popad
+    jc failed
+    ret
+align 4
+cd_regs times 50 db 0
+cd_entry dd 0
+%endif
 protected_start:
     movzx esp, sp
     mov byte [stage], '1'
@@ -349,7 +378,11 @@ check_result:
     mov ax, 4c01h
     int 21h
 %endif
-%ifdef TIMED_TEST
+%ifdef CD_IMAGE_TEST
+    cmp dword [owned_irqs], 500
+    jb failed
+    cmp dword [owned_irqs], 800
+%elifdef TIMED_TEST
     cmp dword [owned_irqs], 80
     jb failed
     cmp dword [owned_irqs], 160

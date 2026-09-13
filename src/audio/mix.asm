@@ -1,5 +1,9 @@
 ; ES:DI is one output half. Sources use the current virtual playback state.
 mix_half:
+%ifdef CD_IMAGE_TEST
+    push gs
+    call cd_begin_half
+%endif
     mov eax, [periods]
     inc eax
     shl eax, OUTPUT_SHIFT
@@ -51,12 +55,28 @@ mix_half:
     jb .sum
     sub ebp, [game_limit]
 .sum:
+%ifdef CD_IMAGE_TEST
+    xor eax, eax
+    cmp byte [cd_valid], 0
+    je .left
+    movsx eax, word [gs:bx]
+.left:
+%else
     movsx eax, word [cd_samples+bx]
+%endif
     sar eax, 1
     add eax, edx
     call .clip
     stosw
+%ifdef CD_IMAGE_TEST
+    xor eax, eax
+    cmp byte [cd_valid], 0
+    je .right
+    movsx eax, word [gs:bx+2]
+.right:
+%else
     movsx eax, word [cd_samples+bx+2]
+%endif
     sar eax, 1
     add eax, esi
     call .clip
@@ -67,6 +87,13 @@ mix_half:
     jnz .frame
     mov [cd_position], bx
     mov [game_phase], ebp
+%ifdef CD_IMAGE_TEST
+    cmp byte [cd_valid], 0
+    je .done_half
+    add dword [cd_consumed], PERIOD_BYTES
+.done_half:
+    pop gs
+%endif
     ret
 .clip:
     cmp eax, 32767
