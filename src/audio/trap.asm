@@ -57,12 +57,12 @@ output_clock:
     call .count
     mov bx, ax
     call .count
-    cmp bx, 16383
+    cmp bx, RING_WORDS-1
     ja .again
-    cmp ax, 16383
+    cmp ax, RING_WORDS-1
     ja .again
     sub bx, ax
-    and bx, 16383
+    and bx, RING_WORDS-1
     cmp bx, 32
     jbe .stable
 .again:
@@ -72,18 +72,18 @@ output_clock:
     ret
 .stable:
     movzx eax, ax
-    mov ebx, 16383
+    mov ebx, RING_WORDS-1
     sub ebx, eax
     shr ebx, 1
-    movzx eax, word [periods]
-    shl eax, 12
+    mov eax, [periods]
+    shl eax, OUTPUT_SHIFT
     mov edx, eax
     xor edx, ebx
-    test edx, 4096
+    test edx, PERIOD_FRAMES
     jz .same_half
-    add eax, 4096
+    add eax, PERIOD_FRAMES
 .same_half:
-    and ebx, 4095
+    and ebx, PERIOD_FRAMES-1
     add eax, ebx
     mov [last_clock], eax
     ret
@@ -110,6 +110,12 @@ port_callback:
     jnz .unsupported
     test cl, 4
     jz .read
+%ifdef VIRTUAL_IRQ
+    cmp dx, 20h
+    je .pic_write
+    cmp dx, 21h
+    je .pic_write
+%endif
     cmp dx, 226h
     je .reset
     cmp dx, 22ch
@@ -135,6 +141,9 @@ port_callback:
     jmp .done
 .reset:
     mov byte [game_active], 0
+%ifdef VIRTUAL_IRQ
+    call virtual_irq_reset
+%endif
     test al, al
     jnz .done
     inc word [virtual_resets]
@@ -253,12 +262,21 @@ port_callback:
     mov [game_segment], ax
     call output_clock
     mov [game_started], eax
+%ifdef VIRTUAL_IRQ
+    call virtual_irq_reset
+%endif
     mov byte [game_active], 1
     inc word [virtual_starts]
 .argument_done:
     dec byte [arguments]
     jmp .done
 .read:
+%ifdef VIRTUAL_IRQ
+    cmp dx, 20h
+    je .pic_read
+    cmp dx, 21h
+    je .pic_read
+%endif
     cmp dx, 22ch
     je .ready
     cmp dx, 22eh
@@ -274,6 +292,9 @@ port_callback:
     xor al, al
     jmp .result
 .status:
+%ifdef VIRTUAL_IRQ
+    mov byte [virtual_dsp_irq], 0
+%endif
     xor al, al
     cmp byte [reply_count], 0
     je .result
@@ -288,6 +309,13 @@ port_callback:
     jmp .result
 .mixer_read:
     movzx bx, byte [virtual_mixer_index]
+%ifdef VIRTUAL_IRQ
+    cmp bx, 82h
+    jne .mixer_value
+    mov al, [virtual_dsp_irq]
+    jmp .result
+.mixer_value:
+%endif
     mov al, [virtual_mixer+bx]
     jmp .result
 .dma_read:
@@ -315,6 +343,14 @@ port_callback:
     mov al, [count_snapshot+1]
 .count_result:
     xor byte [dma_flip], 1
+    jmp .result
+%ifdef VIRTUAL_IRQ
+.pic_write:
+    call virtual_pic_write
+    jmp .done
+.pic_read:
+    call virtual_pic_read
+%endif
 .result:
     mov [ss:bp+28], al
 .done:
@@ -325,7 +361,11 @@ port_callback:
     clc
     retf
 
-trap_ports dw 2,3,0ah,0bh,0ch,83h,224h,225h,226h,22ah,22ch,22eh,0
+trap_ports dw 2,3,0ah,0bh,0ch,83h,224h,225h,226h,22ah,22ch,22eh
+%ifdef VIRTUAL_IRQ
+    dw 20h,21h
+%endif
+    dw 0
 trapped_count dw 0
 callback_set db 0
 old_callback dd 0

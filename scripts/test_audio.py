@@ -42,7 +42,7 @@ def build_capture(izarra_source):
                                           else 'ucdd-audio-capture')
 
 
-def verify_capture(path):
+def verify_capture(path, extra_windows=()):
     with wave.open(str(path)) as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (2, 2, 44100):
             raise ValueError('The audio capture format is incorrect.')
@@ -66,7 +66,7 @@ def verify_capture(path):
 
     measured = []
     for center, game_hz in ((0.65, 22050 / 64), (1.65, None),
-                            (2.75, 11025 / 64), (3.75, 22050 / 64)):
+                            (2.75, 11025 / 64), (3.75, 22050 / 64), *extra_windows):
         row = dict(seconds=center, game_hz=game_hz)
         for channel, cd_hz in enumerate((44100 * 37 / 4096, 44100 * 61 / 4096)):
             cd = amplitude(center, channel, cd_hz)

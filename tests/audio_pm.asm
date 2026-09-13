@@ -1,6 +1,7 @@
 bits 16
 cpu 386
 org 100h
+%include "audio/layout.inc"
 
     jmp start
 
@@ -13,6 +14,9 @@ buffer_selector dw 0
 ticks_selector dw 0
 parent_port dd 0
 parent_irq dd 0
+%ifdef VIRTUAL_IRQ
+parent_take dd 0
+%endif
 irq_number db 0
 stage db '0'
 vendor db 'HDPMI',0
@@ -32,6 +36,9 @@ cleanup_fault db 0
 playing db 0
 last_count dw 0
 trap_ports dw 2,3,0ah,0bh,0ch,83h,224h,225h,226h,22ah,22ch,22eh
+%ifdef VIRTUAL_IRQ
+    dw 20h,21h
+%endif
 port_count equ ($-trap_ports)/2
 trap_handles times port_count dd 0
 align 4
@@ -48,12 +55,20 @@ start:
     cld
     mov sp, stack_top
     mov byte [stage], 'A'
+%ifdef VIRTUAL_IRQ
+    cmp byte [80h], 13
+%else
     cmp byte [80h], 9
+%endif
     jne failed_real
     mov eax, [81h]
     mov [parent_port], eax
     mov eax, [85h]
     mov [parent_irq], eax
+%ifdef VIRTUAL_IRQ
+    mov eax, [8ah]
+    mov [parent_take], eax
+%endif
     mov al, [89h]
     cmp al, 5
     je .irq_ok
@@ -219,6 +234,9 @@ protected_start:
     mov ax, cs
     cmp cx, ax
     jne failed
+%ifdef VIRTUAL_IRQ
+    call virtual_client_install
+%endif
 
     mov byte [stage], '5'
     call reset
@@ -234,6 +252,9 @@ protected_start:
     mov ax, 22050
     call play
     call wait_second
+%ifdef VIRTUAL_IRQ
+    call virtual_client_checks
+%endif
     mov dx, 22ch
     mov al, 0d0h
     out dx, al
@@ -241,7 +262,11 @@ protected_start:
     mov byte [stage], '6'
     cmp byte [bridge_fault], 0
     jne failed
+%ifdef VIRTUAL_IRQ
+    cmp dword [port_calls], 150
+%else
     cmp dword [port_calls], 500
+%endif
     jb failed
 %ifdef NO_ROUTE
     cmp dword [owned_irqs], 0
@@ -257,9 +282,15 @@ protected_start:
     mov ax, 4c01h
     int 21h
 %endif
+%ifdef VIRTUAL_IRQ
+    cmp dword [owned_irqs], 65*PERIOD_SCALE
+    jb failed
+    cmp dword [owned_irqs], 120*PERIOD_SCALE
+%else
     cmp dword [owned_irqs], 25
     jb failed
     cmp dword [owned_irqs], 55
+%endif
     ja failed
     cmp dword [stolen_irqs], 0
     jne failed
@@ -297,6 +328,9 @@ failed:
 cleanup:
     pushfd
     cli
+%ifdef VIRTUAL_IRQ
+    call virtual_client_remove
+%endif
     cmp byte [vector_set], 0
     je .route
     mov bl, [irq_number]
@@ -305,7 +339,9 @@ cleanup:
     mov edx, [old_vector]
     mov ax, 0205h
     int 31h
-    setc byte [cleanup_fault]
+    jnc .vector_done
+    mov byte [cleanup_fault], 1
+.vector_done:
     mov byte [vector_set], 0
 .route:
     cmp byte [route_set], 0
@@ -381,7 +417,35 @@ irq_bridge:
     xor ecx, ecx
     mov ax, 0302h
     int 31h
-    jnc .done
+    jc .error
+%ifdef VIRTUAL_IRQ
+%ifndef NO_DELIVERY
+    cmp byte [virtual_vector_set], 0
+    je .done
+    mov eax, [parent_take]
+    mov [irq_regs+42], eax
+    mov word [irq_regs+32], 2
+    mov dword [irq_regs+46], 0
+    mov edi, irq_regs
+    xor ebx, ebx
+    xor ecx, ecx
+    mov ax, 0301h
+    int 31h
+    jc .error
+    cmp word [irq_regs+28], 1
+    jne .done
+    mov bl, 0dh
+    mov ax, 0204h
+    int 31h
+    jc .error
+    mov [game_vector], edx
+    mov [game_vector+4], cx
+    pushfd
+    call far [game_vector]
+%endif
+%endif
+    jmp .done
+.error:
     mov byte [bridge_fault], 1
 .done:
     pop es
@@ -422,6 +486,9 @@ reset:
     ret
 
 play:
+%ifdef VIRTUAL_IRQ
+    mov [client_rate], ax
+%endif
     mov byte [playing], 1
     push eax
     mov al, 5
@@ -465,6 +532,9 @@ play:
     ret
 
 wait_second:
+%ifdef VIRTUAL_IRQ
+    jmp virtual_client_wait
+%endif
     mov fs, [ticks_selector]
     mov si, [fs:6ch]
     xor ebp, ebp
@@ -494,6 +564,9 @@ wait_second:
     ja failed
     ret
 
+%ifdef VIRTUAL_IRQ
+%include "../tests/audio_irq_client.inc"
+%endif
 buffer_offset dd 0
 waveform:
     incbin "../build/GAMETEST.PCM"

@@ -1,13 +1,13 @@
 ; ES:DI is one output half. Sources use the current virtual playback state.
 mix_half:
-    movzx eax, word [periods]
+    mov eax, [periods]
     inc eax
-    shl eax, 12
+    shl eax, OUTPUT_SHIFT
     sub eax, [game_started]
     mul dword [game_step]
     div dword [game_limit]
     mov ebp, edx
-    mov cx, 4096
+    mov cx, PERIOD_FRAMES
     mov bx, [cd_position]
     mov fs, [game_segment]
 .frame:

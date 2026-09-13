@@ -1,6 +1,7 @@
 bits 16
 cpu 386
 org 100h
+%include "audio/layout.inc"
 
     jmp start
 
@@ -25,9 +26,15 @@ launch_sp dw 0
 %include "audio/sb16.asm"
 %include "audio/trap.asm"
 %include "audio/config.asm"
+%ifdef VIRTUAL_IRQ
+%include "audio/irq.asm"
+%endif
 
 start:
     cld
+%ifdef PERIOD_SEED
+    mov dword [periods], PERIOD_SEED
+%endif
     mov sp, main_stack_top
     mov bx, (program_end-$$+100h+15)/16
     mov ah, 4ah
@@ -42,13 +49,16 @@ start:
     jnz failed
     mov [qpi], di
     mov [qpi+2], es
-    mov bx, 4096
+%ifdef VIRTUAL_IRQ
+    call virtual_irq_init
+%endif
+    mov bx, RING_PARAS*2
     mov ah, 48h
     int 21h
     jc failed
     mov [output_allocation], ax
-    add ax, 07ffh
-    and ax, 0f800h
+    add ax, RING_PARAS-1
+    and ax, ~(RING_PARAS-1)
     mov [output_segment], ax
     mov es, ax
     xor di, di
@@ -77,6 +87,9 @@ start:
     mov [command_tail+7], cs
     mov al, [sb_irq]
     mov [command_tail+9], al
+%ifdef VIRTUAL_IRQ
+    mov [command_tail+12], cs
+%endif
 %endif
     mov [exec_block+4], cs
     mov [exec_block+8], cs
@@ -109,14 +122,32 @@ cleanup:
     jne failed
     cmp byte [fault], 0
     jne failed
-    cmp word [periods], 25
+    mov eax, [periods]
+%ifdef PERIOD_SEED
+    sub eax, PERIOD_SEED
+%endif
+%ifdef VIRTUAL_IRQ
+    cmp eax, 65*PERIOD_SCALE
     jb failed
-    cmp word [periods], 55
+    cmp eax, 120*PERIOD_SCALE
+%else
+    cmp eax, 25
+    jb failed
+    cmp eax, 55
+%endif
     ja failed
 %ifndef OUTPUT_TEST
+%ifdef VIRTUAL_IRQ
+    cmp word [virtual_starts], 4
+%else
     cmp word [virtual_starts], 3
+%endif
     jne failed
+%ifdef VIRTUAL_IRQ
+    cmp word [virtual_resets], 5
+%else
     cmp word [virtual_resets], 3
+%endif
     jne failed
 %endif
     mov dx, success
@@ -138,9 +169,17 @@ child_name db 'ACLIENT.COM',0
 %endif
 exec_block dw 0,command_tail,0,5ch,0,6ch,0
 %ifdef PM_CLIENT
+%ifdef VIRTUAL_IRQ
+command_tail db 13
+%else
 command_tail db 9
+%endif
     dw port_callback,0,audio_irq,0
-    db 5,13
+    db 5
+%ifdef VIRTUAL_IRQ
+    dw virtual_irq_take,0
+%endif
+    db 13
 %else
 command_tail db 0,13
 %endif

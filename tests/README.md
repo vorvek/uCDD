@@ -52,7 +52,7 @@ The audio experiment owns the physical SB16 output, IRQ, and 16-bit DMA ring. An
 
 With `--izarra-source`, the runner builds a separate capture executable against that checkout's public machine API. Rust and IzarraVM's native build dependencies are required. It does not change IzarraVM source. The capture machine uses interpreted 386 mode, disables WSS, and mounts no CD image. Audio is drained at short intervals from the emulated card's output. The host checks both CD marker frequencies, channel separation, the client's two rates, and continued CD output while the virtual DSP is reset. Logs, build hashes, a WAV file, and a setup-screen snapshot are stored under `.local/audio/`.
 
-This is a bounded experiment, not a general sound emulator. It supports one polling client with a 4 KiB unsigned 8-bit mono source ring. It does not yet deliver virtual game IRQs, implement full PIC or mixer semantics, or stream disc images. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.
+This is a bounded experiment, not a general sound emulator. It supports one client with a 4 KiB unsigned 8-bit mono source ring. Full PIC and mixer semantics and disc streaming remain unimplemented. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.
 
 ## Protected-mode audio and IRQ ownership
 
@@ -68,4 +68,20 @@ The client polls DMA position, changes sample rates, resets its virtual DSP, and
 
 A negative control clears IRQ routing and requires the competing handler to receive at least 25 card interrupts. That guest must fail with the specific IRQ-ownership message; an unrelated failure or timeout does not pass the control. Images, WAV files, logs, and hash records are stored under `.local/audio/protected/`.
 
-This establishes a path for protected-mode port interception and physical IRQ ownership. It does not deliver virtual DMA completion interrupts to a game, protect against real-mode vector replacement or PIC reprogramming, or establish compatibility with DOS extenders and games. The mode-switching bridge is test code, not the planned resident audio service.
+This establishes a path for protected-mode port interception and physical IRQ ownership. It does not protect against real-mode vector replacement or establish compatibility with DOS extenders and games. The mode-switching bridge is test code, not the planned resident audio service.
+
+## Virtual DMA interrupts and PIC handling
+
+The same protected-mode runner also tests `AISHARE.COM` with `AIPM.COM`. This client uses completion interrupts instead of DMA-position polling. It installs a handler at virtual IRQ 5 while the physical output uses IRQ 5 or IRQ 7. The backend keeps the physical PIC operations separate from the virtual DSP interrupt, PIC request, and PIC in-service state.
+
+The implemented subset includes the IRQ mask at port 21h, IRR/ISR selection with OCW3 values 0Ah/0Bh, specific and nonspecific EOI, DSP interrupt status at mixer register 82h, and 8-bit DSP acknowledgement at port 22Eh. Other physical PIC inputs remain visible. Unsupported PIC commands fail the experiment; PIC initialization, priority rotation, special mask modes, and spurious IRQ behavior are not implemented. The interfaces are described in the [Intel 8259A data sheet](https://www.pcjs.org/documents/datasheets/intel/INTEL_8259A_PIC.pdf) and [Creative hardware programming guide](https://www.phatcode.net/res/243/files/sbhwpg.pdf).
+
+The guest checks completion counts at both sample rates, pending requests while masked, delivery after unmasking, and independent DSP acknowledgement and EOI. It withholds each acknowledgement in turn and checks that interrupts do not repeat incorrectly. DSP reset cancels pending virtual requests but leaves an interrupt already in service until EOI. Tests cover reset both while masked and while in service. BIOS timer ticks must continue during the checks, including while a virtual IRQ remains in service.
+
+`AISTATE.COM` also checks interrupt priority with simulated physical ISR values. A higher-priority physical interrupt must receive nonspecific EOI before the virtual IRQ; a lower-priority physical interrupt must remain in service while the virtual IRQ receives EOI.
+
+Waveform checks verify continued CD and game output during IRQ masking and delayed acknowledgements, as well as the original rate and reset checks. Both physical configurations run the interrupt client twice and then the original polling client. A second negative control disables virtual delivery and must report missing virtual interrupts while physical output interrupts still occur.
+
+A further run starts the output-period counter at 65,520 and crosses the old 16-bit boundary during playback. Completion checks and captured signals must still pass. The counter now uses 32 bits.
+
+The interrupt test uses a 4 KiB physical output ring with 512 frames per interrupt, about 11.6 ms at 44.1 kHz. Its aligned ring requires an 8 KiB temporary DOS allocation, reduced from the polling experiment's 64 KiB allocation for a 32 KiB ring. The preloaded source data, code, and DPMI host use additional memory; this is not a resident-memory measurement. Virtual dispatch from a real-mode game, arbitrary DMA block sizes, and buffer refill timing still require work. These tests exercise a purpose-built client, not a commercial game.

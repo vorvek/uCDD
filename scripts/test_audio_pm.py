@@ -25,7 +25,7 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def make_disk(negative=False, alternate=False):
+def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False):
     with zipfile.ZipFile(CACHE / 'FD14-LiteUSB.zip') as archive:
         disk = Fat16(archive.read('FD14LITE.img'))
     kernel, command = disk.read('KERNEL.SYS'), disk.read('COMMAND.COM')
@@ -37,9 +37,14 @@ def make_disk(negative=False, alternate=False):
             disk.add(name, archive.read(name))
     with zipfile.ZipFile(CACHE / 'SBEMU-beta6.zip') as archive:
         disk.add('HDPMI32I.EXE', archive.read('SBEMU/HDPMI32i.EXE'))
-    for name in ('APSHARE.COM', 'ASHARE.COM', 'ACLIENT.COM', 'PASS.COM', 'FAIL.COM'):
-        disk.add(name, (ROOT / 'build' / name).read_bytes())
-    disk.add('APM.COM', (ROOT / 'build' / ('APMNEG.COM' if negative else 'APM.COM')).read_bytes())
+    for name in ('APSHARE.COM', 'ASHARE.COM', 'ACLIENT.COM', 'AISTATE.COM', 'PASS.COM', 'FAIL.COM'):
+        source = 'AISHARE.COM' if virtual_irq and name == 'APSHARE.COM' else name
+        if rollover and name == 'APSHARE.COM':
+            source = 'AIWRAP.COM'
+        disk.add(name, (ROOT / 'build' / source).read_bytes())
+    client = ('AIPMNEG.COM' if negative else 'AIPM.COM') if virtual_irq else (
+        'APMNEG.COM' if negative else 'APM.COM')
+    disk.add('APM.COM', (ROOT / 'build' / client).read_bytes())
     if alternate:
         disk.add('UCDD.CFG', b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes([7, 3, 6, 0]))
     disk.add('FDCONFIG.SYS', (
@@ -50,6 +55,7 @@ def make_disk(negative=False, alternate=False):
         'ASHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n')
     disk.add('AUTOEXEC.BAT', (
         '@ECHO OFF\r\nJLOAD QPIEMU.DLL\r\nHDPMI32I -r\r\n'
+        'AISTATE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'APSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n' + repeat +
         'PASS\r\n:FAIL\r\nFAIL\r\n').encode())
     return bytes(disk.image)
@@ -83,21 +89,27 @@ def main():
                     izarra_revision=subprocess.check_output(
                         ['git', '-C', str(args.izarra_source), 'rev-parse', 'HEAD'], text=True).strip(),
                     program_sha256={name: sha256(ROOT / 'build' / name) for name in
-                                    ('APSHARE.COM', 'APM.COM', 'APMNEG.COM', 'ASHARE.COM', 'ACLIENT.COM')},
+                                    ('APSHARE.COM', 'APM.COM', 'APMNEG.COM', 'ASHARE.COM', 'ACLIENT.COM',
+                                     'AISHARE.COM', 'AIPM.COM', 'AIPMNEG.COM', 'AISTATE.COM', 'AIWRAP.COM')},
                     runs=[])
     report = PM_RUN / 'results.json'
     report.write_text(json.dumps(evidence, indent=2) + '\n')
-    for name, negative, alternate in (('default', False, False), ('alternate', False, True),
-                                     ('no-route', True, False)):
+    for name, negative, alternate, virtual_irq, rollover in (
+            ('default', False, False, False, False), ('alternate', False, True, False, False),
+            ('no-route', True, False, False, False), ('interrupts', False, False, True, False),
+            ('interrupts-alt', False, True, True, False), ('no-delivery', True, False, True, False),
+            ('interrupts-wrap', False, False, True, True)):
         image, wav, log_path = (PM_RUN / (name + suffix) for suffix in ('.img', '.wav', '.log'))
-        image.write_bytes(make_disk(negative, alternate))
+        image.write_bytes(make_disk(negative, alternate, virtual_irq, rollover))
         command = [str(executable), str(image), str(wav)]
         result = subprocess.run(command, capture_output=True, text=True, timeout=180)
         log = result.stdout + result.stderr
         log_path.write_text(log, encoding='utf-8')
         if negative:
+            expected = ('No virtual sound interrupt was received.' if virtual_irq else
+                        'Without IRQ routing, the client received the card interrupts.')
             passed = (result.returncode != 0 and 'stop: TestExit { code: 1 }' in log and
-                      'Without IRQ routing, the client received the card interrupts.' in log)
+                      expected in log)
         else:
             passed = result.returncode == 0 and 'stop: TestExit { code: 0 }' in log
         row = dict(name=name, command=command, passed=passed, disk_sha256=sha256(image),
@@ -108,7 +120,8 @@ def main():
             print(log)
             raise SystemExit(f'The protected audio check failed: {name}')
         if not negative:
-            row['capture_checks'] = verify_capture(wav)
+            windows = tuple((center, 22050 / 64) for center in (4.35, 5.1, 6.0)) if virtual_irq else ()
+            row['capture_checks'] = verify_capture(wav, windows)
         print(f'The protected audio check passed: {name}')
         report.write_text(json.dumps(evidence, indent=2) + '\n')
     evidence['passed'] = True

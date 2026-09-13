@@ -21,6 +21,12 @@ def build_audio():
     assemble('tests/audio_share.asm', 'APSHARE.COM', ('PM_CLIENT=1',))
     assemble('tests/audio_pm.asm', 'APM.COM')
     assemble('tests/audio_pm.asm', 'APMNEG.COM', ('NO_ROUTE=1',))
+    assemble('tests/audio_share.asm', 'AISHARE.COM', ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9'))
+    assemble('tests/audio_pm.asm', 'AIPM.COM', ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9'))
+    assemble('tests/audio_pm.asm', 'AIPMNEG.COM', ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'NO_DELIVERY=1'))
+    assemble('tests/audio_irq_state.asm', 'AISTATE.COM')
+    assemble('tests/audio_share.asm', 'AIWRAP.COM',
+             ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'PERIOD_SEED=65520'))
 
 
 if __name__ == '__main__':

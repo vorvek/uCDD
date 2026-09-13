@@ -1,4 +1,4 @@
-; One 32 KiB DMA ring; configuration selects the physical card resources.
+; Configuration selects the physical card resources.
 physical_read:
     push bx
     push cx
@@ -139,14 +139,15 @@ sb_start:
     add al, 8
     mov ah, 25h
     int 21h
-    in al, 21h
+    mov dx, 21h
+    call physical_read
     mov [saved_pic], al
     mov cl, [sb_irq]
     mov ah, 1
     shl ah, cl
     not ah
     and al, ah
-    out 21h, al
+    call physical_write
     cli
     mov al, [dma_channel]
     or al, 4
@@ -165,10 +166,10 @@ sb_start:
     mov al, bl
     mov dx, [dma_page_port]
     out dx, al
-    mov al, 0ffh
+    mov al, (RING_WORDS-1) & 0ffh
     mov dx, [dma_count_port]
     out dx, al
-    mov al, 3fh
+    mov al, (RING_WORDS-1) >> 8
     out dx, al
     mov al, [dma_channel]
     or al, 58h
@@ -186,9 +187,9 @@ sb_start:
     call dsp_write
     mov al, 30h
     call dsp_write
-    mov al, 0ffh
+    mov al, (PERIOD_FRAMES*2-1) & 0ffh
     call dsp_write
-    mov al, 1fh
+    mov al, (PERIOD_FRAMES*2-1) >> 8
     call dsp_write
     mov byte [sb_running], 1
     clc
@@ -208,7 +209,8 @@ sb_stop:
     add dx, 0fh
     call physical_read
     mov al, [saved_pic]
-    out 21h, al
+    mov dx, 21h
+    call physical_write
     push ds
     mov al, [sb_irq]
     add al, 8
@@ -260,13 +262,17 @@ audio_irq:
     mov dx, [sb_base]
     add dx, 0fh
     call physical_read
-    inc word [periods]
+    inc dword [periods]
     mov es, [output_segment]
     mov di, [next_half]
-    xor word [next_half], 16384
+    xor word [next_half], PERIOD_BYTES
     call mix_half
+%ifdef VIRTUAL_IRQ
+    call virtual_irq_tick
+%endif
     mov al, 20h
-    out 20h, al
+    mov dx, 20h
+    call physical_write
     pop fs
     pop es
     popad
@@ -285,7 +291,7 @@ dma_count_port dw 0c6h
 irq_ss dw 0
 irq_sp dw 0
 next_half dw 0
-periods dw 0
+periods dd 0
 saved_pic db 0
 saved_irq db 0
 saved_dma db 0

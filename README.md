@@ -10,6 +10,8 @@ CUE/BIN support and Red Book CD-Audio playback are not implemented yet. MS-DOS, 
 
 A separate audio experiment mixes a preloaded CD-format signal with a test program's audio through the same SB16. Real-mode and 32-bit protected-mode test clients pass port trapping, DMA polling, sample-rate changes, and virtual DSP resets in an interpreted 386 machine. IRQ routing preserves physical card control when the protected-mode client installs its own handler. Captured output contains both signals. This experiment does not yet support CD image streaming or general game playback.
 
+An interrupt-driven protected-mode client also passes virtual DMA completion, IRQ masking, DSP acknowledgement, and end-of-interrupt checks. CD output continues while the client masks its IRQ or delays acknowledgement. This test uses a 4 KiB output ring with a 512-frame interrupt period, about 11.6 ms at 44.1 kHz. General game compatibility remains unverified.
+
 ## Requirements and estimates
 
 | Item | Current requirement or planning estimate |
