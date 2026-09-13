@@ -6,7 +6,7 @@ uCDD is a virtual CD drive for DOS. The aim is a tool similar in use to Daemon T
 
 The first prototype supports ISO data images on a local hard disk. It has been tested with FreeDOS 1.4 and SHSUCDX 3.09 in an interpreted 386 machine in IzarraVM.
 
-CUE/BIN mounting and game-controlled Red Book playback are not implemented yet. MS-DOS, MSCDEX, and physical hardware compatibility have not been verified.
+CUE/BIN mounting and game-controlled Red Book playback are not implemented yet. A user has reported successful standalone BIN audio playback on a real DOS PC. Shared audio on hardware, general MS-DOS compatibility, and MSCDEX compatibility remain unverified.
 
 A separate audio experiment mixes CD-format audio with a test program's audio through the same SB16. Real-mode and 32-bit protected-mode test clients pass port trapping, DMA polling, sample-rate changes, and virtual DSP resets in an interpreted 386 machine. IRQ routing preserves physical card control when the protected-mode client installs its own handler. Captured output contains both signals. General game compatibility remains unverified.
 
@@ -47,7 +47,7 @@ The build also creates `build/UCDDSET.EXE`, a transient sound setup tool. It sav
 
 Use the arrow keys to select and change a setting. F10 saves and exits; Esc exits without saving further changes. The current choices are SB16 or SB Pro, I/O addresses 220h/240h/260h/280h, IRQ 5 or 7, 8-bit DMA 1 or 3, and 16-bit DMA 5, 6, or 7. SB Pro output remains unavailable in this build.
 
-For the experimental SB16 sound test, run `python scripts/build_audio.py` and place `UCDDTST.COM` beside `UCDDSET.EXE` in the current directory. Load Jemm and QPIEMU first. F2 saves the settings and plays a tone through each channel. The test is not resident. Hardware compatibility remains unverified.
+For the experimental SB16 sound test, run `python scripts/build_audio.py` and place `UCDDTST.COM` beside `UCDDSET.EXE` in the current directory. Load Jemm and QPIEMU first. F2 saves the settings and plays the left speaker for about 1.1 seconds, pauses, then plays the right speaker for about 1.1 seconds. The other channel stays silent. The test is not resident.
 
 ## Boot setup
 

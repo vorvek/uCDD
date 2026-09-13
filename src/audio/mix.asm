@@ -1,5 +1,21 @@
 ; ES:DI is one output half. Sources use the current virtual playback state.
 mix_half:
+%ifdef SPEAKER_TEST
+    mov byte [test_channel], 0
+    mov ax, [test_half]
+    inc word [test_half]
+    cmp ax, 12
+    jb .test_left
+    cmp ax, 16
+    jb .test_ready
+    cmp ax, 28
+    jae .test_ready
+    mov byte [test_channel], 2
+    jmp .test_ready
+.test_left:
+    mov byte [test_channel], 1
+.test_ready:
+%endif
 %ifdef CD_IMAGE_TEST
     push gs
     call cd_begin_half
@@ -64,6 +80,12 @@ mix_half:
 %else
     movsx eax, word [cd_samples+bx]
 %endif
+%ifdef SPEAKER_TEST
+    cmp byte [test_channel], 1
+    je .left_ready
+    xor eax, eax
+.left_ready:
+%endif
     sar eax, 1
     add eax, edx
     call .clip
@@ -76,6 +98,12 @@ mix_half:
 .right:
 %else
     movsx eax, word [cd_samples+bx+2]
+%endif
+%ifdef SPEAKER_TEST
+    cmp byte [test_channel], 2
+    je .right_ready
+    xor eax, eax
+.right_ready:
 %endif
     sar eax, 1
     add eax, esi

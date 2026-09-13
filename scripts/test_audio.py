@@ -83,6 +83,35 @@ def verify_capture(path, extra_windows=()):
     return measured
 
 
+def verify_speaker_sequence(path):
+    with wave.open(str(path)) as source:
+        frames = list(struct.iter_unpack('<hh', source.readframes(source.getnframes())))
+    runs = []
+    for start in range(0, len(frames)-441, 441):
+        block = frames[start:start+441]
+        energy = [sum(pair[ch]**2 for pair in block)/441 for ch in (0, 1)]
+        peak = [max(abs(pair[ch]) for pair in block) for ch in (0, 1)]
+        channel = 1 if energy[0] > 1000000 and peak[1] < 8 else (
+            2 if energy[1] > 1000000 and peak[0] < 8 else 0)
+        if runs and runs[-1]['channel'] == channel:
+            runs[-1]['end'] = start+441
+        else:
+            runs.append(dict(channel=channel, start=start, end=start+441))
+    tones = [row for row in runs if row['channel'] and row['end']-row['start'] > 4410]
+    if [row['channel'] for row in tones] != [1, 2, 1, 2]:
+        raise ValueError('Both sound tests must play the left speaker, then the right speaker.')
+    for row in tones:
+        if not 1.08 <= (row['end']-row['start'])/44100 <= 1.14:
+            raise ValueError('The speaker test duration is incorrect.')
+    for left, right in zip(tones[::2], tones[1::2]):
+        if not 0.35 <= (right['start']-left['end'])/44100 <= 0.40:
+            raise ValueError('The speaker tests need a short pause between channels.')
+        gap = frames[left['end']+441:right['start']-441]
+        if not gap or max(abs(value) for pair in gap for value in pair) >= 8:
+            raise ValueError('Both speakers must be silent during the pause.')
+    return tones
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--emulator', type=Path, required=True)
@@ -156,7 +185,7 @@ def main():
     evidence = dict(command=command, guest_passed=passed,
                     passed=passed and not bool(args.izarra_source), jemm_sha256=JEMM_SHA256,
                     program_sha256={name: hashlib.sha256((ROOT / 'build' / name).read_bytes()).hexdigest()
-                                    for name in ('ATRAP.COM', 'ASHARE.COM', 'ACLIENT.COM')},
+                                    for name in ('ATRAP.COM', 'ASHARE.COM', 'ACLIENT.COM', 'UCDDTST.COM')},
                     disk_sha256=hashlib.sha256(disk.image).hexdigest(),
                     emulator_sha256=hashlib.sha256(args.emulator.read_bytes()).hexdigest())
     (RUN / 'audio.json').write_text(json.dumps(evidence, indent=2) + '\n')
@@ -173,6 +202,7 @@ def main():
         print(result.stdout + result.stderr)
         result.check_returncode()
         evidence['capture_checks'] = verify_capture(RUN / 'audio.wav')
+        evidence['speaker_sequence'] = verify_speaker_sequence(RUN / 'audio.wav')
         evidence['passed'] = True
         evidence['capture_source_sha256'] = hashlib.sha256(
             (ROOT / 'tests/audio_capture.rs').read_bytes()).hexdigest()

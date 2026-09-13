@@ -27,6 +27,10 @@ game_started dd 0
 game_active db 0
 launch_ss dw 0
 launch_sp dw 0
+%ifdef SPEAKER_TEST
+test_half dw 0
+test_channel db 0
+%endif
 
 %include "audio/mix.asm"
 %include "audio/sb16.asm"
@@ -92,6 +96,11 @@ start:
     call mix_half
     call trap_install
     jc cleanup
+%ifdef SPEAKER_TEST
+    mov dx, speaker_prompt
+    mov ah, 9
+    int 21h
+%endif
     call sb_start
     jc cleanup
 %ifdef OUTPUT_TEST
@@ -325,6 +334,9 @@ command_tail db 0,13
 success db 'The sound test has stopped.',13,10,'$'
 %else
 success db 'The shared audio test passed.',13,10,'$'
+%endif
+%ifdef SPEAKER_TEST
+speaker_prompt db 'Left speaker, then right speaker.',13,10,'$'
 %endif
 failure db 'The shared audio test failed.',13,10,'$'
 align 4

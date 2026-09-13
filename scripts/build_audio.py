@@ -18,7 +18,7 @@ def build_audio():
     (BUILD / 'QUIET.PCM').write_bytes(bytes([128]*4096))
     assemble('tests/audio_trap.asm', 'ATRAP.COM')
     assemble('tests/audio_share.asm', 'ASHARE.COM')
-    assemble('tests/audio_share.asm', 'UCDDTST.COM', ('OUTPUT_TEST=1',))
+    assemble('tests/audio_share.asm', 'UCDDTST.COM', ('OUTPUT_TEST=1', 'SPEAKER_TEST=1'))
     assemble('tests/audio_client.asm', 'ACLIENT.COM')
     assemble('tests/audio_share.asm', 'APSHARE.COM', ('PM_CLIENT=1',))
     assemble('tests/audio_pm.asm', 'APM.COM')
