@@ -12,7 +12,9 @@ An interpreted Pentium test loads the start map, plays and loops a real music ex
 
 The current audio service runs for the lifetime of the launched game. It refills during foreground CD requests; Quake normally polls playback status four times per second. It is not yet a general background audio TSR. Games that do not poll often enough need another refill mechanism. An empty buffer or a read error stops the CD source and reports an error when the game exits.
 
-A user has reported successful standalone BIN playback on a real DOS PC. Shared audio on hardware, long gameplay sessions, other games, general MS-DOS compatibility, and MSCDEX compatibility remain unverified. The standalone `UCDDPLAY.COM` test and the synthetic audio tests remain available.
+A user has reported successful standalone BIN playback and Quake with shared CD music and game sound on a real DOS PC using SHSUCDX. The driver also loaded into upper memory. These are user-reported hardware results; long gameplay sessions, other games, and broad MS-DOS compatibility remain unverified. The standalone `UCDDPLAY.COM` test and the synthetic audio tests remain available.
+
+In the same hardware test, MSCDEX mounted the image and allowed file access, but Quake had no CD audio and the service reported `The CD image read failed.` after the game exited. Use SHSUCDX for the current Quake experiment. The cause of the MSCDEX audio failure is not yet established.
 
 ## Requirements and estimates
 

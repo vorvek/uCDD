@@ -164,7 +164,7 @@ Quake runs in normal SB16 mode with virtual DMA 5 and a signed 16-bit stereo sou
 
 The runner checks the guest exit, level and sequence markers, DSP version, and DMA channel in Quake's console log, plus the complete reference sound from the supplied PAK. The centered test sound has equal left/right values in both formats, so subtracting the channels isolates the known CD signal. The reference match must exceed 0.97 correlation, and both CD channels must retain their phase throughout that sound. A muted-game control must not match the reference. The independent stereo client checks unequal channels separately.
 
-The Quake and polling checks permit at most one frame of total capture phase change between complete signal windows, including game startup. A window that crosses that single-frame change can contain the two adjacent phases; other interior signal errors fail. This accounts for the capture effect described above and does not prove sample-exact output. The first 256-frame capture window and final output stop are excluded. The earlier 1,024-frame IRQ 5 buffer jump remains rejected. Longer gameplay under load, other games, abnormal child termination, and physical hardware remain unverified. Captures, console logs, disk exports, and input/build hashes are under `.local/audio/quake/` and `.local/audio/quake-legacy/`.
+The Quake and polling checks permit at most one frame of total capture phase change between complete signal windows, including game startup. A window that crosses that single-frame change can contain the two adjacent phases; other interior signal errors fail. This accounts for the capture effect described above and does not prove sample-exact output. The first 256-frame capture window and final output stop are excluded. The earlier 1,024-frame IRQ 5 buffer jump remains rejected. Longer gameplay under load, other games, abnormal child termination, and physical hardware for these preloaded-audio builds remain unverified. A later mounted-image hardware report is described below. Captures, console logs, disk exports, and input/build hashes are under `.local/audio/quake/` and `.local/audio/quake-legacy/`.
 
 ## CD image streaming
 
@@ -196,7 +196,7 @@ The selector accepts one `FILE ... BINARY`, sequential tracks with `AUDIO` or `M
 
 Copy the original BIN to that DOS path. Copy `UCDDPLAY.COM`, `CDSTREAM.DAT`, and `UCDDSET.EXE` to the same working directory. In native DOS, load Jemm and QPIEMU, then use `UCDDSET` to save the actual physical SB16 settings to `UCDD.CFG`. Run `UCDDPLAY` from that directory. HDPMI is not required for standalone playback. Press Esc to stop, or let the selected track finish. Exit code 0 indicates normal completion or Esc; code 1 indicates failure. A fresh invocation starts the selected track again.
 
-This test does not install a virtual CD drive or exercise shared audio with an unmodified game. A user reported that the setup produced sound and that `UCDDPLAY.COM` played the first music track from a Quake BIN image on a real DOS PC. That result covers standalone playback; shared audio on hardware remains unverified.
+This test does not install a virtual CD drive or exercise shared audio with an unmodified game. A user reported that the setup produced sound and that `UCDDPLAY.COM` played the first music track from a Quake BIN image on a real DOS PC. That result covers standalone playback. A later shared-audio hardware report is described below.
 
 ## Mounted CUE/BIN and Quake music
 
@@ -219,3 +219,9 @@ Use `--copy-installer` to copy RESOURCE.1 through F: to the DOS hard disk and ch
 The 386 DOS suite also checks CUE TOC values, stored leading pregaps, data reads, rejected replacements, the 13-byte request-header convention used by Quake, and audio-service attach/detach ownership. It tests one and multiple units, including a driver loaded high.
 
 The foreground polling behavior is defined by id Software's [DOS CD implementation](https://github.com/id-Software/Quake/blob/master/WinQuake/cd_audio.c). Buffer copies use the [XMS interface](https://www.phatcode.net/res/219/files/xms30.txt); the interrupt uses a separate move descriptor and never calls DOS. These tests do not establish a general background scheduler or real-hardware performance.
+
+### Mounted-image hardware report
+
+A user reported that the current Quake experiment works on a real DOS PC with SHSUCDX, with CD music and game sound sharing the SB16. The user also confirmed that `LH UCDDRV.EXE` loads the driver into upper memory. This report does not establish measured latency, sample accuracy, long-session stability, or a minimum processor speed.
+
+With MSCDEX on the same machine, the image mounted and its files could be accessed, but Quake produced no CD audio. After the game exited, the service reported `The CD image read failed.`. Switching to SHSUCDX worked. This comparison records a redirector-dependent result; it does not identify the cause. MSCDEX audio compatibility remains unresolved.
