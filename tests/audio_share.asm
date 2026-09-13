@@ -2,6 +2,11 @@ bits 16
 cpu 386
 org 100h
 %include "audio/layout.inc"
+%ifdef CD_IMAGE_TEST
+%ifndef MOUNTED_AUDIO
+%define CD_COOPERATIVE 1
+%endif
+%endif
 %ifdef STREAM_TEST
 %define TIMED_TEST 1
 %endif
@@ -37,7 +42,11 @@ test_channel db 0
 %include "audio/trap.asm"
 %include "audio/config.asm"
 %ifdef CD_IMAGE_TEST
+%ifdef MOUNTED_AUDIO
+%include "audio/mounted.asm"
+%else
 %include "audio/stream.asm"
+%endif
 %endif
 %ifdef VIRTUAL_IRQ
 %include "audio/irq.asm"
@@ -45,6 +54,9 @@ test_channel db 0
 
 start:
     cld
+%ifdef MOUNTED_AUDIO
+    mov [cd_parent_segment], cs
+%endif
 %ifdef PERIOD_SEED
     mov dword [periods], PERIOD_SEED
 %endif
@@ -53,6 +65,10 @@ start:
     mov ah, 4ah
     int 21h
     jc failed
+%ifdef MOUNTED_AUDIO
+    call cd_memory_low
+    jc failed
+%endif
     call config_load
     jc failed
 %ifdef CD_IMAGE_TEST
@@ -155,7 +171,9 @@ start:
     mov [command_tail+12], cs
 %endif
 %ifdef CD_IMAGE_TEST
+%ifndef MOUNTED_AUDIO
     mov [command_tail+16], cs
+%endif
 %endif
 %endif
     mov [exec_block+4], cs
@@ -249,12 +267,18 @@ cleanup_cd:
     jne failed
 %endif
 passed:
+%ifdef MOUNTED_AUDIO
+    call cd_memory_restore
+%endif
     mov dx, success
     mov ah, 9
     int 21h
     mov ax, 4c00h
     int 21h
 failed:
+%ifdef MOUNTED_AUDIO
+    call cd_memory_restore
+%endif
     mov dx, failure
     mov ah, 9
     int 21h
@@ -263,6 +287,9 @@ failed:
 
 %ifdef CD_IMAGE_TEST
 cd_failed:
+%ifdef MOUNTED_AUDIO
+    call cd_memory_restore
+%endif
     mov dx, cd_failure
     cmp byte [cd_error], 2
     jne .report
@@ -297,6 +324,16 @@ cd_report:
     mov cx, 2
     mov ah, 40h
     int 21h
+%ifdef MOUNTED_AUDIO
+    mov dx, cd_parent_segment
+    mov cx, 2
+    mov ah, 40h
+    int 21h
+    mov dx, output_segment
+    mov cx, 4
+    mov ah, 40h
+    int 21h
+%endif
     mov ah, 3eh
     int 21h
 .done:
@@ -305,13 +342,17 @@ cd_report_name db 'CDSTAT.DAT',0
 %endif
 
 %ifdef PM_CLIENT
+%ifdef MOUNTED_AUDIO
+child_name db 'UCDDPM.COM',0
+%else
 child_name db 'APM.COM',0
+%endif
 %else
 child_name db 'ACLIENT.COM',0
 %endif
 exec_block dw 0,command_tail,0,5ch,0,6ch,0
 %ifdef PM_CLIENT
-%ifdef CD_IMAGE_TEST
+%ifdef CD_COOPERATIVE
 command_tail db 17
 %elifdef VIRTUAL_IRQ
 command_tail db 13
@@ -323,7 +364,7 @@ command_tail db 9
 %ifdef VIRTUAL_IRQ
     dw virtual_irq_take,0
 %endif
-%ifdef CD_IMAGE_TEST
+%ifdef CD_COOPERATIVE
     dw cd_service,0
 %endif
     db 13
@@ -333,12 +374,20 @@ command_tail db 0,13
 %ifdef OUTPUT_TEST
 success db 'The sound test has stopped.',13,10,'$'
 %else
+%ifdef MOUNTED_AUDIO
+success db 'The audio service has stopped.',13,10,'$'
+%else
 success db 'The shared audio test passed.',13,10,'$'
+%endif
 %endif
 %ifdef SPEAKER_TEST
 speaker_prompt db 'Left speaker, then right speaker.',13,10,'$'
 %endif
+%ifdef MOUNTED_AUDIO
+failure db 'The audio service failed.',13,10,'$'
+%else
 failure db 'The shared audio test failed.',13,10,'$'
+%endif
 align 4
 cd_samples:
 %ifndef CD_IMAGE_TEST

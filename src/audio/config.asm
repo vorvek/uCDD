@@ -3,10 +3,15 @@ config_load:
     mov ax, 3d00h
     int 21h
     jnc .read
+%ifdef MOUNTED_AUDIO
+    stc
+    ret
+%else
     cmp ax, 2
     je .default
     stc
     ret
+%endif
 .read:
     mov bx, ax
     mov dx, config_data

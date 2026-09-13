@@ -67,7 +67,11 @@ output_clock:
     jbe .stable
 .again:
     loop .retry
+%ifdef MOUNTED_AUDIO
+    mov byte [fault], 2
+%else
     mov byte [fault], 1
+%endif
     mov eax, [last_clock]
     ret
 .stable:
@@ -160,7 +164,11 @@ port_callback:
     cmp dx, 3
     je .count
 .unsupported:
+%ifdef MOUNTED_AUDIO
+    mov byte [fault], 3
+%else
     mov byte [fault], 1
+%endif
     jmp .done
 .reset:
     mov byte [game_active], 0

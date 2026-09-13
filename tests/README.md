@@ -176,13 +176,13 @@ python scripts/test_audio_image.py --izarra-source D:\dev\IzarraVM --cue C:\imag
 
 The streaming runner uses an interpreted 386, one physical SB16, and no WSS or emulator CD playback. It reads signed 16-bit stereo samples at 44.1 kHz from a DOS BIN file, starting at a selected byte offset. DOS reads fill a 16 KiB queue in 4 KiB blocks. The sound interrupt consumes published blocks and never calls DOS. The final read is padded with silence; subsequent bytes in the image must not play. Empty buffers and read errors stop the CD source and produce an error result.
 
-The protected-mode stereo client calls a foreground refill service while its virtual IRQ handler refills the game's separate DMA ring. The service uses its own 2 KiB stack, preserves the caller's PSP, and checks InDOS before file access. The image handle belongs to the parent and is not inherited by the client. This is an explicit cooperative interface, not a background scheduler for unmodified games. The existing Quake executable test still uses the preloaded CD test signal.
+The protected-mode stereo client calls a foreground refill service while its virtual IRQ handler refills the game's separate DMA ring. The service uses its own 2 KiB stack, preserves the caller's PSP, and checks InDOS before file access. The image handle belongs to the parent and is not inherited by the client. This is an explicit cooperative interface, not a background scheduler for unmodified games. The earlier Quake test uses a preloaded signal; the mounted-image test below uses real track data.
 
 The main cases stream 220,637 frames, slightly over five seconds, through 216 reads. Paired captures at physical IRQ 5/DMA 1/5 and IRQ 7/DMA 3/6 verify CD samples and 259 complete stereo game blocks, including game output after the selected CD range ends. The optional CUE case copies the opening excerpt of track 2 to a disposable BIN file at its original byte offset; surrounding bytes are test sentinels. It does not copy or play the complete image. The original CUE and BIN are read-only inputs. No game data is distributed.
 
 Controls stop foreground refills after the initial queue, force a DOS read failure after eight successful reads, and reject a short BIN, a missing BIN, and a truncated descriptor. The stalled case must play exactly the initial 16 KiB, then keep its CD output silent while game audio continues. A standalone case checks playback without a DPMI client. The waveform verifier checks both channels and end silence; it excludes the first 256 capture frames and allows at most one frame of phase change, as in the earlier capture tests. Reports include that change rather than claiming sample-exact output. Results, input hashes, guest counters, and captures are under `.local/audio/image/`.
 
-The queue covers about 93 ms at CD rate. It currently uses conventional memory, as do the output allocation and transient program. The standalone player is 6,656 bytes in this build, excluding its PSP, environment, and 24 KiB of buffer allocations. It does not stay resident. XMS buffering, upper-memory audio residency, longer disk stalls, automatic background scheduling, and MSCDEX play/stop/status integration remain unimplemented.
+The queue covers about 93 ms at CD rate. It uses conventional memory, as do the output allocation and transient program. The standalone player is 6,656 bytes in this build, excluding its PSP, environment, and 24 KiB of buffer allocations. It does not stay resident. This standalone test does not use the XMS queue or CD request interface of the mounted-image service below.
 
 ### Standalone hardware test
 
@@ -197,3 +197,25 @@ The selector accepts one `FILE ... BINARY`, sequential tracks with `AUDIO` or `M
 Copy the original BIN to that DOS path. Copy `UCDDPLAY.COM`, `CDSTREAM.DAT`, and `UCDDSET.EXE` to the same working directory. In native DOS, load Jemm and QPIEMU, then use `UCDDSET` to save the actual physical SB16 settings to `UCDD.CFG`. Run `UCDDPLAY` from that directory. HDPMI is not required for standalone playback. Press Esc to stop, or let the selected track finish. Exit code 0 indicates normal completion or Esc; code 1 indicates failure. A fresh invocation starts the selected track again.
 
 This test does not install a virtual CD drive or exercise shared audio with an unmodified game. A user reported that the setup produced sound and that `UCDDPLAY.COM` played the first music track from a Quake BIN image on a real DOS PC. That result covers standalone playback; shared audio on hardware remains unverified.
+
+## Mounted CUE/BIN and Quake music
+
+```powershell
+python scripts/build.py
+python scripts/test_audio_mounted.py --izarra-source D:\dev\IzarraVM --quake-dir C:\games\quake --quake-bin C:\images\quake.bin --load-high
+python scripts/test_audio_mounted.py --izarra-source D:\dev\IzarraVM --quake-dir C:\games\quake --quake-bin C:\images\quake.bin --load-high --quiet --irq 5 --name mounted-quiet
+```
+
+The runner copies the data track and 12-second excerpts of audio tracks 2, 3, and 4 into a disposable single-file image. Its CUE sheet retains the track numbers and adjusts the excerpt offsets. Quake selects track 4 for the start map, streams beyond the initial XMS queue, and loops the excerpt. The original installation and image are read-only inputs. PAK1.PAK is included when present. No game data enters the public repository.
+
+The test runs unmodified Quake in interpreted 586 mode with one physical SB16 and no emulator CD drive or WSS output. It checks Quake's console log, the guest exit, read counters, stream errors, and captured output. The mixed run checks the complete music excerpt's stereo difference and the complete centered game sound. The quiet run checks both music channels directly. At most one capture frame of phase change is allowed; the report records it. The first 512 source frames are excluded from the sample comparison. Corrupted captures must fail: repeated blocks, a 1,024-frame phase jump, swapped channels, and a missing game sound.
+
+`--load-high` checks that the reporting audio parent is above A000h and that both the physical DMA ring and its allocation are below A0000h. The service temporarily selects conventional DOS allocations before allocating DMA memory or launching the game, then restores the caller's allocation policy. This avoids inheriting LH's upper-memory allocation policy for DMA buffers. The separate DPMI launcher still occupies conventional memory.
+
+Use `--copy-installer` to copy RESOURCE.1 through F: to the DOS hard disk and check its CRC in DOS, then compare the copied bytes against the source on the host. This validates the installer archive's data path; it does not automate the interactive installer. `--release` tests the delivered UCDDAUD.COM without diagnostic counters. The normal reporting build is ACDMOUNT.COM.
+
+`--failure starve` stops refills after the initial 512 KiB. `--failure read` closes the source handle after 160 reads. These controls require Quake to finish while the service reports the intended CD error. A fresh test disk is used for each case. Reports, file hashes, counters, console logs, and captures are stored under `.local/audio/<name>/`.
+
+The 386 DOS suite also checks CUE TOC values, stored leading pregaps, data reads, rejected replacements, the 13-byte request-header convention used by Quake, and audio-service attach/detach ownership. It tests one and multiple units, including a driver loaded high.
+
+The foreground polling behavior is defined by id Software's [DOS CD implementation](https://github.com/id-Software/Quake/blob/master/WinQuake/cd_audio.c). Buffer copies use the [XMS interface](https://www.phatcode.net/res/219/files/xms30.txt); the interrupt uses a separate move descriptor and never calls DOS. These tests do not establish a general background scheduler or real-hardware performance.

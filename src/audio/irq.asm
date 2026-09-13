@@ -125,7 +125,11 @@ virtual_pic_write:
     and ah, 0f8h
     cmp ah, 60h
     je .physical
+%ifdef MOUNTED_AUDIO
+    mov byte [fault], 5
+%else
     mov byte [fault], 1
+%endif
     ret
 .select:
     mov [physical_pic_read], al

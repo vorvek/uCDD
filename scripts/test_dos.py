@@ -98,11 +98,25 @@ def main():
             disk.add('JEMMEX.EXE', source.read('JEMMEX.EXE'))
         config = 'DEVICE=C:\\JEMMEX.EXE NOEMS\r\n' + config.replace('DOS=LOW', 'DOS=HIGH,UMB')
     disk.add('FDCONFIG.SYS', config.encode())
-    for name in ('PROBE.COM', 'PACKETS.COM', 'FILECRC.COM', 'PASS.COM', 'FAIL.COM'):
+    for name in ('PROBE.COM', 'PACKETS.COM', 'CUEPACK.COM', 'CDSTATE.COM', 'FILECRC.COM', 'PASS.COM', 'FAIL.COM'):
         disk.add(name, (ROOT / 'build' / name).read_bytes())
     disk.add('ONE.ISO', make_iso('ONE'))
     disk.add('TWO.ISO', make_iso('TWO'))
     disk.add('BIG.ISO', make_iso('BIG', 128))
+    raw = b''.join(bytes(16) + make_iso('BIG', 128)[i:i+2048] + bytes(288)
+                   for i in range(0, 128*2048, 2048))
+    disk.add('BIG.BIN', raw + bytes(2352*150))
+    cue = 'FILE "BIG.BIN" BINARY\r\n TRACK 01 MODE1/2352\r\n INDEX 01 00:00:00\r\n TRACK 02 AUDIO\r\n INDEX 01 00:01:53\r\n'
+    disk.add('BIG.CUE', cue.encode())
+    disk.add('BADCUE.CUE', cue.replace('00:01:53', '00:00:01').encode())
+    disk.add('PREGAP.BIN', bytes(150*2352)+raw+bytes(2352*150))
+    disk.add('PREGAP.CUE', cue.replace('BIG.BIN', 'PREGAP.BIN').replace(
+        '00:00:00', '00:02:00').replace('00:01:53', '00:03:53').encode())
+    bad_cues = [cue.replace('TRACK 02', 'TRACK 03'), cue.replace('BINARY', 'WAVE'),
+                cue.replace('00:01:53', '00:60:00'), cue.replace(' INDEX 01 00:01:53\r\n', ''),
+                cue+' FLAGS DCP\r\n', cue+' PREGAP 00:02:00\r\n', cue+' FILE "BIG.BIN" BINARY\r\n']
+    for number, text in enumerate(bad_cues):
+        disk.add(f'BAD{number}.CUE', text.encode())
     bad_root = make_iso('BADROOT')
     bad_root[16 * 2048 + 158:16 * 2048 + 166] = both32(1000)
     disk.add('BADROOT.ISO', bad_root)
@@ -129,7 +143,8 @@ def main():
         names = {Path(name).name.lower(): name for name in suite.namelist()}
         for name in ('shsucdx.com', 'shsucdhd.exe'):
             disk.add(name, suite.read(names[name]))
-    commands = ['@ECHO OFF', 'PROMPT $P$G', 'PROBE absent', 'IF ERRORLEVEL 1 GOTO FAIL']
+    commands = ['@ECHO OFF', 'PROMPT $P$G', 'CDSTATE', 'IF ERRORLEVEL 1 GOTO FAIL',
+                'PROBE absent', 'IF ERRORLEVEL 1 GOTO FAIL']
     if args.baseline:
         commands += ['SHSUCDHD /F:C:\\ONE.ISO', 'IF ERRORLEVEL 1 GOTO FAIL',
                      'SHSUCDX /D:SHSU-CDH /L:D', 'IF ERRORLEVEL 246 GOTO FAIL',
@@ -209,6 +224,17 @@ def main():
         for number, (command, success) in enumerate(checks, 1):
             commands += [f'ECHO Test {number}: {command}', command,
                          'IF ERRORLEVEL 1 GOTO FAIL' if success else 'IF NOT ERRORLEVEL 1 GOTO FAIL']
+        commands += ['UCDD -mount C:\\BIG.CUE -drive F', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'CUEPACK', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'PROBE F:\\BIG.TXT', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'UCDD -mount C:\\BADCUE.CUE -drive F', 'IF NOT ERRORLEVEL 1 GOTO FAIL',
+                     'PROBE F:\\BIG.TXT', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'UCDD -mount C:\\PREGAP.CUE -drive F', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'CUEPACK', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'PROBE F:\\BIG.TXT', 'IF ERRORLEVEL 1 GOTO FAIL']
+        for number in range(len(bad_cues)):
+            commands += [f'UCDD -mount C:\\BAD{number}.CUE -drive F', 'IF NOT ERRORLEVEL 1 GOTO FAIL',
+                         'PROBE F:\\BIG.TXT', 'IF ERRORLEVEL 1 GOTO FAIL']
     if args.quake_bin:
         if args.baseline:
             raise SystemExit('Use the Quake check with the uCDD test sequence.')

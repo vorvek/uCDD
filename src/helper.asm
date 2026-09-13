@@ -1,6 +1,7 @@
 bits 16
 cpu 386
 org 0
+%include "disc.inc"
 
     cld
     mov si, 81h
@@ -164,6 +165,34 @@ org 0
     jc bad_source
     test dx, 1000h
     jnz bad_source
+    call prepare_image
+    jc bad_image
+    mov al, [full_path]
+    and al, 0dfh
+    sub al, 'A'
+    cmp al, 2
+    jb bad_source
+    cmp al, 25
+    ja bad_source
+    cmp word [full_path+1], 5c3ah
+    jne bad_source
+    mov [source_drive], al
+    xor si, si
+.bin_source:
+    cmp si, [drive_count]
+    jae .bin_local
+    cmp al, [drive_list+si]
+    je bad_source
+    inc si
+    jmp .bin_source
+.bin_local:
+    mov bl, al
+    inc bl
+    mov ax, 4409h
+    int 21h
+    jc bad_source
+    test dx, 1000h
+    jnz bad_source
     mov si, [selected_index]
     call device_at_index
     jc invalid_drive
@@ -233,7 +262,7 @@ device_at_index:
     jne .other
     cmp dword [es:di+22], 'uCDD'
     jne .other
-    cmp word [es:di+26], 1
+    cmp word [es:di+26], 2
     jne .other
     mov eax, [es:di+28]
     mov [control_entry], eax
@@ -398,5 +427,15 @@ drive_message db 'Drive '
 done_drive db '?',':',13,10,'$'
 arguments times 128 db 0
 full_path times 128 db 0
+    dw 2048,0
+    dd 0
+    dw 1
+mount_tracks:
+    dd 0,0
+    db 40h,0,0,0
+    times (MAX_TRACKS-1)*TRACK_SIZE db 0
+    dd 0
 device_list times 26*5 db 0
 drive_list times 26 db 0
+
+%include "cue.asm"

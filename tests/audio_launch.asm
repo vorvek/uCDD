@@ -39,7 +39,11 @@ game_vector dd 0
     dw 0
 failure db 'The audio launcher failed at step '
 failure_stage db '0',13,10,'$'
+%ifdef MOUNTED_AUDIO
+success db 'The game has stopped.',13,10,'$'
+%else
 success db 'The audio launcher test passed.',13,10,'$'
+%endif
 start:
     cld
     mov sp, stack_top
@@ -241,7 +245,11 @@ command_tail db command_end-command_args
 %ifdef QUAKE_LEGACY
 command_args db ' -dsp 2 -nocdaudio -noserial -noipx -noudp -condebug'
 %else
+%ifdef MOUNTED_AUDIO
+command_args db ' -noserial -noipx -noudp -condebug'
+%else
 command_args db ' -nocdaudio -noserial -noipx -noudp -condebug'
+%endif
 %endif
 command_end db 13
 %else

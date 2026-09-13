@@ -30,7 +30,11 @@ dsp_write:
     test al, 80h
     jz .ready
     loop .wait
+%ifdef MOUNTED_AUDIO
+    mov byte [fault], 4
+%else
     mov byte [fault], 1
+%endif
 .ready:
     pop cx
     pop ax

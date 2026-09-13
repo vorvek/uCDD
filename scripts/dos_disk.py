@@ -4,6 +4,34 @@ import struct
 
 
 class Fat16:
+    def empty_larger(self, size_mib=128):
+        image = bytearray(size_mib*1024*1024)
+        image[:self.start+512] = self.image[:self.start+512]
+        sectors = (len(image)-self.start)//512
+        fat_sectors = 1
+        while True:
+            clusters = (sectors-1-self.entries*32//512-self.nfats*fat_sectors)//self.spc
+            required = ((clusters+2)*2+511)//512
+            if required <= fat_sectors:
+                break
+            fat_sectors = required
+        if not 4085 <= clusters <= 65524:
+            raise ValueError('The disk size is outside the FAT16 range.')
+        struct.pack_into('<I', image, 458, sectors)
+        image[450] = 6
+        last = len(image)//512-1
+        cylinder, remainder = divmod(last, 16*63)
+        head, sector = divmod(remainder, 63)
+        image[451:454] = bytes((head, sector+1 | (cylinder >> 2 & 0xc0), cylinder & 0xff))
+        struct.pack_into('<H', image, self.start+19, 0)
+        struct.pack_into('<I', image, self.start+32, sectors)
+        struct.pack_into('<H', image, self.start+22, fat_sectors)
+        disk = Fat16(image)
+        for copy in range(disk.nfats):
+            offset = disk.fat+copy*fat_sectors*512
+            disk.image[offset:offset+4] = bytes([0xf8, 0xff, 0xff, 0xff])
+        return disk
+
     def __init__(self, image):
         self.image = bytearray(image)
         self.start = struct.unpack_from('<I', image, 454)[0] * 512

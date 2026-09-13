@@ -77,6 +77,10 @@ mix_half:
     je .left
     movsx eax, word [gs:bx]
 .left:
+%ifdef MOUNTED_AUDIO
+    imul eax, [cd_gain]
+    sar eax, 8
+%endif
 %else
     movsx eax, word [cd_samples+bx]
 %endif
@@ -96,6 +100,10 @@ mix_half:
     je .right
     movsx eax, word [gs:bx+2]
 .right:
+%ifdef MOUNTED_AUDIO
+    imul eax, [cd_gain+4]
+    sar eax, 8
+%endif
 %else
     movsx eax, word [cd_samples+bx+2]
 %endif
@@ -110,7 +118,9 @@ mix_half:
     call .clip
     stosw
     add bx, 4
+%ifndef MOUNTED_AUDIO
     and bx, 16383
+%endif
     dec cx
     jnz .frame
     mov [cd_position], bx

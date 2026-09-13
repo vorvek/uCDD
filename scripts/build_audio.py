@@ -54,6 +54,13 @@ def build_audio():
     assemble('tests/audio_share.asm', 'AQSHARE.COM',
              ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'QUAKE_TEST=1'))
     image = ('CD_IMAGE_TEST=1', 'OUTPUT_SHIFT=9')
+    assemble('tests/audio_share.asm', 'UCDDAUD.COM',
+             (*image, 'PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'MOUNTED_AUDIO=1'))
+    for name, extra in (('ACDMOUNT.COM', ()), ('ACDMSTAL.COM', ('CD_STARVE=1', 'CD_FAILURE_TEST=1')),
+                        ('ACDMERR.COM', ('CD_READ_ERROR=1', 'CD_FAILURE_TEST=1'))):
+        assemble('tests/audio_share.asm', name,
+                 (*image, 'PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'MOUNTED_AUDIO=1', 'CD_REPORT=1', *extra))
+    assemble('tests/audio_launch.asm', 'UCDDPM.COM', ('QUAKE_TEST=1', 'MOUNTED_AUDIO=1'))
     assemble('tests/audio_share.asm', 'UCDDPLAY.COM', (*image, 'OUTPUT_TEST=1'))
     assemble('tests/audio_share.asm', 'ACDSHARE.COM', (*image, 'PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'CD_REPORT=1'))
     assemble('tests/audio_share.asm', 'ACDPLAY.COM', (*image, 'OUTPUT_TEST=1', 'CD_REPORT=1'))

@@ -2,12 +2,7 @@ bits 16
 cpu 386
 org 0
 
-%define MAX_UNITS 4
-%define UNIT_SIZE 8
-%define HANDLE 0
-%define SECTORS 2
-%define CHANGED 6
-%define LOCKED 7
+%include "disc.inc"
 
     jmp install
 
@@ -20,7 +15,7 @@ header:
     db 0
 unit_count db 1
     db 'uCDD'
-    dw 1
+    dw 2
     dw control, 0
 
 request dd 0
@@ -40,6 +35,13 @@ control_result dw 0
 path_pointer dd 0
 candidate dw 0ffffh
 candidate_sectors dd 0
+candidate_total dd 0
+candidate_limit dd 0
+candidate_stride dw 0
+candidate_payload dw 0
+candidate_origin dd 0
+candidate_count dw 0
+read_skip dw 0
 descriptor_sector dd 0
 read_remaining dw 0
 read_completed dw 0
@@ -86,7 +88,7 @@ interrupt:
     movzx ax, byte [fs:bp+1]
     cmp al, [unit_count]
     jae .bad_unit
-    shl ax, 3
+    imul ax, UNIT_SIZE
     add ax, [units_base]
     mov [unit_pointer], ax
     mov si, ax
@@ -101,7 +103,16 @@ interrupt:
     je .success
     cmp al, 80h
     je .read
+    cmp al, 84h
+    je .audio
+    cmp al, 85h
+    je .audio
+    cmp al, 88h
+    je .audio
     mov ax, 8103h
+    jmp .done
+.audio:
+    call audio_request
     jmp .done
 .ioctl_in:
     call ioctl_input
@@ -150,8 +161,13 @@ interrupt:
     jmp .return
 
 ioctl_buffer:
+    cmp bp, 0ffech
+    ja .bad
+    cmp byte [fs:bp], 13
+    je .header_ok
     cmp byte [fs:bp], 20
     jb .bad
+.header_ok:
     mov cx, [fs:bp+18]
     test cx, cx
     jz .bad
@@ -171,6 +187,10 @@ ioctl_input:
     call ioctl_buffer
     jc request_error
     movzx bx, byte [es:di]
+    cmp bl, 4
+    je audio_request
+    cmp bl, 15
+    je .audio_status
     cmp bx, 15
     ja request_unknown
     mov al, [ioctl_sizes+bx]
@@ -201,6 +221,16 @@ ioctl_input:
     mov [es:di+3], eax
     mov [es:di+7], eax
     jmp request_ok
+.audio_status:
+    cmp dword [si+AUDIO_ENTRY], 0
+    jne audio_request
+    cmp cx, 11
+    jb request_error
+    xor eax, eax
+    mov [es:di+1], ax
+    mov [es:di+3], eax
+    mov [es:di+7], eax
+    jmp request_ok
 .header:
     mov word [es:di+1], header
     mov [es:di+3], cs
@@ -215,6 +245,10 @@ ioctl_input:
     jne .status_done
     or ax, 0800h
 .status_done:
+    cmp dword [si+AUDIO_ENTRY], 0
+    je .status_store
+    or ax, 0310h
+.status_store:
     mov [es:di+1], eax
     jmp request_ok
 .sector_size:
@@ -232,8 +266,11 @@ ioctl_input:
     mov [es:di+1], eax
     jmp request_ok
 .disc:
-    mov word [es:di+1], 0101h
-    mov eax, [si+SECTORS]
+    mov byte [es:di+1], 1
+    mov al, [si+TRACK_COUNT]
+    mov [es:di+2], al
+    mov eax, [si+DISC_SECTORS]
+    sub eax, [si+ORIGIN]
     add eax, 150
     xor edx, edx
     mov ecx, 4500
@@ -248,10 +285,30 @@ ioctl_input:
     mov byte [es:di+6], 0
     jmp request_ok
 .track:
-    cmp byte [es:di+1], 1
-    jne request_unknown
-    mov dword [es:di+2], 00000200h
-    mov byte [es:di+6], 40h
+    movzx ax, byte [es:di+1]
+    test ax, ax
+    jz request_unknown
+    cmp ax, [si+TRACK_COUNT]
+    ja request_unknown
+    dec ax
+    imul bx, ax, TRACK_SIZE
+    add bx, si
+    mov al, [bx+TRACKS+TRACK_CONTROL]
+    mov [es:di+6], al
+    mov eax, [bx+TRACKS+TRACK_START]
+    sub eax, [si+ORIGIN]
+    add eax, 150
+    xor edx, edx
+    mov ecx, 4500
+    div ecx
+    mov [es:di+4], al
+    mov eax, edx
+    xor edx, edx
+    mov ecx, 75
+    div ecx
+    mov [es:di+2], dl
+    mov [es:di+3], al
+    mov byte [es:di+5], 0
     jmp request_ok
 ioctl_sizes db 5,0,0,0,0,0,5,4,5,2,7,7,0,0,0,11
 
@@ -259,6 +316,8 @@ ioctl_output:
     call ioctl_buffer
     jc request_error
     mov al, [es:di]
+    cmp al, 3
+    je audio_request
     cmp al, 1
     je .lock
     cmp al, 2
@@ -268,6 +327,8 @@ ioctl_output:
     test al, al
     jnz request_unknown
     cmp byte [si+LOCKED], 0
+    jne request_error
+    cmp dword [si+AUDIO_ENTRY], 0
     jne request_error
     call dos_enter
     call eject_unit
@@ -283,8 +344,16 @@ ioctl_output:
     mov [si+LOCKED], al
     jmp request_ok
 .reset:
+    cmp dword [si+AUDIO_ENTRY], 0
+    jne audio_request
     mov byte [si+CHANGED], 0ffh
     jmp request_ok
+
+audio_request:
+    cmp dword [si+AUDIO_ENTRY], 0
+    je request_unknown
+    call far [si+AUDIO_ENTRY]
+    ret
 
 read_sectors:
     cmp byte [fs:bp], 27
@@ -323,7 +392,14 @@ read_sectors:
     shr ebx, 4
     mov [read_destination], dx
     mov [read_destination+2], bx
-    shl eax, 11
+    add eax, [si+ORIGIN]
+    movzx edx, word [si+STRIDE]
+    imul eax, edx
+    movzx edx, word [si+PAYLOAD]
+    add eax, edx
+    mov dx, [si+STRIDE]
+    sub dx, 2048
+    mov [read_skip], dx
     mov edx, eax
     shr eax, 16
     mov cx, ax
@@ -333,6 +409,9 @@ read_sectors:
     int 21h
     jc .io_failure
 .next:
+    mov ax, 1
+    cmp word [read_skip], 0
+    jne .chunk
     mov ax, [cs:read_remaining]
     cmp ax, 31
     jbe .chunk
@@ -360,6 +439,15 @@ read_sectors:
     jz .read_done
     shl ax, 7
     add [read_destination+2], ax
+    cmp word [read_skip], 0
+    je .next
+    mov dx, [read_skip]
+    xor cx, cx
+    mov si, [unit_pointer]
+    mov bx, [si+HANDLE]
+    mov ax, 4201h
+    int 21h
+    jc .io_failure
     jmp .next
 .read_done:
     call dos_leave
@@ -393,7 +481,8 @@ request_not_ready:
     mov ax, 8102h
     ret
 
-; Foreground ABI: AX=0 query, 1 mount, 2 eject; BL=unit; DS:DX=path.
+; AX: 0 query, 1 mount, 2 eject, 3 describe, 4 attach, 5 detach. BL: unit.
+; DS:DX points to image info (1/3) or the audio callback (4/5).
 ; AX returns 0/1 for empty/loaded, or 8001h..8006h for an error.
 control:
     pushf
@@ -421,13 +510,21 @@ control:
     cmp bl, [unit_count]
     jae .done
     movzx si, bl
-    shl si, 3
+    imul si, UNIT_SIZE
     add si, [units_base]
     mov [unit_pointer], si
     cmp word [control_op], 0
     je .query
+    cmp word [control_op], 3
+    je .describe
+    cmp word [control_op], 4
+    je .attach
+    cmp word [control_op], 5
+    je .detach
     mov word [control_result], 8002h
     cmp byte [si+LOCKED], 0
+    jne .done
+    cmp dword [si+AUDIO_ENTRY], 0
     jne .done
     les bx, [indos_pointer]
     cmp byte [es:bx], 0
@@ -436,6 +533,8 @@ control:
     je .eject
     cmp word [control_op], 1
     jne .done
+    cmp word [path_pointer], 10000h-INFO_SIZE
+    ja .done
     call dos_enter
     call mount_image
     call dos_leave
@@ -454,6 +553,51 @@ control:
     inc ax
 .state:
     mov [control_result], ax
+    jmp .done
+.describe:
+    cmp word [si+HANDLE], 0ffffh
+    je .done
+    les di, [path_pointer]
+    cmp di, 10000h-INFO_SIZE
+    ja .done
+    push si
+    add si, IMAGE_PATH
+    mov cx, 128
+    rep movsb
+    pop si
+    push si
+    add si, STRIDE
+    mov cx, 4
+    rep movsw
+    pop si
+    mov ax, [si+TRACK_COUNT]
+    stosw
+    push si
+    add si, TRACKS
+    mov cx, MAX_TRACKS*TRACK_SIZE/2
+    rep movsw
+    pop si
+    mov eax, [si+DISC_SECTORS]
+    stosd
+    mov word [control_result], 0
+    jmp .done
+.attach:
+    cmp word [si+HANDLE], 0ffffh
+    je .done
+    cmp dword [si+AUDIO_ENTRY], 0
+    jne .done
+    mov eax, [path_pointer]
+    test eax, eax
+    jz .done
+    mov [si+AUDIO_ENTRY], eax
+    mov word [control_result], 0
+    jmp .done
+.detach:
+    mov eax, [path_pointer]
+    cmp eax, [si+AUDIO_ENTRY]
+    jne .done
+    mov dword [si+AUDIO_ENTRY], 0
+    mov word [control_result], 0
 .done:
     cli
     mov ax, [old_ss]
@@ -498,9 +642,72 @@ mount_image:
     movzx edx, dx
     shl edx, 16
     or eax, edx
-    test eax, 800007ffh
+    test eax, 80000000h
     jnz .reject
-    shr eax, 11
+    les di, [path_pointer]
+    movzx ecx, word [es:di+INFO_STRIDE]
+    cmp cx, 2048
+    je .iso_format
+    cmp cx, 2352
+    jne .reject
+    cmp word [es:di+INFO_PAYLOAD], 16
+    jne .reject
+    jmp .format_ok
+.iso_format:
+    cmp word [es:di+INFO_PAYLOAD], 0
+    jne .reject
+    cmp word [es:di+INFO_COUNT], 1
+    jne .reject
+.format_ok:
+    mov [candidate_stride], cx
+    mov dx, [es:di+INFO_PAYLOAD]
+    mov [candidate_payload], dx
+    xor edx, edx
+    div ecx
+    test edx, edx
+    jnz .reject
+    mov [candidate_total], eax
+    mov [candidate_limit], eax
+    mov eax, [es:di+INFO_ORIGIN]
+    mov [candidate_origin], eax
+    mov ax, [es:di+INFO_COUNT]
+    test ax, ax
+    jz .reject
+    cmp ax, MAX_TRACKS
+    ja .reject
+    mov [candidate_count], ax
+    cmp byte [es:di+INFO_TRACKS+TRACK_CONTROL], 40h
+    jne .reject
+    mov eax, [es:di+INFO_TRACKS+TRACK_START]
+    cmp eax, [candidate_origin]
+    jne .reject
+    mov cx, [candidate_count]
+    add di, INFO_TRACKS
+    xor ebx, ebx
+.validate_track:
+    mov eax, [es:di+TRACK_INDEX0]
+    cmp eax, ebx
+    jb .reject
+    cmp eax, [es:di+TRACK_START]
+    ja .reject
+    mov eax, [es:di+TRACK_START]
+    cmp eax, [candidate_total]
+    jae .reject
+    mov ebx, eax
+    inc ebx
+    mov al, [es:di+TRACK_CONTROL]
+    and al, 0bfh
+    jnz .reject
+    add di, TRACK_SIZE
+    loop .validate_track
+    cmp word [candidate_count], 1
+    je .data_limit
+    les di, [path_pointer]
+    mov eax, [es:di+INFO_TRACKS+TRACK_SIZE+TRACK_INDEX0]
+    mov [candidate_limit], eax
+.data_limit:
+    mov eax, [candidate_limit]
+    sub eax, [candidate_origin]
     cmp eax, 18
     jb .reject
     mov [candidate_sectors], eax
@@ -508,7 +715,11 @@ mount_image:
 .descriptor:
     mov bx, [candidate]
     mov eax, [descriptor_sector]
-    shl eax, 11
+    add eax, [candidate_origin]
+    movzx edx, word [candidate_stride]
+    imul eax, edx
+    movzx edx, word [candidate_payload]
+    add eax, edx
     mov edx, eax
     shr eax, 16
     mov cx, ax
@@ -592,6 +803,35 @@ mount_image:
     mov [si+HANDLE], ax
     mov eax, [candidate_sectors]
     mov [si+SECTORS], eax
+    mov eax, [candidate_total]
+    mov [si+DISC_SECTORS], eax
+    mov ax, [candidate_stride]
+    mov [si+STRIDE], ax
+    mov ax, [candidate_payload]
+    mov [si+PAYLOAD], ax
+    mov eax, [candidate_origin]
+    mov [si+ORIGIN], eax
+    mov ax, [candidate_count]
+    mov [si+TRACK_COUNT], ax
+    mov di, si
+    add di, IMAGE_PATH
+    push ds
+    pop es
+    lds si, [path_pointer]
+    mov cx, 128
+    rep movsb
+    push cs
+    pop ds
+    mov di, [unit_pointer]
+    add di, TRACKS
+    lds si, [path_pointer]
+    add si, INFO_TRACKS
+    mov cx, [cs:candidate_count]
+    imul cx, TRACK_SIZE
+    rep movsb
+    push cs
+    pop ds
+    mov si, [unit_pointer]
     mov byte [si+CHANGED], 0ffh
     mov word [control_result], 0
     ret
@@ -760,6 +1000,11 @@ install:
     stosw
     mov ax, 00ffh
     stosw
+    push cx
+    xor ax, ax
+    mov cx, (UNIT_SIZE-8)/2
+    rep stosw
+    pop cx
     loop .init_unit
     mov ah, 34h
     int 21h
