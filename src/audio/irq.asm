@@ -22,13 +22,16 @@ virtual_irq_reset:
 virtual_irq_tick:
     cmp byte [game_active], 0
     je .done
-    cmp byte [dma_masked], 0
+    mov si, [game_dma]
+    cmp byte [si+DMA_MASK], 0
     jne .done
     call game_elapsed
     movzx ecx, word [game_rate]
     mul ecx
     mov ecx, 44100
     div ecx
+    mov cl, [game_frame_shift]
+    shl eax, cl
     xor edx, edx
     movzx ecx, word [game_block_bytes]
     div ecx
@@ -37,7 +40,8 @@ virtual_irq_tick:
     mov [virtual_block_seen], eax
     cmp byte [virtual_dsp_irq], 0
     jne .done
-    mov byte [virtual_dsp_irq], 1
+    mov al, [game_irq_bit]
+    mov [virtual_dsp_irq], al
     mov byte [virtual_pic_request], 20h
 .done:
     ret

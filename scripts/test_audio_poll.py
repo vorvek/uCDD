@@ -7,7 +7,7 @@ import subprocess
 
 from dos_disk import Fat16
 from test_audio_pm import ROOT, RUN, make_disk, prepare_tests, sha256
-from test_audio_quake import separate_cd
+from test_audio_quake import separate_cd, verify_cd_continuity
 
 
 def main():
@@ -49,14 +49,12 @@ def main():
         report.write_text(json.dumps(evidence, indent=2) + '\n')
         if result.returncode or 'stop: TestExit { code: 0 }' not in log:
             raise SystemExit(f'The polling client failed. See {name}.log.')
-        _, _, errors, _, changes = separate_cd(wav)
+        _, _, errors, phases, changes = separate_cd(wav)
         row['cd_phase_changes'] = changes
         report.write_text(json.dumps(evidence, indent=2) + '\n')
-        # The emulator capture can repeat one frame; a mixer half is 512 frames.
-        slips = sum(min(change['phase_change_frames'], 4096-change['phase_change_frames'])
-                    for change in changes)
-        if slips > 1 or sum(error < 4 for error in errors) < 200:
-            raise ValueError('The CD position changed or the capture is too short.')
+        verify_cd_continuity(errors, phases, changes)
+        if sum(error < 4 for error in errors) < 200:
+            raise ValueError('The CD capture is too short.')
         row['passed'] = True
         report.write_text(json.dumps(evidence, indent=2) + '\n')
         print(f'The polling client test passed: {name}')

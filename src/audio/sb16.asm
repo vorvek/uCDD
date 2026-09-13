@@ -151,31 +151,35 @@ sb_start:
     cli
     mov al, [dma_channel]
     or al, 4
-    out 0d4h, al
+    mov dx, 0d4h
+    call physical_write
     xor al, al
-    out 0d8h, al
+    mov dx, 0d8h
+    call physical_write
     movzx eax, word [output_segment]
     shl eax, 4
     mov ebx, eax
     shr eax, 1
     mov dx, [dma_address_port]
-    out dx, al
+    call physical_write
     mov al, ah
-    out dx, al
+    call physical_write
     shr ebx, 16
     mov al, bl
     mov dx, [dma_page_port]
-    out dx, al
+    call physical_write
     mov al, (RING_WORDS-1) & 0ffh
     mov dx, [dma_count_port]
-    out dx, al
+    call physical_write
     mov al, (RING_WORDS-1) >> 8
-    out dx, al
+    call physical_write
     mov al, [dma_channel]
     or al, 58h
-    out 0d6h, al
+    mov dx, 0d6h
+    call physical_write
     mov al, [dma_channel]
-    out 0d4h, al
+    mov dx, 0d4h
+    call physical_write
     sti
     mov al, 41h
     call dsp_write
@@ -204,7 +208,8 @@ sb_stop:
     call dsp_write
     mov al, [dma_channel]
     or al, 4
-    out 0d4h, al
+    mov dx, 0d4h
+    call physical_write
     mov dx, [sb_base]
     add dx, 0fh
     call physical_read

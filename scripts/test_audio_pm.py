@@ -26,7 +26,7 @@ def sha256(path):
 
 
 def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False,
-              onset=False, quiet=False, refill=None, launcher=False):
+              onset=False, quiet=False, refill=None, launcher=False, dma_state=False):
     with zipfile.ZipFile(CACHE / 'FD14-LiteUSB.zip') as archive:
         disk = Fat16(archive.read('FD14LITE.img'))
     kernel, command = disk.read('KERNEL.SYS'), disk.read('COMMAND.COM')
@@ -57,10 +57,14 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
         client = 'ALAUNCH.COM'
         external = ('AEXTLQ.COM' if quiet else 'AEXTLEG.COM') if refill == 'LEGACY' else (
             'AEXTQUI.COM' if quiet else 'AEXT.COM')
+        if refill == 'STEREO':
+            external = 'ASTQUIET.COM' if quiet else 'ASTEREO.COM'
         disk.add('GAME.COM', (ROOT / 'build' / external).read_bytes())
     disk.add('APM.COM', (ROOT / 'build' / client).read_bytes())
     if alternate:
         disk.add('UCDD.CFG', b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes([7, 3, 6, 0]))
+    if dma_state:
+        disk.add('ADMA.COM', (ROOT / 'build/ADMA.COM').read_bytes())
     disk.add('FDCONFIG.SYS', (
         'DEVICE=C:\\JEMMEX.EXE NOEMS\r\nDOS=LOW\r\nFILES=40\r\nBUFFERS=10\r\n'
         'SHELL=C:\\COMMAND.COM C:\\ /E:512 /P\r\n').encode())
@@ -68,7 +72,8 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
         'APSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'ASHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n')
     disk.add('AUTOEXEC.BAT', (
-        '@ECHO OFF\r\nJLOAD QPIEMU.DLL\r\nHDPMI32I -r\r\n'
+        '@ECHO OFF\r\n' + ('ADMA\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n' if dma_state else '') +
+        'JLOAD QPIEMU.DLL\r\nHDPMI32I -r\r\n'
         'AISTATE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'APSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n' + repeat +
         'PASS\r\n:FAIL\r\nFAIL\r\n').encode())

@@ -92,7 +92,12 @@ read_dsp_irq:
     out dx, al
     inc dx
     in al, dx
+%ifdef CLIENT_STEREO
+    and al, 2
+    shr al, 1
+%else
     and al, 1
+%endif
     ret
 
 read_irr:
@@ -258,7 +263,14 @@ game_irq:
     jne .error
     cmp byte [hold_ack], 0
     jne .eoi
+%ifdef CLIENT_STEREO
     mov dx, 22eh
+    in al, dx
+    call read_dsp_irq
+    cmp al, 1
+    jne .error
+%endif
+    mov dx, CLIENT_DSP_ACK
     in al, dx
     call read_dsp_irq
     test al, al
@@ -287,7 +299,7 @@ game_irq:
     iretd
 .error:
     mov byte [event_fault], 1
-    mov dx, 22eh
+    mov dx, CLIENT_DSP_ACK
     in al, dx
     mov al, 65h
     out 20h, al

@@ -27,6 +27,7 @@ def build_audio():
     assemble('tests/audio_pm.asm', 'AIPM.COM', ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9'))
     assemble('tests/audio_pm.asm', 'AIPMNEG.COM', ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'NO_DELIVERY=1'))
     assemble('tests/audio_irq_state.asm', 'AISTATE.COM')
+    assemble('tests/audio_dma_state.asm', 'ADMA.COM')
     assemble('tests/audio_share.asm', 'AIWRAP.COM',
              ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'PERIOD_SEED=65520'))
     onset = ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'ONSET_TEST=1')
@@ -44,8 +45,12 @@ def build_audio():
         assemble('tests/audio_pm.asm', name, (*refill, 'EXTERNAL_BRIDGE=1', 'LEGACY_DSP=1',
                  'CLIENT_RING_BYTES=4096', 'CLIENT_BLOCK_BYTES=1024', 'CLIENT_RATE=10000', *extra))
     assemble('tests/audio_launch.asm', 'AQUAKE.COM', ('QUAKE_TEST=1',))
+    assemble('tests/audio_launch.asm', 'AQUAKE8.COM', ('QUAKE_TEST=1', 'QUAKE_LEGACY=1'))
     assemble('tests/audio_pm.asm', 'APOLL.COM', (*refill, 'EXTERNAL_BRIDGE=1', 'POLL_TEST=1',
              'CLIENT_RING_BYTES=4096', 'CLIENT_BLOCK_BYTES=1024', 'CLIENT_RATE=22050'))
+    for name, quiet in (('ASTEREO.COM', ()), ('ASTQUIET.COM', ('STREAM_SILENT=1',))):
+        assemble('tests/audio_pm.asm', name, (*refill, 'EXTERNAL_BRIDGE=1', 'CLIENT_STEREO=1',
+                 'CLIENT_RING_BYTES=8192', 'CLIENT_BLOCK_BYTES=2048', 'CLIENT_RATE=22050', *quiet))
     assemble('tests/audio_share.asm', 'AQSHARE.COM',
              ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'QUAKE_TEST=1'))
     for name, ring, block, rate in (('4K', 4096, 1024, 22050), ('2BUF', 4096, 2048, 22050),

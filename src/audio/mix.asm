@@ -19,17 +19,33 @@ mix_half:
     mov fs, [game_segment]
 .frame:
     xor edx, edx
+    xor esi, esi
     cmp byte [game_active], 0
     je .sum
-    cmp byte [dma_masked], 0
+    mov si, [game_dma]
+    cmp byte [si+DMA_MASK], 0
+    mov si, 0
     jne .sum
     mov eax, ebp
     shr eax, 16
+    cmp byte [game_frame_shift], 0
+    jne .stereo
     mov si, ax
     add si, [game_offset]
     movzx edx, byte [fs:si]
     sub edx, 128
     shl edx, 7
+    mov esi, edx
+    jmp .advance
+.stereo:
+    shl ax, 2
+    add ax, [game_offset]
+    mov si, ax
+    movsx edx, word [fs:si]
+    movsx esi, word [fs:si+2]
+    sar edx, 1
+    sar esi, 1
+.advance:
     add ebp, [game_step]
     cmp ebp, [game_limit]
     jb .sum
@@ -42,12 +58,13 @@ mix_half:
     stosw
     movsx eax, word [cd_samples+bx+2]
     sar eax, 1
-    add eax, edx
+    add eax, esi
     call .clip
     stosw
     add bx, 4
     and bx, 16383
-    loop .frame
+    dec cx
+    jnz .frame
     mov [cd_position], bx
     mov [game_phase], ebp
     ret

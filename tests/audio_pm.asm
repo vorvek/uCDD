@@ -8,6 +8,25 @@ org 100h
 %ifndef CLIENT_BLOCK_BYTES
 %define CLIENT_BLOCK_BYTES 4096
 %endif
+%ifdef CLIENT_STEREO
+%define CLIENT_DMA_UNIT 2
+%define CLIENT_DMA_ADDRESS_PORT 0c4h
+%define CLIENT_DMA_COUNT_PORT 0c6h
+%define CLIENT_DMA_PAGE_PORT 8bh
+%define CLIENT_DMA_MASK_PORT 0d4h
+%define CLIENT_DMA_MODE_PORT 0d6h
+%define CLIENT_DMA_FLIP_PORT 0d8h
+%define CLIENT_DSP_ACK 22fh
+%else
+%define CLIENT_DMA_UNIT 1
+%define CLIENT_DMA_ADDRESS_PORT 2
+%define CLIENT_DMA_COUNT_PORT 3
+%define CLIENT_DMA_PAGE_PORT 83h
+%define CLIENT_DMA_MASK_PORT 0ah
+%define CLIENT_DMA_MODE_PORT 0bh
+%define CLIENT_DMA_FLIP_PORT 0ch
+%define CLIENT_DSP_ACK 22eh
+%endif
 %ifdef STREAM_TEST
 %define TIMED_TEST 1
 %endif
@@ -48,8 +67,13 @@ cleanup_fault db 0
 playing db 0
 last_count dw 0
 trap_ports:
+%define PORT_RANGES 1
 %include "audio/ports.inc"
-port_count equ ($-trap_ports)/2
+%undef PORT_RANGES
+port_count equ ($-trap_ports)/4
+%if port_count > 16
+%error The HDPMI port range limit is 16.
+%endif
 trap_handles times port_count dd 0
 align 4
 port_regs times 50 db 0
@@ -200,8 +224,8 @@ protected_start:
     mov byte [stage], '3'
     xor ebp, ebp
 .trap:
-    movzx esi, word [trap_ports+ebp*2]
-    mov edi, 1
+    movzx esi, word [trap_ports+ebp*4]
+    movzx edi, word [trap_ports+ebp*4+2]
     mov cx, cs
     mov bx, ds
     mov edx, port_bridge
@@ -471,28 +495,51 @@ play:
 %endif
     mov byte [playing], 1
     push eax
-    mov al, 5
-    out 0ah, al
+%ifdef CLIENT_STEREO
     xor al, al
     out 0ch, al
+    mov al, 34h
+    out 3, al
+%endif
+    mov al, 5
+    out CLIENT_DMA_MASK_PORT, al
+    xor al, al
+    out CLIENT_DMA_FLIP_PORT, al
     movzx eax, word [buffer_segment]
     shl eax, 4
     add eax, [buffer_offset]
     mov ebx, eax
-    out 2, al
+%ifdef CLIENT_STEREO
+    shr eax, 1
+%endif
+    out CLIENT_DMA_ADDRESS_PORT, al
     mov al, ah
-    out 2, al
+    out CLIENT_DMA_ADDRESS_PORT, al
     shr ebx, 16
     mov al, bl
-    out 83h, al
-    mov al, (CLIENT_RING_BYTES-1) & 0ffh
+    out CLIENT_DMA_PAGE_PORT, al
+    mov al, (CLIENT_RING_BYTES/CLIENT_DMA_UNIT-1) & 0ffh
+    out CLIENT_DMA_COUNT_PORT, al
+    mov al, (CLIENT_RING_BYTES/CLIENT_DMA_UNIT-1) >> 8
+    out CLIENT_DMA_COUNT_PORT, al
+%ifdef CLIENT_STEREO
+    mov al, 12h
     out 3, al
-    mov al, (CLIENT_RING_BYTES-1) >> 8
-    out 3, al
+    xor al, al
+    out 0ch, al
+    in al, 3
+    cmp al, 34h
+    jne failed
+    in al, 3
+    cmp al, 12h
+    jne failed
+    xor al, al
+    out 0dch, al
+%endif
     mov al, 59h
-    out 0bh, al
+    out CLIENT_DMA_MODE_PORT, al
     mov al, 1
-    out 0ah, al
+    out CLIENT_DMA_MASK_PORT, al
     pop ebx
     mov dx, 22ch
 %ifdef LEGACY_DSP
@@ -518,13 +565,21 @@ play:
     out dx, al
     mov al, bl
     out dx, al
+%ifdef CLIENT_STEREO
+    mov al, 0b6h
+%else
     mov al, 0c6h
+%endif
     out dx, al
+%ifdef CLIENT_STEREO
+    mov al, 30h
+%else
     xor al, al
+%endif
     out dx, al
-    mov al, (CLIENT_BLOCK_BYTES-1) & 0ffh
+    mov al, (CLIENT_BLOCK_BYTES/CLIENT_DMA_UNIT-1) & 0ffh
     out dx, al
-    mov al, (CLIENT_BLOCK_BYTES-1) >> 8
+    mov al, (CLIENT_BLOCK_BYTES/CLIENT_DMA_UNIT-1) >> 8
     out dx, al
     ret
 

@@ -88,13 +88,17 @@ output_clock:
     mov [last_clock], eax
     ret
 .count:
+    push bx
     mov al, 0
-    out 0d8h, al
+    mov dx, 0d8h
+    call physical_write
     mov dx, [dma_count_port]
-    in al, dx
+    call physical_read
+    mov bl, al
+    call physical_read
     mov ah, al
-    in al, dx
-    xchg al, ah
+    mov al, bl
+    pop bx
     ret
 
 game_elapsed:
@@ -124,6 +128,7 @@ port_callback:
     inc dword [port_calls]
     test cl, 18h
     jnz .unsupported
+    call dma_port
     test cl, 4
     jz .read
 %ifdef VIRTUAL_IRQ
@@ -178,7 +183,7 @@ port_callback:
     mov [virtual_mixer+bx], al
     jmp .done
 .flip_reset:
-    mov byte [dma_flip], 0
+    mov byte [si+DMA_FLIP], 0
     jmp .done
 .mask:
     mov ah, al
@@ -186,7 +191,7 @@ port_callback:
     cmp ah, 1
     jne .unsupported
     and al, 4
-    mov [dma_masked], al
+    mov [si+DMA_MASK], al
     jmp .done
 .mode:
     cmp al, 59h
@@ -195,20 +200,21 @@ port_callback:
 .clear_mask:
     test al, al
     jnz .unsupported
-    mov byte [dma_masked], 0
+    mov byte [si+DMA_MASK], 0
     jmp .done
 .page:
-    mov [dma_page], al
+    mov [si+DMA_PAGE], al
     jmp .done
 .address:
-    mov si, dma_address
+    mov bx, DMA_ADDRESS
     jmp .dma_word
 .count:
-    mov si, dma_count
+    mov bx, DMA_COUNT
 .dma_word:
-    movzx bx, byte [dma_flip]
+    movzx cx, byte [si+DMA_FLIP]
+    add bx, cx
     mov [si+bx], al
-    xor byte [dma_flip], 1
+    xor byte [si+DMA_FLIP], 1
     jmp .done
 .command:
     cmp byte [arguments], 0
@@ -224,8 +230,12 @@ port_callback:
     je .legacy_start
     cmp al, 0c6h
     je .play
+    cmp al, 0b6h
+    je .play
     cmp al, 0d0h
-    je .pause
+    je .pause8
+    cmp al, 0d5h
+    je .pause16
     cmp al, 0d3h
     je .pause
     cmp al, 0d1h
@@ -235,6 +245,13 @@ port_callback:
     mov word [reply], 0504h
     mov byte [reply_count], 2
     jmp .done
+.pause8:
+    cmp byte [game_frame_shift], 0
+    jne .done
+    jmp .pause
+.pause16:
+    cmp byte [game_frame_shift], 2
+    jne .done
 .pause:
     mov byte [game_active], 0
     mov byte [game_start_pending], 0
@@ -249,6 +266,7 @@ port_callback:
     mov byte [arguments], 1
     jmp .done
 .legacy_start:
+    mov byte [pending_frame_shift], 0
     mov ax, [legacy_block]
     jmp .validate_start
 .argument:
@@ -279,6 +297,14 @@ port_callback:
 .play_argument:
     cmp byte [arguments], 3
     jne .length
+    mov byte [pending_frame_shift], 0
+    cmp byte [dsp_command], 0b6h
+    jne .mono_mode
+    cmp al, 30h
+    jne .unsupported
+    mov byte [pending_frame_shift], 2
+    jmp .argument_done
+.mono_mode:
     test al, al
     jnz .unsupported
     jmp .argument_done
@@ -310,13 +336,23 @@ port_callback:
     mov ah, al
     mov al, [block_low]
 .validate_start:
-    cmp ax, [dma_count]
+    mov si, dma8
+    mov cl, 0
+    cmp byte [pending_frame_shift], 0
+    je .dma_selected
+    mov si, dma16
+    mov cl, 1
+.dma_selected:
+    cmp ax, [si+DMA_COUNT]
     ja .unsupported
-    inc ax
-    cmp ax, 512
+    movzx edx, ax
+    inc edx
+    shl edx, cl
+    cmp edx, 512
     jb .unsupported
-    movzx ebx, word [dma_count]
+    movzx ebx, word [si+DMA_COUNT]
     inc ebx
+    shl ebx, cl
     cmp ebx, 512
     jb .unsupported
     cmp ebx, 32768
@@ -325,29 +361,63 @@ port_callback:
     dec ecx
     test ebx, ecx
     jnz .unsupported
-    movzx edx, ax
+    test edx, 3
+    jz .block_aligned
+    cmp byte [pending_frame_shift], 0
+    jne .unsupported
+.block_aligned:
     cmp edx, ebx
     je .buffer_address
-    mov esi, ebx
-    sub esi, edx
-    imul esi, 44100
+    mov eax, ebx
+    sub eax, edx
+    mov cl, [pending_frame_shift]
+    shr eax, cl
+    imul eax, 44100
     movzx ecx, word [game_rate]
     imul ecx, PERIOD_FRAMES*2
-    cmp esi, ecx
+    cmp eax, ecx
     jb .unsupported
 .buffer_address:
-    movzx esi, word [dma_address]
-    add esi, ebx
-    cmp esi, 65536
+    movzx eax, word [si+DMA_ADDRESS]
+    cmp byte [pending_frame_shift], 0
+    je .byte_address
+    shl eax, 1
+    ; High DMA uses a 128 KiB window; page bit zero is ignored.
+    movzx ecx, byte [si+DMA_PAGE]
+    and cl, 0feh
+    shl ecx, 16
+    jmp .address_window
+.byte_address:
+    movzx ecx, byte [si+DMA_PAGE]
+    shl ecx, 16
+.address_window:
+    add ecx, eax
+    add eax, ebx
+    cmp byte [pending_frame_shift], 0
+    jne .word_window
+    cmp eax, 65536
     ja .unsupported
-    movzx esi, byte [dma_page]
-    shl esi, 16
-    mov si, [dma_address]
-    mov ecx, esi
-    add ecx, ebx
-    cmp ecx, 0a0000h
+    jmp .address_limit
+.word_window:
+    cmp eax, 131072
     ja .unsupported
+.address_limit:
+    mov eax, ecx
+    add eax, ebx
+    cmp eax, 0a0000h
+    ja .unsupported
+    mov [game_dma], si
+    mov esi, ecx
     mov [game_block_bytes], dx
+    mov cl, [pending_frame_shift]
+    mov [game_frame_shift], cl
+    mov al, 1
+    cmp cl, 0
+    je .irq_bit
+    inc al
+.irq_bit:
+    mov [game_irq_bit], al
+    shr ebx, cl
     shl ebx, 16
     mov [game_limit], ebx
     mov bx, si
@@ -377,6 +447,8 @@ port_callback:
     je .ready
     cmp dx, 22eh
     je .status
+    cmp dx, 22fh
+    je .status16
     cmp dx, 22ah
     je .reply
     cmp dx, 225h
@@ -389,12 +461,18 @@ port_callback:
     jmp .result
 .status:
 %ifdef VIRTUAL_IRQ
-    mov byte [virtual_dsp_irq], 0
+    and byte [virtual_dsp_irq], 0feh
 %endif
     xor al, al
     cmp byte [reply_count], 0
     je .result
     mov al, 80h
+    jmp .result
+.status16:
+%ifdef VIRTUAL_IRQ
+    and byte [virtual_dsp_irq], 0fdh
+%endif
+    xor al, al
     jmp .result
 .reply:
     mov al, [reply]
@@ -415,8 +493,10 @@ port_callback:
     mov al, [virtual_mixer+bx]
     jmp .result
 .dma_read:
-    cmp byte [dma_flip], 0
+    cmp byte [si+DMA_FLIP], 0
     jne .count_high
+    cmp si, [game_dma]
+    jne .idle_count
     cmp byte [game_active], 0
     je .idle_count
     call game_elapsed
@@ -424,20 +504,24 @@ port_callback:
     mul ecx
     mov ecx, 44100
     div ecx
-    and ax, [dma_count]
-    mov bx, [dma_count]
+    cmp byte [game_frame_shift], 0
+    je .count_units
+    shl eax, 1
+.count_units:
+    and ax, [si+DMA_COUNT]
+    mov bx, [si+DMA_COUNT]
     sub bx, ax
     jmp .snapshot
 .idle_count:
-    mov bx, [dma_count]
+    mov bx, [si+DMA_COUNT]
 .snapshot:
-    mov [count_snapshot], bx
+    mov [si+DMA_SNAPSHOT], bx
     mov al, bl
     jmp .count_result
 .count_high:
-    mov al, [count_snapshot+1]
+    mov al, [si+DMA_SNAPSHOT+1]
 .count_result:
-    xor byte [dma_flip], 1
+    xor byte [si+DMA_FLIP], 1
     jmp .result
 %ifdef VIRTUAL_IRQ
 .pic_write:
@@ -456,6 +540,36 @@ port_callback:
     clc
     retf
 
+dma_port:
+    mov si, dma8
+    cmp dx, 8bh
+    je .page
+    cmp dx, 0c4h
+    je .address
+    cmp dx, 0c6h
+    je .count
+    cmp dx, 0d4h
+    jb .done
+    cmp dx, 0dch
+    ja .done
+    test dl, 1
+    jnz .done
+    sub dx, 0c0h
+    shr dx, 1
+    jmp .high
+.page:
+    mov dx, 83h
+    jmp .high
+.address:
+    mov dx, 2
+    jmp .high
+.count:
+    mov dx, 3
+.high:
+    mov si, dma16
+.done:
+    ret
+
 trap_ports:
 %include "audio/ports.inc"
     dw 0
@@ -465,17 +579,19 @@ old_callback dd 0
 port_calls dd 0
 last_clock dd 0
 game_start_pending db 0 ; 1: wait for mixing, 2: wait for output.
+game_dma dw dma8
+game_frame_shift db 0
+pending_frame_shift db 0
+game_irq_bit db 1
 game_block_bytes dw 4096
 virtual_resets dw 0
 virtual_starts dw 0
 virtual_mixer_index db 0
 virtual_mixer times 256 db 0
-dma_flip db 0
-dma_masked db 1
-dma_page db 0
-dma_address dw 0
-dma_count dw 0
-count_snapshot dw 0
+dma8 db 0,1,0,0
+    dw 0,0,0
+dma16 db 0,1,0,0
+    dw 0,0,0
 dsp_command db 0
 arguments db 0
 block_low db 0

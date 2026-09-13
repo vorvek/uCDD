@@ -25,8 +25,13 @@ bridge_fault db 0
 cleanup_fault db 0
 child_result db 1
 trap_ports:
+%define PORT_RANGES 1
 %include "audio/ports.inc"
-port_count equ ($-trap_ports)/2
+%undef PORT_RANGES
+port_count equ ($-trap_ports)/4
+%if port_count > 16
+%error The HDPMI port range limit is 16.
+%endif
 trap_handles times port_count dd 0
 port_regs times 50 db 0
 irq_regs times 50 db 0
@@ -124,8 +129,8 @@ protected_start:
     mov byte [stage], '3'
     xor ebp, ebp
 .trap:
-    movzx esi, word [trap_ports+ebp*2]
-    mov edi, 1
+    movzx esi, word [trap_ports+ebp*4]
+    movzx edi, word [trap_ports+ebp*4+2]
     mov cx, cs
     mov bx, ds
     mov edx, port_bridge
@@ -233,7 +238,11 @@ cleanup:
 %ifdef QUAKE_TEST
 child_name db 'QUAKE.EXE',0
 command_tail db command_end-command_args
+%ifdef QUAKE_LEGACY
 command_args db ' -dsp 2 -nocdaudio -noserial -noipx -noudp -condebug'
+%else
+command_args db ' -nocdaudio -noserial -noipx -noudp -condebug'
+%endif
 command_end db 13
 %else
 child_name db 'GAME.COM',0

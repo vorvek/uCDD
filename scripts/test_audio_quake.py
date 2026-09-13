@@ -31,14 +31,14 @@ def pak_file(pak, name):
     raise ValueError(f'The PAK member is missing: {name}')
 
 
-def quake_disk(game, pak, alternate=False, quiet=False):
+def quake_disk(game, pak, alternate=False, quiet=False, legacy=False):
     source = Fat16(make_disk(refill='4K', launcher=True, alternate=alternate))
     files = {name: source.read(name) for name in source.directory()}
-    files['APM.COM'] = (ROOT / 'build/AQUAKE.COM').read_bytes()
+    files['APM.COM'] = (ROOT / 'build' / ('AQUAKE8.COM' if legacy else 'AQUAKE.COM')).read_bytes()
     files['APSHARE.COM'] = (ROOT / 'build/AQSHARE.COM').read_bytes()
     files['QUAKE.EXE'] = game
     files['AUTOEXEC.BAT'] = files['AUTOEXEC.BAT'].replace(
-        b'APSHARE\r\n', b'SET BLASTER=A220 I5 D1 T6\r\nAPSHARE\r\n', 1)
+        b'APSHARE\r\n', b'SET BLASTER=A220 I5 D1 H5 T6\r\nAPSHARE\r\n', 1)
     config = (b'ambient_level 0\nmap start\necho UCDD_QUAKE_READY\n' + b'wait\n'*10 +
               (b'volume 0\n' if quiet else b'volume 0.7\n') +
               b'stopsound\nplay misc/menu1\n' + b'wait\n'*100 +
@@ -88,21 +88,30 @@ def separate_cd(path):
     return active, game, errors, phases, changes
 
 
-def verify_cd_continuity(errors, changes):
+def verify_cd_continuity(errors, phases, changes):
     valid = [i for i, error in enumerate(errors) if i and error < 4]
-    if len(valid) < 2 or changes or max(errors[valid[0]:valid[-1]+1]) >= 4:
+    slips = sum(min(change['phase_change_frames'], 4096-change['phase_change_frames'])
+                for change in changes)
+    if len(valid) < 2 or slips > 1:
         raise ValueError('The CD signal is not continuous.')
+    for i in range(valid[0], valid[-1]+1):
+        if errors[i] < 4:
+            continue
+        # One capture-frame slip can straddle a correlation window.
+        if (slips != 1 or errors[i-1] >= 4 or errors[i+1] >= 4 or
+                (phases[i+1]-phases[i-1]) % 4096 not in (1, 4095)):
+            raise ValueError('The CD signal is not continuous.')
 
 
-def verify_waveform(path, sound, quiet):
+def verify_waveform(path, sound, quiet, legacy=False):
     active, game, errors, phases, changes = separate_cd(path)
-    verify_cd_continuity(errors, changes)
+    verify_cd_continuity(errors, phases, changes)
     window = 256
     with wave.open(io.BytesIO(sound)) as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 1, 11025):
             raise ValueError('The reference sound format is not supported.')
         samples = np.frombuffer(source.readframes(source.getnframes()), dtype=np.uint8).astype(float)-128
-    rate = 1000000//(256-((65536-256000000//11025) >> 8))
+    rate = 1000000//(256-((65536-256000000//11025) >> 8)) if legacy else 11025
     step = (rate << 16)//44100
     reference = samples[np.arange(len(samples)*65536//step)*step >> 16].copy()
     reference -= np.mean(reference)
@@ -128,6 +137,7 @@ def verify_waveform(path, sound, quiet):
         if max(errors[first:last]) > 2 or len(set(phases[first:last])) != 1:
             raise ValueError('The CD signal changed during the reference sound.')
     return dict(reference_correlation=score, reference_gain=gain, source_rate=rate,
+                capture_phase_tolerance_frames=1,
                 reference_seconds=len(reference)/44100, match_seconds=(active+match)/44100,
                 cd_phase_changes=changes)
 
@@ -137,14 +147,17 @@ def main():
     parser.add_argument('--izarra-source', type=Path, required=True)
     parser.add_argument('--quake-dir', type=Path, required=True)
     parser.add_argument('--cpu', choices=('486', '586'), default='586')
+    parser.add_argument('--legacy', action='store_true', help='Test the 8-bit mono DSP path.')
     args = parser.parse_args()
     game_path, pak_path = args.quake_dir / 'QUAKE.EXE', args.quake_dir / 'ID1/PAK0.PAK'
     game, pak = game_path.read_bytes(), pak_path.read_bytes()
     sound = pak_file(pak, 'sound/misc/menu1.wav')
     executable = prepare_tests(args.izarra_source)
-    directory = RUN / 'quake'
+    directory = RUN / ('quake-legacy' if args.legacy else 'quake')
     directory.mkdir(parents=True, exist_ok=True)
     evidence = dict(passed=False, runs=[], cpu=args.cpu, backend='interpreter', memory_mib=16,
+                    source_bits=8 if args.legacy else 16, source_channels=1 if args.legacy else 2,
+                    virtual_dma=1 if args.legacy else 5,
                     game_sha256=sha256(game_path), pak_sha256=sha256(pak_path),
                     capture_executable_sha256=sha256(executable),
                     capture_source_sha256=sha256(ROOT / 'tests/audio_capture.rs'),
@@ -152,14 +165,14 @@ def main():
                     izarra_revision=subprocess.check_output(
                         ['git', '-C', str(args.izarra_source), 'rev-parse', 'HEAD'], text=True).strip(),
                     program_sha256={name: sha256(ROOT / 'build' / name)
-                                    for name in ('AQUAKE.COM', 'AQSHARE.COM')})
+                                    for name in ('AQUAKE.COM', 'AQUAKE8.COM', 'AQSHARE.COM')})
     report = directory / 'results.json'
     report.write_text(json.dumps(evidence, indent=2) + '\n')
     env = dict(os.environ, UCDD_TEST_CPU=args.cpu, UCDD_TEST_STEPS='300000', UCDD_TEST_DISK_EXPORT='1')
     for name, alternate, quiet in (('default', False, False), ('muted', False, True),
                                    ('alternate', True, False)):
         image, wav = directory / (name+'.img'), directory / (name+'.wav')
-        image.write_bytes(quake_disk(game, pak, alternate, quiet))
+        image.write_bytes(quake_disk(game, pak, alternate, quiet, args.legacy))
         command = [str(executable), str(image), str(wav)]
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=180)
         log = result.stdout + result.stderr
@@ -173,10 +186,11 @@ def main():
         disk = Fat16(wav.with_suffix('.disk.img').read_bytes())
         console = disk.read('ID1/QCONSOLE.LOG').decode('cp437')
         (directory / (name+'.console.txt')).write_text(console, encoding='utf-8')
-        if not all(text in console for text in ('Version 2 SB startup', 'Introduction',
+        version, dma = (2, 1) if args.legacy else (4, 5)
+        if not all(text in console for text in (f'Version {version} SB startup', f'Using DMA channel {dma}', 'Introduction',
                                                 'UCDD_QUAKE_READY', 'UCDD_QUAKE_DONE')):
             raise SystemExit('The Quake test did not complete its sound sequence.')
-        row['waveform'] = verify_waveform(wav, sound, quiet)
+        row['waveform'] = verify_waveform(wav, sound, quiet, args.legacy)
         row['passed'] = True
         report.write_text(json.dumps(evidence, indent=2) + '\n')
         print(f'The Quake audio test passed: {name}')

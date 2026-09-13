@@ -10,3 +10,9 @@
 %define RING_WORDS (RING_BYTES / 2)
 %define RING_PARAS (RING_BYTES / 16)
 %define PERIOD_SCALE (4096 / PERIOD_FRAMES)
+%define DMA_FLIP 0
+%define DMA_MASK 1
+%define DMA_PAGE 2
+%define DMA_ADDRESS 4
+%define DMA_COUNT 6
+%define DMA_SNAPSHOT 8

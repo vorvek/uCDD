@@ -23,10 +23,37 @@ stream_write_block:
     add eax, [buffer_offset]
     mov edi, eax
     and edx, 15
+%ifdef CLIENT_STEREO
+    movzx eax, byte [stream_codes+edx]
+    sub eax, 128
+    shl eax, 7
+%ifdef STREAM_SILENT
+    add eax, 0
+%else
+    add eax, 57
+%endif
+    and eax, 0ffffh
+    add edx, 5
+    and edx, 15
+    movzx edx, byte [stream_codes+edx]
+    sub edx, 128
+    shl edx, 7
+%ifdef STREAM_SILENT
+    sub edx, 0
+%else
+    sub edx, 93
+%endif
+    shl edx, 16
+    or eax, edx
+    mov ecx, CLIENT_BLOCK_BYTES/4
+    cld
+    rep stosd
+%else
     mov al, [stream_codes+edx]
     mov ecx, CLIENT_BLOCK_BYTES
     cld
     rep stosb
+%endif
     pop es
     popad
     ret
@@ -35,12 +62,21 @@ stream_test:
     call reset
     mov ax, CLIENT_RATE
     call play
+%ifdef CLIENT_STEREO
+    mov dx, 22ch
+    mov al, 0d0h
+    out dx, al
+%endif
     mov al, 40h
     call test_mark
     mov cx, 24
     call wait_ticks
     mov dx, 22ch
+%ifdef CLIENT_STEREO
+    mov al, 0d5h
+%else
     mov al, 0d0h
+%endif
     out dx, al
     mov al, 50h
     call test_mark

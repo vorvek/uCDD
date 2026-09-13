@@ -1,7 +1,14 @@
 bits 16
 cpu 386
 org 100h
+%include "audio/layout.inc"
     jmp start
+
+game_dma dw dma_flip
+dma_flip db 0
+dma_masked db 0
+game_frame_shift db 0
+game_irq_bit db 1
 
 %include "audio/irq.asm"
 
@@ -85,7 +92,6 @@ physical_eois db 0
 fault db 0
 sb_irq db 5
 game_active db 0
-dma_masked db 0
 game_started dd 0
 game_rate dw 22050
 game_block_bytes dw 4096
