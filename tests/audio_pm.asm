@@ -2,6 +2,18 @@ bits 16
 cpu 386
 org 100h
 %include "audio/layout.inc"
+%ifndef CLIENT_RING_BYTES
+%define CLIENT_RING_BYTES 4096
+%endif
+%ifndef CLIENT_BLOCK_BYTES
+%define CLIENT_BLOCK_BYTES 4096
+%endif
+%ifdef STREAM_TEST
+%define TIMED_TEST 1
+%endif
+%ifdef ONSET_TEST
+%define TIMED_TEST 1
+%endif
 
     jmp start
 
@@ -144,7 +156,7 @@ protected_start:
     int 31h
     jc failed
     mov [ticks_selector], ax
-    mov bx, 512
+    mov bx, CLIENT_RING_BYTES*2/16
     mov ax, 0100h
     int 31h
     jc failed
@@ -154,16 +166,25 @@ protected_start:
     movzx edi, ax
     shl edi, 4
     neg edi
-    and edi, 4095
+    and edi, CLIENT_RING_BYTES-1
     mov [buffer_offset], edi
-    mov ecx, 4096
+    mov ecx, CLIENT_RING_BYTES
 .fill:
+%ifdef ONSET_TEST
+    mov ebx, 4096
+    sub ebx, ecx
+    mov al, [onset_samples+ebx]
+%else
     mov ebx, ecx
     neg ebx
     and ebx, 63
     mov al, [waveform+ebx]
+%endif
     stosb
     loop .fill
+%ifdef STREAM_TEST
+    call stream_init
+%endif
     push ds
     pop es
     mov eax, [parent_port]
@@ -239,6 +260,14 @@ protected_start:
 %endif
 
     mov byte [stage], '5'
+%ifdef ONSET_TEST
+    call onset_test
+    jmp check_result
+%endif
+%ifdef STREAM_TEST
+    call stream_test
+    jmp check_result
+%endif
     call reset
     mov ax, 22050
     call play
@@ -259,10 +288,13 @@ protected_start:
     mov al, 0d0h
     out dx, al
 
+check_result:
     mov byte [stage], '6'
     cmp byte [bridge_fault], 0
     jne failed
-%ifdef VIRTUAL_IRQ
+%ifdef ONSET_TEST
+    cmp dword [port_calls], 120
+%elifdef VIRTUAL_IRQ
     cmp dword [port_calls], 150
 %else
     cmp dword [port_calls], 500
@@ -282,7 +314,11 @@ protected_start:
     mov ax, 4c01h
     int 21h
 %endif
-%ifdef VIRTUAL_IRQ
+%ifdef TIMED_TEST
+    cmp dword [owned_irqs], 80
+    jb failed
+    cmp dword [owned_irqs], 160
+%elifdef VIRTUAL_IRQ
     cmp dword [owned_irqs], 65*PERIOD_SCALE
     jb failed
     cmp dword [owned_irqs], 120*PERIOD_SCALE
@@ -294,18 +330,28 @@ protected_start:
     ja failed
     cmp dword [stolen_irqs], 0
     jne failed
+%ifdef STREAM_TEST
+    jmp buffer_checked
+%endif
     mov es, [buffer_selector]
     mov edi, [buffer_offset]
-    mov ecx, 4096
+    mov ecx, CLIENT_RING_BYTES
 .check:
+%ifdef ONSET_TEST
+    mov ebx, 4096
+    sub ebx, ecx
+    mov al, [onset_samples+ebx]
+%else
     mov ebx, ecx
     neg ebx
     and ebx, 63
     mov al, [waveform+ebx]
+%endif
     cmp al, [es:edi]
     jne failed
     inc edi
     loop .check
+buffer_checked:
     call cleanup
     mov byte [stage], '7'
     cmp byte [cleanup_fault], 0
@@ -505,9 +551,9 @@ play:
     shr ebx, 16
     mov al, bl
     out 83h, al
-    mov al, 0ffh
+    mov al, (CLIENT_RING_BYTES-1) & 0ffh
     out 3, al
-    mov al, 0fh
+    mov al, (CLIENT_RING_BYTES-1) >> 8
     out 3, al
     mov al, 59h
     out 0bh, al
@@ -525,9 +571,9 @@ play:
     out dx, al
     xor al, al
     out dx, al
-    mov al, 0ffh
+    mov al, (CLIENT_BLOCK_BYTES-1) & 0ffh
     out dx, al
-    mov al, 0fh
+    mov al, (CLIENT_BLOCK_BYTES-1) >> 8
     out dx, al
     ret
 
@@ -554,6 +600,9 @@ wait_second:
     sub ax, si
     cmp ax, 19
     jb .wait
+%ifdef NO_ROUTE
+    ret
+%endif
     cmp byte [playing], 0
     je .idle
     cmp ebp, 50
@@ -566,6 +615,60 @@ wait_second:
 
 %ifdef VIRTUAL_IRQ
 %include "../tests/audio_irq_client.inc"
+%endif
+%ifdef ONSET_TEST
+onset_test:
+    mov byte [onset_index], 0
+.next:
+    call reset
+    mov ax, 22050
+    test byte [onset_index], 1
+    jz .play
+    mov ax, 11025
+.play:
+    call play
+    mov al, [onset_index]
+    add al, 40h
+    call test_mark
+    mov cx, 2
+    call wait_ticks
+    mov dx, 22ch
+    mov al, 0d0h
+    out dx, al
+    mov al, [onset_index]
+    add al, 50h
+    call test_mark
+    mov cx, 2
+    call wait_ticks
+    inc byte [onset_index]
+    cmp byte [onset_index], 6
+    jb .next
+    cmp byte [event_fault], 0
+    jne failed
+    ret
+onset_index db 0
+onset_samples:
+%ifdef ONSET_SILENT
+    incbin "../build/QUIET.PCM"
+%else
+    incbin "../build/ONSET.PCM"
+%endif
+%endif
+%ifdef STREAM_TEST
+%include "../tests/audio_refill_client.inc"
+%endif
+%ifdef TIMED_TEST
+test_mark:
+    pushad
+    mov bl, al
+    mov al, 26
+    out 0e4h, al
+    mov al, bl
+    out 0e5h, al
+    mov al, 4
+    out 0e6h, al
+    popad
+    ret
 %endif
 buffer_offset dd 0
 waveform:

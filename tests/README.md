@@ -52,7 +52,7 @@ The audio experiment owns the physical SB16 output, IRQ, and 16-bit DMA ring. An
 
 With `--izarra-source`, the runner builds a separate capture executable against that checkout's public machine API. Rust and IzarraVM's native build dependencies are required. It does not change IzarraVM source. The capture machine uses interpreted 386 mode, disables WSS, and mounts no CD image. Audio is drained at short intervals from the emulated card's output. The host checks both CD marker frequencies, channel separation, the client's two rates, and continued CD output while the virtual DSP is reset. Logs, build hashes, a WAV file, and a setup-screen snapshot are stored under `.local/audio/`.
 
-This is a bounded experiment, not a general sound emulator. It supports one client with a 4 KiB unsigned 8-bit mono source ring. Full PIC and mixer semantics and disc streaming remain unimplemented. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.
+This is a bounded experiment, not a general sound emulator. The polling client uses a 4 KiB unsigned 8-bit mono source ring. Full PIC and mixer semantics and disc streaming remain unimplemented. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.
 
 ## Protected-mode audio and IRQ ownership
 
@@ -84,4 +84,28 @@ Waveform checks verify continued CD and game output during IRQ masking and delay
 
 A further run starts the output-period counter at 65,520 and crosses the old 16-bit boundary during playback. Completion checks and captured signals must still pass. The counter now uses 32 bits.
 
-The interrupt test uses a 4 KiB physical output ring with 512 frames per interrupt, about 11.6 ms at 44.1 kHz. Its aligned ring requires an 8 KiB temporary DOS allocation, reduced from the polling experiment's 64 KiB allocation for a 32 KiB ring. The preloaded source data, code, and DPMI host use additional memory; this is not a resident-memory measurement. Virtual dispatch from a real-mode game, arbitrary DMA block sizes, and buffer refill timing still require work. These tests exercise a purpose-built client, not a commercial game.
+The interrupt test uses a 4 KiB physical output ring with 512 frames per interrupt, about 11.6 ms at 44.1 kHz. Its aligned ring requires an 8 KiB temporary DOS allocation, reduced from the polling experiment's 64 KiB allocation for a 32 KiB ring. The preloaded source data, code, and DPMI host use additional memory; this is not a resident-memory measurement. Virtual dispatch from a real-mode game and arbitrary DMA layouts still require work. These tests exercise a purpose-built client, not a commercial game.
+
+## Sound onset and live buffer refill
+
+```powershell
+python scripts/test_audio_onset.py --izarra-source D:\dev\IzarraVM
+python scripts/test_audio_refill.py --izarra-source D:\dev\IzarraVM
+```
+
+Both runners use the interpreted 386 machine, the 512-frame output period, and both physical IRQ/DMA configurations. Each case has a signal capture and an otherwise identical silent-source capture. Guest test-device markers record the play and stop commands. The host requires matching command times and capture lengths, then subtracts the silent capture to isolate the game samples from the continuous CD signal.
+
+The onset client makes six starts, alternating 22.05 and 11.025 kHz. Four distinct opening levels must appear in full and in order, followed by a constant level until stop. This caught a bug that skipped the opening source samples while filling the future output block. Playback now starts at source sample zero, and the virtual DMA clock waits until that output reaches the card. The test measured start delays of 13.1 to 20.4 ms and stop delays of 11.9 to 20.2 ms. These are command-marker-to-capture measurements in the emulator; they do not establish physical-card latency.
+
+The refill client replaces each completed source block in its virtual IRQ handler. The host checks every block's sample level and order across at least two complete ring cycles, including the partially played final block.
+
+| Source ring | Completion block | Source rate | Complete blocks checked per capture |
+| --- | --- | --- | --- |
+| 4 KiB | 1 KiB | 22.05 kHz | 28 |
+| 4 KiB | 2 KiB | 22.05 kHz | 14 |
+| 8 KiB | 2 KiB | 22.05 kHz | 14 |
+| 2 KiB | 512 bytes | 44.1 kHz | 113 |
+
+The current virtual DSP accepts unsigned 8-bit mono rings with power-of-two sizes from 512 bytes to 32 KiB. Rings must stay below A0000h and within one 64 KiB DMA window. Completion blocks range from 512 bytes to the ring size. For blocks smaller than the ring, the remaining ring duration must cover at least two physical output periods, so the mixer does not reuse a block before the game can refill it. A negative control requires rejection of a 1 KiB ring with 512-byte blocks at 44.1 kHz while physical output interrupts continue. Full-ring completion blocks remain available for preloaded samples; live refill of that layout is not established.
+
+Reports, paired WAV files, command timestamps, logs, and build hashes are stored in `.local/audio/onset/` and `.local/audio/refill/`. The tested layouts do not establish general game compatibility or tolerance of delayed refills under disk and CPU load.

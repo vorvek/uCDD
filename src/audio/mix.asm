@@ -3,6 +3,13 @@ mix_half:
     mov eax, [periods]
     inc eax
     shl eax, OUTPUT_SHIFT
+    cmp byte [game_active], 0
+    je .phase
+    cmp byte [game_start_pending], 1
+    jne .phase
+    mov [game_started], eax
+    mov byte [game_start_pending], 2
+.phase:
     sub eax, [game_started]
     mul dword [game_step]
     div dword [game_limit]

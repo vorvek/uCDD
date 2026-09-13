@@ -76,7 +76,7 @@ physical_write:
     inc byte [physical_eois]
 .done:
     ret
-output_clock:
+game_elapsed:
     xor eax, eax
     ret
 
@@ -88,5 +88,6 @@ game_active db 0
 dma_masked db 0
 game_started dd 0
 game_rate dw 22050
+game_block_bytes dw 4096
 success db 'The interrupt priority test passed.',13,10,'$'
 failure db 'The interrupt priority test failed.',13,10,'$'

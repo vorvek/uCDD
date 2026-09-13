@@ -12,6 +12,8 @@ A separate audio experiment mixes a preloaded CD-format signal with a test progr
 
 An interrupt-driven protected-mode client also passes virtual DMA completion, IRQ masking, DSP acknowledgement, and end-of-interrupt checks. CD output continues while the client masks its IRQ or delays acknowledgement. This test uses a 4 KiB output ring with a 512-frame interrupt period, about 11.6 ms at 44.1 kHz. General game compatibility remains unverified.
 
+Further waveform tests preserve the opening samples and check live game-buffer refills across repeated ring cycles. Tested source rings are 2, 4, and 8 KiB, with separate completion blocks. Six starts at each of two physical card configurations measured 13.1 to 20.4 ms from the play command marker to captured output. These are emulator measurements, not physical-card latency results.
+
 ## Requirements and estimates
 
 | Item | Current requirement or planning estimate |

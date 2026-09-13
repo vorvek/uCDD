@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut profile = MachineProfile::gsw_386(16, VideoCard::Vega);
     profile.wss.enabled = false;
     let mut machine = Machine::new(profile, izarravm_firmware::izarra_bios())?;
+    machine.enable_phase_marks();
     if let Some(path) = args.get(3) {
         machine.set_test_snapshot_path(Some(path.into()));
     }
@@ -43,6 +44,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     wav.write_all(b"data")?;
     wav.write_all(&(pcm.len() as u32).to_le_bytes())?;
     wav.write_all(&pcm)?;
+    let marks: Vec<String> = machine.phase_marks().iter().map(|mark| {
+        format!("{{\"id\":{},\"frame\":{}}}", mark.id,
+                mark.master_ticks as f64 * 44100.0 / MASTER_CLOCK_HZ as f64)
+    }).collect();
+    fs::write(std::path::Path::new(&args[2]).with_extension("marks.json"),
+              format!("[{}]\n", marks.join(",")))?;
     println!("stop: {stop:?}");
     if !matches!(stop, StopReason::TestExit { code: 0 }) {
         for row in 0..25 {

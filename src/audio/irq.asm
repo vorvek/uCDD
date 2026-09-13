@@ -24,13 +24,14 @@ virtual_irq_tick:
     je .done
     cmp byte [dma_masked], 0
     jne .done
-    call output_clock
-    sub eax, [game_started]
+    call game_elapsed
     movzx ecx, word [game_rate]
     mul ecx
     mov ecx, 44100
     div ecx
-    shr eax, 12
+    xor edx, edx
+    movzx ecx, word [game_block_bytes]
+    div ecx
     cmp eax, [virtual_block_seen]
     je .done
     mov [virtual_block_seen], eax

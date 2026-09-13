@@ -279,6 +279,9 @@ game_irq:
     test al, al
     jnz .error
 .done:
+%ifdef STREAM_TEST
+    call stream_refill
+%endif
     pop ds
     popad
     iretd

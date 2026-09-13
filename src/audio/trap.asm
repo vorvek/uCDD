@@ -97,6 +97,22 @@ output_clock:
     xchg al, ah
     ret
 
+game_elapsed:
+    cmp byte [game_start_pending], 1
+    je .zero
+    call output_clock
+    sub eax, [game_started]
+    cmp byte [game_start_pending], 2
+    jne .done
+    test eax, eax
+    js .zero
+    mov byte [game_start_pending], 0
+    ret
+.zero:
+    xor eax, eax
+.done:
+    ret
+
 port_callback:
     pushad
     mov bp, sp
@@ -141,6 +157,7 @@ port_callback:
     jmp .done
 .reset:
     mov byte [game_active], 0
+    mov byte [game_start_pending], 0
 %ifdef VIRTUAL_IRQ
     call virtual_irq_reset
 %endif
@@ -205,6 +222,7 @@ port_callback:
     jmp .done
 .pause:
     mov byte [game_active], 0
+    mov byte [game_start_pending], 0
     jmp .done
 .rate:
     mov byte [arguments], 2
@@ -247,21 +265,51 @@ port_callback:
     mov ah, al
     mov al, [block_low]
     cmp ax, [dma_count]
-    jne .unsupported
-    cmp ax, 4095
-    jne .unsupported
-    movzx eax, byte [dma_page]
-    shl eax, 16
-    mov ax, [dma_address]
-    cmp eax, 0a0000h-4096
     ja .unsupported
-    mov bx, ax
+    inc ax
+    cmp ax, 512
+    jb .unsupported
+    movzx ebx, word [dma_count]
+    inc ebx
+    cmp ebx, 512
+    jb .unsupported
+    cmp ebx, 32768
+    ja .unsupported
+    mov ecx, ebx
+    dec ecx
+    test ebx, ecx
+    jnz .unsupported
+    movzx edx, ax
+    cmp edx, ebx
+    je .buffer_address
+    mov esi, ebx
+    sub esi, edx
+    imul esi, 44100
+    movzx ecx, word [game_rate]
+    imul ecx, PERIOD_FRAMES*2
+    cmp esi, ecx
+    jb .unsupported
+.buffer_address:
+    movzx esi, word [dma_address]
+    add esi, ebx
+    cmp esi, 65536
+    ja .unsupported
+    movzx esi, byte [dma_page]
+    shl esi, 16
+    mov si, [dma_address]
+    mov ecx, esi
+    add ecx, ebx
+    cmp ecx, 0a0000h
+    ja .unsupported
+    mov [game_block_bytes], dx
+    shl ebx, 16
+    mov [game_limit], ebx
+    mov bx, si
     and bx, 15
     mov [game_offset], bx
-    shr eax, 4
-    mov [game_segment], ax
-    call output_clock
-    mov [game_started], eax
+    shr esi, 4
+    mov [game_segment], si
+    mov byte [game_start_pending], 1
 %ifdef VIRTUAL_IRQ
     call virtual_irq_reset
 %endif
@@ -323,18 +371,17 @@ port_callback:
     jne .count_high
     cmp byte [game_active], 0
     je .idle_count
-    call output_clock
-    sub eax, [game_started]
+    call game_elapsed
     movzx ecx, word [game_rate]
     mul ecx
     mov ecx, 44100
     div ecx
-    and ax, 4095
-    mov bx, 4095
+    and ax, [dma_count]
+    mov bx, [dma_count]
     sub bx, ax
     jmp .snapshot
 .idle_count:
-    mov bx, 4095
+    mov bx, [dma_count]
 .snapshot:
     mov [count_snapshot], bx
     mov al, bl
@@ -371,6 +418,8 @@ callback_set db 0
 old_callback dd 0
 port_calls dd 0
 last_clock dd 0
+game_start_pending db 0 ; 1: wait for mixing, 2: wait for output.
+game_block_bytes dw 4096
 virtual_resets dw 0
 virtual_starts dw 0
 virtual_mixer_index db 0

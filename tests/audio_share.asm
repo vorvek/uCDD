@@ -2,6 +2,12 @@ bits 16
 cpu 386
 org 100h
 %include "audio/layout.inc"
+%ifdef STREAM_TEST
+%define TIMED_TEST 1
+%endif
+%ifdef ONSET_TEST
+%define TIMED_TEST 1
+%endif
 
     jmp start
 
@@ -126,7 +132,11 @@ cleanup:
 %ifdef PERIOD_SEED
     sub eax, PERIOD_SEED
 %endif
-%ifdef VIRTUAL_IRQ
+%ifdef TIMED_TEST
+    cmp eax, 80
+    jb failed
+    cmp eax, 160
+%elifdef VIRTUAL_IRQ
     cmp eax, 65*PERIOD_SCALE
     jb failed
     cmp eax, 120*PERIOD_SCALE
@@ -137,13 +147,21 @@ cleanup:
 %endif
     ja failed
 %ifndef OUTPUT_TEST
-%ifdef VIRTUAL_IRQ
+%ifdef STREAM_TEST
+    cmp word [virtual_starts], 1
+%elifdef ONSET_TEST
+    cmp word [virtual_starts], 6
+%elifdef VIRTUAL_IRQ
     cmp word [virtual_starts], 4
 %else
     cmp word [virtual_starts], 3
 %endif
     jne failed
-%ifdef VIRTUAL_IRQ
+%ifdef STREAM_TEST
+    cmp word [virtual_resets], 1
+%elifdef ONSET_TEST
+    cmp word [virtual_resets], 6
+%elifdef VIRTUAL_IRQ
     cmp word [virtual_resets], 5
 %else
     cmp word [virtual_resets], 3

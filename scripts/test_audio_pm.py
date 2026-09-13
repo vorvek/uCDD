@@ -25,7 +25,8 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False):
+def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False,
+              onset=False, quiet=False, refill=None):
     with zipfile.ZipFile(CACHE / 'FD14-LiteUSB.zip') as archive:
         disk = Fat16(archive.read('FD14LITE.img'))
     kernel, command = disk.read('KERNEL.SYS'), disk.read('COMMAND.COM')
@@ -41,16 +42,24 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
         source = 'AISHARE.COM' if virtual_irq and name == 'APSHARE.COM' else name
         if rollover and name == 'APSHARE.COM':
             source = 'AIWRAP.COM'
+        if onset and name == 'APSHARE.COM':
+            source = 'AOSHARE.COM'
+        if refill and name == 'APSHARE.COM':
+            source = 'ARSHARE.COM'
         disk.add(name, (ROOT / 'build' / source).read_bytes())
     client = ('AIPMNEG.COM' if negative else 'AIPM.COM') if virtual_irq else (
         'APMNEG.COM' if negative else 'APM.COM')
+    if onset:
+        client = 'AOQUIET.COM' if quiet else 'AOPM.COM'
+    if refill:
+        client = ('AQ' if quiet else 'AR') + refill + '.COM'
     disk.add('APM.COM', (ROOT / 'build' / client).read_bytes())
     if alternate:
         disk.add('UCDD.CFG', b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes([7, 3, 6, 0]))
     disk.add('FDCONFIG.SYS', (
         'DEVICE=C:\\JEMMEX.EXE NOEMS\r\nDOS=LOW\r\nFILES=40\r\nBUFFERS=10\r\n'
         'SHELL=C:\\COMMAND.COM C:\\ /E:512 /P\r\n').encode())
-    repeat = '' if negative else (
+    repeat = '' if negative or onset or refill else (
         'APSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'ASHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n')
     disk.add('AUTOEXEC.BAT', (
@@ -61,11 +70,7 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
     return bytes(disk.image)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--izarra-source', type=Path, required=True)
-    args = parser.parse_args()
-    PM_RUN.mkdir(parents=True, exist_ok=True)
+def prepare_tests(izarra_source):
     CACHE.mkdir(parents=True, exist_ok=True)
     for name, url, expected in (
             ('JemmB_v586.zip', JEMM_URL, JEMM_SHA256),
@@ -81,7 +86,15 @@ def main():
     build_audio()
     assemble('tests/exit.asm', 'PASS.COM')
     assemble('tests/exit.asm', 'FAIL.COM', ('EXIT_CODE=1',))
-    executable = build_capture(args.izarra_source)
+    return build_capture(izarra_source)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--izarra-source', type=Path, required=True)
+    args = parser.parse_args()
+    PM_RUN.mkdir(parents=True, exist_ok=True)
+    executable = prepare_tests(args.izarra_source)
     evidence = dict(passed=False, jemm_sha256=JEMM_SHA256, hdpmi_archive_sha256=HDPMI_SHA256,
                     freedos_sha256=FREEDOS_SHA256, capture_executable_sha256=sha256(executable),
                     capture_source_sha256=sha256(ROOT / 'tests/audio_capture.rs'),
