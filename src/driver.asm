@@ -18,7 +18,7 @@ header:
     db 'UCDD0001'
     dw 0
     db 0
-unit_count db 2
+unit_count db 1
     db 'uCDD'
     dw 1
     dw control, 0
@@ -45,12 +45,7 @@ read_remaining dw 0
 read_completed dw 0
 read_chunk dw 0
 read_destination dd 0
-units:
-%rep MAX_UNITS
-    dw 0ffffh
-    dd 0
-    db 0ffh, 0
-%endrep
+units_base dw 0
 
 strategy:
     mov [cs:request], bx
@@ -92,7 +87,7 @@ interrupt:
     cmp al, [unit_count]
     jae .bad_unit
     shl ax, 3
-    add ax, units
+    add ax, [units_base]
     mov [unit_pointer], ax
     mov si, ax
     mov al, [fs:bp+2]
@@ -427,7 +422,7 @@ control:
     jae .done
     movzx si, bl
     shl si, 3
-    add si, units
+    add si, [units_base]
     mov [unit_pointer], si
     cmp word [control_op], 0
     je .query
@@ -691,7 +686,7 @@ pvd times 192 db 0
     times 1024 db 0
 stack_top:
 sda_save:
-    times 4096 db 0
+    times 4096+MAX_UNITS*UNIT_SIZE+16 db 0
 
 install:
     cld
@@ -750,6 +745,22 @@ install:
     cmp cx, 4096
     ja install_dos_error
     mov [sda_size], cx
+    mov di, sda_save+15
+    add di, cx
+    and di, 0fff0h
+    mov [units_base], di
+    push ds
+    pop es
+    movzx cx, byte [unit_count]
+.init_unit:
+    mov ax, 0ffffh
+    stosw
+    xor ax, ax
+    stosw
+    stosw
+    mov ax, 00ffh
+    stosw
+    loop .init_unit
     mov ah, 34h
     int 21h
     mov [indos_pointer], bx
@@ -792,8 +803,10 @@ install:
     mov dx, installed_message
     mov ah, 9
     int 21h
-    mov dx, [sda_size]
-    add dx, sda_save+15
+    movzx dx, byte [unit_count]
+    imul dx, UNIT_SIZE
+    add dx, [units_base]
+    add dx, 15
     shr dx, 4
     add dx, 16
     mov ax, 3100h

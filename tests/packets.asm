@@ -25,6 +25,15 @@ org 100h
     mov [strategy+2], es
     mov [interrupt+2], es
     mov ax, es
+    cmp byte [80h], 0
+    je .placement_ok
+    cmp ax, 0a000h
+    jb fail
+    mov dx, high_message
+    mov ah, 9
+    int 21h
+    mov ax, es
+.placement_ok:
     sub ax, 17
     mov es, ax
     mov ax, [es:3]
@@ -222,6 +231,7 @@ ioctl_data times 16 db 0
 device_list times 26*5 db 0
 dta times 128 db 0
 memory_message db 'Resident bytes: $'
+high_message db 'The driver is in upper memory.',13,10,'$'
 pass_message db 13,10,'The packet tests passed.',13,10,'$'
 fail_message db 'Packet test failed: $'
 program_end:

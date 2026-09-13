@@ -30,3 +30,26 @@ python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.ex
 The runner extracts a temporary ISO from the data track and selects the largest file in its root directory. A DOS program reads that file through uCDD and checks its CRC32 against the source bytes. The source BIN is opened read-only.
 
 This checks real disc data through the ISO driver. It does not test CUE parsing, game execution, or CD-Audio playback.
+
+## One unit and upper memory
+
+```powershell
+python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --single-unit
+python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --single-unit --load-high
+```
+
+The single-unit run uses the driver's default unit count. It checks mounting, replacement, full-drive handling, repeated commands, and direct CD packets. The upper-memory run adds Jemm, starts the driver with `LH`, and checks that its resident segment is above conventional memory. Both runs report the size of the driver's DOS memory block. Download Jemm with the audio test runner before the upper-memory test.
+
+## Shared-card audio experiment
+
+```powershell
+python scripts/test_audio.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --izarra-source D:\dev\IzarraVM
+```
+
+This runner downloads Jemm 5.86 from its upstream release and checks a pinned SHA-256 hash. It boots a separate FreeDOS disk with Jemm and QPIEMU. A small client sends SB16-style 8-bit mono auto-initialized DMA commands to virtual ports at 220h. It polls DMA position, changes between 22.05 and 11.025 kHz, and resets its virtual DSP. The client checks that its sample buffer was not changed.
+
+The audio experiment owns the physical SB16 output, IRQ, and 16-bit DMA ring. An interrupt handler mixes a preloaded stereo signal with the client's samples. It does not call DOS from the audio interrupt. Tests also cover setup navigation, saved settings, BLASTER suggestions, the setup sound test, alternate IRQ/DMA settings, and rejection of invalid configuration files and unsupported output configurations.
+
+With `--izarra-source`, the runner builds a separate capture executable against that checkout's public machine API. Rust and IzarraVM's native build dependencies are required. It does not change IzarraVM source. The capture machine uses interpreted 386 mode, disables WSS, and mounts no CD image. Audio is drained at short intervals from the emulated card's output. The host checks both CD marker frequencies, channel separation, the client's two rates, and continued CD output while the virtual DSP is reset. Logs, build hashes, a WAV file, and a setup-screen snapshot are stored under `.local/audio/`.
+
+This is a bounded experiment, not a general sound emulator. It supports one polling client with a 4 KiB unsigned 8-bit mono source ring. It does not yet deliver virtual game IRQs, implement full PIC or mixer semantics, support protected-mode clients, or stream disc images. The virtual interface remains at 220h while the physical output uses the saved settings. The preloaded CD signal and 32 KiB output ring use temporary DOS allocations. These allocations are not the final resident memory design.

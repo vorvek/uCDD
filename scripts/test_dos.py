@@ -74,7 +74,11 @@ def main():
     parser.add_argument('--emulator', type=Path, required=True)
     parser.add_argument('--baseline', action='store_true')
     parser.add_argument('--quake-bin', type=Path)
+    parser.add_argument('--single-unit', action='store_true')
+    parser.add_argument('--load-high', action='store_true')
     args = parser.parse_args()
+    if args.load_high and (args.baseline or not args.single_unit):
+        parser.error('--load-high requires --single-unit without --baseline')
     archive = (CACHE / 'FD14-LiteUSB.zip').read_bytes()
     if hashlib.sha256(archive).hexdigest() != FREEDOS_SHA256:
         raise SystemExit('The FreeDOS archive hash is incorrect.')
@@ -85,6 +89,14 @@ def main():
     disk.add('KERNEL.SYS', kernel)
     disk.add('COMMAND.COM', command)
     config = 'DOS=LOW\r\nFILES=40\r\nBUFFERS=10\r\nLASTDRIVE=Z\r\nSHELL=C:\\COMMAND.COM C:\\ /E:512 /P\r\n'
+    if args.load_high:
+        from test_audio import JEMM_SHA256
+        jemm = CACHE / 'JemmB_v586.zip'
+        if hashlib.sha256(jemm.read_bytes()).hexdigest() != JEMM_SHA256:
+            raise SystemExit('The Jemm archive hash is incorrect.')
+        with zipfile.ZipFile(jemm) as source:
+            disk.add('JEMMEX.EXE', source.read('JEMMEX.EXE'))
+        config = 'DEVICE=C:\\JEMMEX.EXE NOEMS\r\n' + config.replace('DOS=LOW', 'DOS=HIGH,UMB')
     disk.add('FDCONFIG.SYS', config.encode())
     for name in ('PROBE.COM', 'PACKETS.COM', 'FILECRC.COM', 'PASS.COM', 'FAIL.COM'):
         disk.add(name, (ROOT / 'build' / name).read_bytes())
@@ -126,7 +138,10 @@ def main():
         for name in ('UCDDRV.EXE', 'UCDD.EXE'):
             disk.add(name, (ROOT / 'build' / name).read_bytes())
         disk.add('BAD.ISO', b'This is not a disc image.')
-        commands += ['UCDDRV -units 2', 'IF ERRORLEVEL 1 GOTO FAIL',
+        install = 'UCDDRV' if args.single_unit else 'UCDDRV -units 2'
+        if args.load_high:
+            install = 'LH ' + install
+        commands += [install, 'IF ERRORLEVEL 1 GOTO FAIL',
                      'SHSUCDX /D:UCDD0001 /L:F', 'IF ERRORLEVEL 246 GOTO FAIL']
         full_crc = zlib.crc32(b'All uCDD drives are in use.\r\n')
         same_a_crc = zlib.crc32(b'uCDD test file.\r\n')
@@ -167,6 +182,21 @@ def main():
             ('PROBE F:\\BOOT.TXT', True),
             ('UCDD -mount C:\\BIG.ISO -drive F', True),
         ]
+        if args.single_unit:
+            checks = [
+                ('UCDD -unmount', False),
+                ('UCDD -mount C:\\ONE.ISO', True),
+                ('PROBE F:\\ONE.TXT', True),
+                ('UCDD -mount C:\\TWO.ISO >C:\\FULL.TXT', False),
+                (f'FILECRC C:\\FULL.TXT {full_crc:08X}', True),
+                ('UCDD -mount C:\\BADROOT.ISO -drive F', False),
+                ('PROBE F:\\ONE.TXT', True),
+                ('UCDD -unmount', True),
+                ('PROBE !F:\\ONE.TXT', True),
+                ('UCDD -mount C:\\TWO.ISO', True),
+                ('PROBE F:\\TWO.TXT', True),
+                ('UCDD -mount C:\\BIG.ISO -drive F', True),
+            ]
         for _ in range(24):
             checks += [('UCDD -mount C:\\BAD.ISO -drive F', False),
                        ('UCDD -mount C:\\BIG.ISO -drive F', True)]
@@ -174,7 +204,8 @@ def main():
                    (f'FILECRC F:\\SAME.TXT {same_a_crc:08X}', True),
                    ('UCDD -mount C:\\SAMEB.ISO -drive F', True),
                    (f'FILECRC F:\\SAME.TXT {same_b_crc:08X}', True),
-                   ('UCDD -mount C:\\BIG.ISO -drive F', True), ('PACKETS', True)]
+                   ('UCDD -mount C:\\BIG.ISO -drive F', True),
+                   ('PACKETS H' if args.load_high else 'PACKETS', True)]
         for number, (command, success) in enumerate(checks, 1):
             commands += [f'ECHO Test {number}: {command}', command,
                          'IF ERRORLEVEL 1 GOTO FAIL' if success else 'IF NOT ERRORLEVEL 1 GOTO FAIL']
@@ -216,7 +247,9 @@ def main():
     commands += ['ECHO UCDD TEST PASS', 'PASS', ':FAIL', 'ECHO UCDD TEST FAIL', 'FAIL']
     disk.add('AUTOEXEC.BAT', ('\r\n'.join(commands) + '\r\n').encode())
     RUN.mkdir(parents=True, exist_ok=True)
-    image = RUN / ('baseline.img' if args.baseline else 'ucdd.img')
+    name = ('baseline' if args.baseline else 'ucdd-high' if args.load_high
+            else 'ucdd-single' if args.single_unit else 'ucdd')
+    image = RUN / (name + '.img')
     image.write_bytes(disk.image)
     invocation = [str(args.emulator.resolve()), '--cpu', '386', '--interpreter',
                   '--memory-mib', '16', '--headless-boot-hdd', str(image),

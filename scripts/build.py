@@ -31,7 +31,8 @@ def assemble(source, name, defines=(), exe=False):
 
 
 def main():
-    for source, name in [('src/driver.asm', 'UCDDRV.EXE'), ('src/helper.asm', 'UCDD.EXE')]:
+    for source, name in [('src/driver.asm', 'UCDDRV.EXE'), ('src/helper.asm', 'UCDD.EXE'),
+                         ('src/setup.asm', 'UCDDSET.EXE')]:
         assemble(source, name, exe=True)
     assemble('tests/probe.asm', 'PROBE.COM')
     assemble('tests/packets.asm', 'PACKETS.COM')
