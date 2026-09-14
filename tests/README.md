@@ -49,6 +49,12 @@ python scripts/test_setup.py --izarra-source D:\dev\IzarraVM --jemm
 
 These interpreted 386 tests run the release configurator in FreeDOS, first without a memory manager and then with Jemm. Neither disk contains QPIEMU, JLOAD, a DPMI host, or UCDDTST.COM. They check repeated F2 tests, alternate IRQ/DMA settings, failure at a missing I/O address, and correction of that address in the same setup session. The Jemm run also checks linked UMBs with an upper-memory allocation preference. Captures check six left/pause/right sequences without Jemm and eight with Jemm. A DOS probe checks that the interrupt vectors, PIC mask, saved mixer registers, DOS allocation policy, and largest available memory block are restored after each setup session.
 
+```text
+python scripts/test_config_path.py --izarra-source D:\dev\IzarraVM
+```
+
+This interpreted 386 test places both programs in a subdirectory and leaves a different configuration in the working directory. It checks absolute paths, PATH lookup, loading high, automatic setup when settings are missing, save/test/cancel, a missing helper, invalid settings, and standalone setup. The working directory and its configuration must remain unchanged. A cancelled installation must restore DOS allocation policy, available memory, interrupt vectors, PIC masks, and mixer state.
+
 ## Resident audio
 
 ```powershell

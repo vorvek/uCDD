@@ -2,7 +2,11 @@
 ; SPDX-License-Identifier: GPL-3.0-only
 
 config_load:
+%ifdef CONFIG_EXE_PATH
+    mov dx, config_path
+%else
     mov dx, config_name
+%endif
     mov ax, 3d00h
     int 21h
     jnc .read
@@ -85,10 +89,15 @@ config_load:
     mov byte [sb_dma8], 1
     mov byte [sb_dma16], 5
     mov byte [config_data+11], 0
+    mov ax, 13
     stc
     ret
 config_save:
+%ifdef CONFIG_EXE_PATH
+    mov dx, config_path
+%else
     mov dx, config_name
+%endif
     xor cx, cx
     mov ah, 3ch
     int 21h

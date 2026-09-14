@@ -60,7 +60,7 @@ python scripts/build.py
 
 The DOS programs are `build/UCDD.EXE` and `build/UCDDSET.EXE`. They require a 386 or later processor. The default `UCDD.EXE` installs the CD data driver and handles mount and unmount commands. The driver uses the DOS 5 or later swappable data area interface. Use the resident audio build below to include the mixer.
 
-The build also creates `build/UCDDSET.EXE`, a transient sound setup tool. It saves the physical card settings to `UCDD.CFG` in the current directory. Saved settings take priority over initial suggestions from `BLASTER`. The CD data driver does not need this file. The Quake audio service requires saved settings.
+The build also creates `build/UCDDSET.EXE`, a transient sound setup tool. It saves the physical card settings to `UCDD.CFG` beside its executable. Keep both uCDD programs in the same directory. Saved settings take priority over initial suggestions from `BLASTER`. The CD data driver does not need this file. The audio service requires saved settings.
 
 Use the arrow keys to select and change a setting. F10 saves and exits; Esc exits without saving further changes. Select Sound Blaster / 1.5 / 2, SB Pro, SB16, or WSS. SB cards use I/O addresses 220h/240h/260h/280h, IRQ 5 or 7, and 8-bit DMA 1 or 3. SB16 also uses 16-bit DMA 5, 6, or 7. The initial physical WSS backend supports addresses 530h/604h/E80h/F40h, IRQ 7, and DMA 1 or 3. Configure the actual card with its jumpers or vendor utility first; the setup fields must match it.
 
@@ -113,7 +113,7 @@ Build the two uCDD programs with:
 python scripts/build.py --resident-audio
 ```
 
-This experimental build supports one unit with original SB, SB Pro, SB16, or WSS output. Install Jemm 5.86 and SHSUCDX separately. Save the physical card settings with `UCDDSET` before installing the driver. The settings stay in `UCDD.CFG` across boots. Keep that file in the directory from which you install uCDD.
+This experimental build supports one unit with original SB, SB Pro, SB16, or WSS output. Install Jemm 5.86 and SHSUCDX separately. The driver reads `UCDD.CFG` beside `UCDD.EXE`, including when started through PATH or with an absolute path. If the file is missing, `UCDD -install` starts `UCDDSET.EXE` from the same directory. Save the physical card settings to continue installation. Exiting without saving stops installation. Invalid or unreadable settings produce an error; run UCDDSET to correct them. The settings stay across boots, and the working directory is unchanged.
 
 Example `CONFIG.SYS` for native DOS, using your installed Jemm path:
 
@@ -127,7 +127,6 @@ LASTDRIVE=Z
 FreeDOS uses `FDCONFIG.SYS` if that file is present. Example `AUTOEXEC.BAT`:
 
 ```dos
-CD \UCDD
 LH C:\UCDD\UCDD.EXE -install
 IF ERRORLEVEL 1 GOTO UCDDERR
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F

@@ -7,6 +7,7 @@ org 0
 
     jmp start
 
+%define CONFIG_EXE_PATH 1
 %include "audio/config.asm"
 
 start:
@@ -16,6 +17,14 @@ start:
     push cs
     pop es
     cld
+    call config_path_init
+    jnc .path_ready
+    mov dx, path_message
+    mov ah, 9
+    int 21h
+    mov ax, 4c01h
+    int 21h
+.path_ready:
     mov ax, 3
     int 10h
     mov ah, 1
@@ -514,4 +523,6 @@ help db 'Up/Down: Select   Left/Right/Enter: Change',13,10
     db '     F2: Save and test   F10: Save and exit   Esc: Exit',0
 
 %include "audio/speaker.asm"
+%include "config_path.asm"
+path_message db 'The program directory cannot be read.',13,10,'$'
 setup_end:

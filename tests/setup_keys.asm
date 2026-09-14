@@ -19,7 +19,9 @@ org 100h
     mov ax, 4c00h
     int 21h
 keys:
-%ifdef SAVE_ONLY
+%ifdef CANCEL_ONLY
+    dw 011bh
+%elifdef SAVE_ONLY
     dw 4400h
 %elifdef SOUND_TEST
     dw 3c00h,4400h

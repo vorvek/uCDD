@@ -4,7 +4,7 @@
 audio_install:
     cmp byte [unit_count], 1
     jne .bad
-    call config_load
+    call audio_configure
     jc .bad
     cmp byte [sound_card], 3
     jne .pro_rate
@@ -117,3 +117,5 @@ audio_install:
 %ifdef OWN_HOST
 %include "audio/resident_host_init.asm"
 %endif
+%include "audio/configure.asm"
+%include "config_path.asm"

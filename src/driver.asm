@@ -1108,8 +1108,9 @@ dos_message db 'This DOS version is not supported.',13,10,'$'
 duplicate_message db 'The uCDD driver is already installed.',13,10,'$'
 %ifdef RESIDENT_AUDIO
 install_audio_error:
-    mov dx, audio_install_message
+    mov dx, [audio_error_text]
     jmp install_fail
 audio_install_message db 'The audio driver cannot be installed.',13,10,'$'
+audio_error_text dw audio_install_message
 %include "audio/resident_init.asm"
 %endif

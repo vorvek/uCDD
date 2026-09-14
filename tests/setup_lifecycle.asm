@@ -233,7 +233,11 @@ old_umb db 0
 exec_block dw 0,command_tail,0,5ch,0,6ch,0
 %ifdef INSTALL_TEST
 command_tail db 9,' -install',13
+%ifdef CHILD_NAME
+setup_name db CHILD_NAME,0
+%else
 setup_name db 'UCDD.EXE',0
+%endif
 %elifdef CHILD_NAME
 command_tail db 0,13
 setup_name db CHILD_NAME,0

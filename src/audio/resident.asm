@@ -40,6 +40,7 @@ audio_linked db 0
 %define arguments dsp_arguments
 %include "audio/trap.asm"
 %undef arguments
+%define CONFIG_EXE_PATH 1
 %include "audio/config.asm"
 %include "audio/mounted.asm"
 %include "audio/background.asm"
