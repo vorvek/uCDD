@@ -17,6 +17,22 @@ command_entry:
 .parse:
     call token
     jc .parsed
+    cmp byte [bx], '/'
+    jne .option
+    cmp byte [bx+1], '?'
+    jne usage
+    cmp byte [bx+2], 0
+    jne usage
+    cmp byte [operation], 0
+    jne usage
+    cmp byte [requested_units], 0
+    jne usage
+    cmp byte [wanted_drive], 0ffh
+    jne usage
+    call token
+    jnc usage
+    jmp command_help
+.option:
     cmp byte [bx], '-'
     jne usage
     mov di, mount_option
@@ -394,6 +410,15 @@ option_equal:
 usage:
     mov dx, usage_message
     jmp error
+command_help:
+    mov dx, usage_message
+    mov ah, 9
+    int 21h
+    mov dx, license_notice
+    mov ah, 9
+    int 21h
+    mov ax, 4c00h
+    int 21h
 no_drives:
     mov dx, no_drives_message
     jmp error
@@ -452,7 +477,8 @@ packet:
 change_buffer db 9,0
 usage_message db 'Use UCDD -install [-units <1 to 4>].',13,10
     db 'Use UCDD -mount <image> [-drive <letter>].',13,10
-    db 'Use UCDD -unmount [-drive <letter>].',13,10,'$'
+    db 'Use UCDD -unmount [-drive <letter>].',13,10
+    db 'Use UCDD /? to show this information.',13,10,'$'
 no_drives_message db 'No uCDD drive is available.',13,10,'$'
 full_message db 'All uCDD drives are in use.',13,10,'$'
 empty_message db 'No image is mounted on the selected drive.',13,10,'$'
@@ -465,6 +491,7 @@ mounted_message db 'The image is mounted.',13,10,'$'
 unmounted_message db 'The image is unmounted.',13,10,'$'
 drive_message db 'Drive '
 done_drive db '?',':',13,10,'$'
+%include "notice.inc"
 arguments times 128 db 0
 full_path times 128 db 0
     dw 2048,0

@@ -62,6 +62,8 @@ The DOS programs are `build/UCDD.EXE` and `build/UCDDSET.EXE`. They require a 38
 
 The build also creates `build/UCDDSET.EXE`, a transient sound setup tool. It saves the physical card settings to `UCDD.CFG` beside its executable. Keep both uCDD programs in the same directory. Saved settings take priority over initial suggestions from `BLASTER`. The CD data driver does not need this file. The audio service requires saved settings.
 
+Run `UCDD /?` or `UCDDSET /?` for command usage, copyright, license, and warranty information.
+
 Use the arrow keys to select and change a setting. F10 saves and exits; Esc exits without saving further changes. Select Sound Blaster / 1.5 / 2, SB Pro, SB16, or WSS. SB cards use I/O addresses 220h/240h/260h/280h, IRQ 5 or 7, and 8-bit DMA 1 or 3. SB16 also uses 16-bit DMA 5, 6, or 7. The initial physical WSS backend supports addresses 530h/604h/E80h/F40h, IRQ 7, and DMA 1 or 3. Configure the actual card with its jumpers or vendor utility first; the setup fields must match it.
 
 F2 saves the settings and runs the built-in sound test for the selected card. It plays the left speaker for about 1.1 seconds, pauses for about 0.37 seconds, then plays the right speaker for about 1.1 seconds. The other channel stays silent on stereo cards. On original SB cards, both test tones use the mono output. The test returns to the setup screen and can be repeated. It needs no separate test program, Jemm, QPIEMU, or DPMI host. The test releases its DMA allocation when it stops: 8 KiB for SB16/WSS, 2 KiB for SB Pro, or 1 KiB for original SB.

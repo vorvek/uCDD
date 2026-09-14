@@ -13,7 +13,7 @@ The dependency script downloads the FreeDOS 1.4 LiteUSB archive and SHSUCD suite
 
 The test runner creates a disposable FAT16 disk from the FreeDOS image. It copies the stock kernel and command interpreter into that disk, then adds the test programs and images. It does not modify the source archive or a physical disk.
 
-The baseline checks that no CD extensions are installed, loads SHSUCDHD and SHSUCDX, and reads a generated ISO. The uCDD test checks the same initial state, then runs `UCDD -install` and loads SHSUCDX. The test disk contains no separate driver executable. Invalid installation options and a second installation must fail.
+The baseline checks that no CD extensions are installed, loads SHSUCDHD and SHSUCDX, and reads a generated ISO. The uCDD test checks the same initial state, then runs `UCDD -install` and loads SHSUCDX. The test disk contains no separate driver executable. It verifies the complete `UCDD /?` and `UCDDSET /?` output before installation. Invalid installation options and a second installation must fail.
 
 The tests cover automatic and explicit drive selection, the full-drive error text, image replacement, invalid images, empty drives, repeated commands, and immediate cache updates. Packet tests cover a 128 KiB transfer across a segment boundary, PSP and DTA restoration, invalid requests, buffer bounds, and drive locking. A guest program reports success or failure through IzarraVM's test device.
 

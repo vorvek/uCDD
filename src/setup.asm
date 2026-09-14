@@ -12,6 +12,35 @@ org 0
 
 start:
     mov [cs:psp], ds
+    mov si, 81h
+    movzx cx, byte [80h]
+.help_leading:
+    jcxz .normal
+    lodsb
+    dec cx
+    cmp al, ' '
+    je .help_leading
+    cmp al, 9
+    je .help_leading
+    cmp al, '/'
+    jne .normal
+    jcxz .normal
+    lodsb
+    dec cx
+    cmp al, '?'
+    jne .normal
+.help_tail:
+    jcxz .show_help
+    lodsb
+    dec cx
+    cmp al, ' '
+    je .help_tail
+    cmp al, 9
+    je .help_tail
+    jmp .normal
+.show_help:
+    jmp show_command_help
+.normal:
     push cs
     pop ds
     push cs
@@ -149,6 +178,18 @@ resident_audio_present:
     pop es
     popad
     ret
+
+show_command_help:
+    push cs
+    pop ds
+    mov dx, setup_usage_message
+    mov ah, 9
+    int 21h
+    mov dx, license_notice
+    mov ah, 9
+    int 21h
+    mov ax, 4c00h
+    int 21h
 
 exit:
     mov ax, 3
@@ -521,6 +562,14 @@ test_error db 'The test failed. Check the sound card and its settings.',0
 resident_message db 'Restart DOS before you run the sound test.',0
 help db 'Up/Down: Select   Left/Right/Enter: Change',13,10
     db '     F2: Save and test   F10: Save and exit   Esc: Exit',0
+
+setup_usage_message db 'Use UCDDSET to select the physical sound card settings.',13,10
+    db 'Use the arrow keys to select and change a setting.',13,10
+    db 'Use F2 to save the settings and test the sound.',13,10
+    db 'Use F10 to save the settings and exit.',13,10
+    db 'Use Esc to exit without saving.',13,10
+    db 'Use UCDDSET /? to show this information.',13,10,'$'
+%include "notice.inc"
 
 %include "audio/speaker.asm"
 %include "config_path.asm"

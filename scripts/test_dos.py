@@ -154,7 +154,29 @@ def main():
                      'PROBE D:\\ONE.TXT', 'IF ERRORLEVEL 1 GOTO FAIL']
     else:
         disk.add('UCDD.EXE', (ROOT / 'build' / 'UCDD.EXE').read_bytes())
+        disk.add('UCDDSET.EXE', (ROOT / 'build' / 'UCDDSET.EXE').read_bytes())
         disk.add('BAD.ISO', b'This is not a disc image.')
+        notice = (b'\r\nCopyright (C) 2026 Vorvek (github.com/vorvek).\r\n'
+                  b'This program is licensed under the GNU General Public License version 3 only.\r\n'
+                  b'You can copy, share, and change it under that license.\r\n'
+                  b'This program is provided as-is, without warranty.\r\n'
+                  b'See LICENSE for the complete license terms.\r\n')
+        ucdd_help = (b'Use UCDD -install [-units <1 to 4>].\r\n'
+                     b'Use UCDD -mount <image> [-drive <letter>].\r\n'
+                     b'Use UCDD -unmount [-drive <letter>].\r\n'
+                     b'Use UCDD /? to show this information.\r\n' + notice)
+        setup_help = (b'Use UCDDSET to select the physical sound card settings.\r\n'
+                      b'Use the arrow keys to select and change a setting.\r\n'
+                      b'Use F2 to save the settings and test the sound.\r\n'
+                      b'Use F10 to save the settings and exit.\r\n'
+                      b'Use Esc to exit without saving.\r\n'
+                      b'Use UCDDSET /? to show this information.\r\n' + notice)
+        commands += ['UCDD /? >C:\\UCDDHELP.TXT', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     f'FILECRC C:\\UCDDHELP.TXT {zlib.crc32(ucdd_help):08X}',
+                     'IF ERRORLEVEL 1 GOTO FAIL',
+                     'UCDDSET /? >C:\\SETHELP.TXT', 'IF ERRORLEVEL 1 GOTO FAIL',
+                     f'FILECRC C:\\SETHELP.TXT {zlib.crc32(setup_help):08X}',
+                     'IF ERRORLEVEL 1 GOTO FAIL']
         invalid = ('', '-units 2', '-install -units 0', '-install -units 5',
                    '-install -units 12', '-install -units', '-install -units 1 -units 2',
                    '-install -install', '-install -drive F', '-install -mount C:\\ONE.ISO',
