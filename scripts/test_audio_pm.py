@@ -68,6 +68,7 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
         disk.add('UCDD.CFG', b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes([7, 3, 6, 0]))
     if dma_state:
         disk.add('ADMA.COM', (ROOT / 'build/ADMA.COM').read_bytes())
+        disk.add('ADMANF.COM', (ROOT / 'build/ADMANF.COM').read_bytes())
     disk.add('FDCONFIG.SYS', (
         'DEVICE=C:\\JEMMEX.EXE NOEMS\r\nDOS=LOW\r\nFILES=40\r\nBUFFERS=10\r\n'
         'SHELL=C:\\COMMAND.COM C:\\ /E:512 /P\r\n').encode())
@@ -75,7 +76,8 @@ def make_disk(negative=False, alternate=False, virtual_irq=False, rollover=False
         'APSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'ASHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n')
     disk.add('AUTOEXEC.BAT', (
-        '@ECHO OFF\r\n' + ('ADMA\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n' if dma_state else '') +
+        '@ECHO OFF\r\n' + ('ADMA\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
+                         'ADMANF\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n' if dma_state else '') +
         'JLOAD QPIEMU.DLL\r\nHDPMI32I -r\r\n'
         'AISTATE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'APSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n' + repeat +

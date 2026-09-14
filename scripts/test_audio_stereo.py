@@ -56,7 +56,8 @@ def main():
                     izarra_revision=subprocess.check_output(
                         ['git', '-C', str(args.izarra_source), 'rev-parse', 'HEAD'], text=True).strip(),
                     program_sha256={name: sha256(ROOT / 'build' / name) for name in
-                                    ('ARSHARE.COM', 'ALAUNCH.COM', 'ASTEREO.COM', 'ASTQUIET.COM', 'ADMA.COM')})
+                                    ('ARSHARE.COM', 'ALAUNCH.COM', 'ASTEREO.COM', 'ASTQUIET.COM',
+                                     'ADMA.COM', 'ADMANF.COM')})
     report = directory / 'results.json'
     report.write_text(json.dumps(evidence, indent=2) + '\n')
     for alternate in (False, True):

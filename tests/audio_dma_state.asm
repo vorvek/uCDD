@@ -6,11 +6,15 @@ cpu 386
 org 100h
 %define VIRTUAL_IRQ 1
 %define OUTPUT_SHIFT 9
+%ifndef DSP_FIFO
+%define DSP_FIFO 2
+%endif
 %include "audio/layout.inc"
     jmp start
 
 %include "audio/trap.asm"
 %include "audio/irq.asm"
+%include "audio/mix.asm"
 
 %macro write_port 2
     mov dx, %1
@@ -18,13 +22,93 @@ org 100h
     call write
 %endmacro
 %macro start16 1
-    write_port 22ch, 0b6h
+    write_port 22ch, 0b4h | DSP_FIFO
     write_port 22ch, 30h
     write_port 22ch, (%1-1) & 0ffh
     write_port 22ch, (%1-1) >> 8
 %endmacro
 
 start:
+    write_port 0ch, 0
+    write_port 2, 0
+    write_port 2, 0
+    write_port 83h, 6
+    write_port 3, 0ffh
+    write_port 3, 0fh
+    write_port 0ah, 1
+    write_port 22ch, 0c4h | DSP_FIFO
+    write_port 22ch, 20h
+    write_port 22ch, 0ffh
+    write_port 22ch, 1
+    cmp byte [fault], 0
+    jne failed
+    cmp word [game_dma], dma8
+    jne failed
+    cmp byte [game_frame_shift], 1
+    jne failed
+    cmp dword [game_limit], 2048*65536
+    jne failed
+    cmp word [game_block_bytes], 512
+    jne failed
+    mov byte [game_start_pending], 0
+    write_port 0ch, 0
+    mov dx, 3
+    call read
+    cmp al, 0ffh
+    jne failed
+    call read
+    cmp al, 0eh
+    jne failed
+    mov dword [periods], 2
+    call virtual_irq_tick
+    cmp byte [virtual_dsp_irq], 1
+    jne failed
+    mov dx, 22fh
+    call read
+    cmp byte [virtual_dsp_irq], 1
+    jne failed
+    mov dx, 22eh
+    call read
+    cmp byte [virtual_dsp_irq], 0
+    jne failed
+    mov dword [periods], 4
+    call virtual_irq_tick
+    cmp byte [virtual_dsp_irq], 1
+    jne failed
+    write_port 22ch, 0d5h
+    cmp byte [game_active], 1
+    jne failed
+    mov [game_segment], cs
+    mov word [game_offset], samples
+    mov dword [game_step], 65536
+    mov dword [game_limit], 512*65536
+    mov byte [game_start_pending], 1
+    push cs
+    pop es
+    mov di, output
+    call mix_half
+    mov si, output
+    mov cx, 256
+.samples:
+    cmp dword [si], 0e0002000h
+    jne failed
+    cmp dword [si+4], 0f0001000h
+    jne failed
+    add si, 8
+    loop .samples
+    write_port 22ch, 0d0h
+    cmp byte [game_active], 0
+    jne failed
+    write_port 22ch, 0c4h | DSP_FIFO
+    write_port 22ch, 20h
+    write_port 22ch, 0
+    write_port 22ch, 2
+    call rejected
+    write_port 226h, 1
+    mov dword [periods], 0
+    mov dword [game_started], 0
+    mov dword [game_step], 32768
+
     write_port 0ch, 0
     write_port 3, 34h
     write_port 0d8h, 0
@@ -168,7 +252,12 @@ game_limit dd 4096*65536
 game_started dd 0
 game_segment dw 0
 game_offset dw 0
+game_phase dd 0
+cd_position dw 0
 periods dd 0
 dma_count_port dw 0c6h
-success db 'The stereo DMA state test passed.',13,10,'$'
-failure db 'The stereo DMA state test failed.',13,10,'$'
+success db 'The DMA state test passed.',13,10,'$'
+failure db 'The DMA state test failed.',13,10,'$'
+samples times 256 db 192,64,160,96
+output times PERIOD_BYTES db 0
+cd_samples times 16384 db 0

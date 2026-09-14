@@ -18,7 +18,7 @@ A user has reported successful standalone BIN playback and Quake with shared CD 
 
 In the same hardware test, MSCDEX mounted the image and allowed file access, but Quake had no CD audio and the service reported `The CD image read failed.` after the game exited. Use SHSUCDX for the current Quake experiment. The cause of the MSCDEX audio failure is not yet established.
 
-The internal-host compatibility checks also cover Daggerfall startup with CauseWay and a forced-DPMI DOS/32A configuration, plus Ultima VIII gameplay, normal exit, and CD file checks. Ultima VIII selects VCPI directly, so its result establishes coexistence rather than use of the internal DPMI interface. Tomb Raider remains unresolved: the tested software and 3dfx paths reach a nearly black frame with both uCDD and the HDPMI comparison setup. These checks do not establish mixed audio support outside Quake.
+The internal-host compatibility checks also cover Daggerfall startup with CauseWay and a forced-DPMI DOS/32A configuration, plus Ultima VIII gameplay, normal exit, and CD file checks. Ultima VIII selects VCPI directly, so its result establishes coexistence rather than use of the internal DPMI interface. The 3dfx Tomb Raider build also reaches its intro and attract demo with game sound in a Pentium dynarec test. Its 8-bit stereo output works with FIFO disabled. CD music in Tomb Raider remains unverified; these checks do not establish mixed audio support outside Quake.
 
 ## Requirements and estimates
 
@@ -27,7 +27,7 @@ The internal-host compatibility checks also cover Daggerfall startup with CauseW
 | Processor | 386 or later for the instruction set. For games with mixed CD audio, budget a Pentium-class CPU initially. This is a planning estimate, not a measured minimum. |
 | DOS | DOS 5 or later interfaces. FreeDOS 1.4 is tested. |
 | CD driver memory | 9,248 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
-| Resident audio, one unit | 26,320 bytes for the driver/mixer and 60,992 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 95,504 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. SHSUCDX and the memory manager use additional memory. |
+| Resident audio, one unit | 26,400 bytes for the driver/mixer and 60,992 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 95,584 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. SHSUCDX and the memory manager use additional memory. |
 | Extended memory | A 512 KiB XMS audio queue, plus 12 KiB of private stacks and allocation records while a protected client is active. Client memory and VCPI page tables use additional extended memory. The Quake test machine has 16 MiB. |
 | Sound card | The first audio experiment uses SB16 output at 44.1 kHz, 16-bit stereo. SB Pro-compatible output at 22.05 kHz, 8-bit stereo is planned. |
 | Port trapping | The resident experiment uses Jemm 5.86's real-mode interface and uCDD's own VCPI/DPMI host. General game support remains unverified. |

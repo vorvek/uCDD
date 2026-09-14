@@ -35,6 +35,7 @@ def build_audio():
     assemble('tests/audio_pm.asm', 'AIPMNEG.COM', ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'NO_DELIVERY=1'))
     assemble('tests/audio_irq_state.asm', 'AISTATE.COM')
     assemble('tests/audio_dma_state.asm', 'ADMA.COM')
+    assemble('tests/audio_dma_state.asm', 'ADMANF.COM', ('DSP_FIFO=0',))
     assemble('tests/audio_share.asm', 'AIWRAP.COM',
              ('PM_CLIENT=1', 'VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'PERIOD_SEED=65520'))
     onset = ('VIRTUAL_IRQ=1', 'OUTPUT_SHIFT=9', 'ONSET_TEST=1')

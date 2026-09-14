@@ -61,6 +61,8 @@ mix_half:
     mov esi, edx
     jmp .advance
 .stereo:
+    cmp byte [game_frame_shift], 1
+    je .stereo8
     shl ax, 2
     add ax, [game_offset]
     mov si, ax
@@ -68,6 +70,17 @@ mix_half:
     movsx esi, word [fs:si+2]
     sar edx, 1
     sar esi, 1
+    jmp .advance
+.stereo8:
+    shl ax, 1
+    add ax, [game_offset]
+    mov si, ax
+    movzx edx, byte [fs:si]
+    movzx esi, byte [fs:si+1]
+    sub edx, 128
+    sub esi, 128
+    shl edx, 7
+    shl esi, 7
 .advance:
     add ebp, [game_step]
     cmp ebp, [game_limit]

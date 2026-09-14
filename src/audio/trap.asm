@@ -248,7 +248,11 @@ port_callback:
     je .legacy_start
     cmp al, 0c6h
     je .play
+    cmp al, 0c4h
+    je .play
     cmp al, 0b6h
+    je .play
+    cmp al, 0b4h
     je .play
     cmp al, 0d0h
     je .pause8
@@ -264,8 +268,8 @@ port_callback:
     mov byte [reply_count], 2
     jmp .done
 .pause8:
-    cmp byte [game_frame_shift], 0
-    jne .done
+    cmp byte [game_frame_shift], 2
+    je .done
     jmp .pause
 .pause16:
     cmp byte [game_frame_shift], 2
@@ -278,6 +282,8 @@ port_callback:
     mov byte [arguments], 2
     jmp .done
 .play:
+    ; Both FIFO modes use the same PCM conversion and block interrupts.
+    or byte [dsp_command], 2
     mov byte [arguments], 3
     jmp .done
 .time_constant:
@@ -323,6 +329,11 @@ port_callback:
     mov byte [pending_frame_shift], 2
     jmp .argument_done
 .mono_mode:
+    cmp al, 20h
+    jne .mono
+    mov byte [pending_frame_shift], 1
+    jmp .argument_done
+.mono:
     test al, al
     jnz .unsupported
     jmp .argument_done
@@ -356,8 +367,8 @@ port_callback:
 .validate_start:
     mov si, dma8
     mov cl, 0
-    cmp byte [pending_frame_shift], 0
-    je .dma_selected
+    cmp byte [pending_frame_shift], 2
+    jne .dma_selected
     mov si, dma16
     mov cl, 1
 .dma_selected:
@@ -379,10 +390,13 @@ port_callback:
     dec ecx
     test ebx, ecx
     jnz .unsupported
-    test edx, 3
+    mov cl, [pending_frame_shift]
+    mov eax, 1
+    shl eax, cl
+    dec eax
+    test edx, eax
     jz .block_aligned
-    cmp byte [pending_frame_shift], 0
-    jne .unsupported
+    jmp .unsupported
 .block_aligned:
     cmp edx, ebx
     je .buffer_address
@@ -397,8 +411,8 @@ port_callback:
     jb .unsupported
 .buffer_address:
     movzx eax, word [si+DMA_ADDRESS]
-    cmp byte [pending_frame_shift], 0
-    je .byte_address
+    cmp byte [pending_frame_shift], 2
+    jne .byte_address
     shl eax, 1
     ; High DMA uses a 128 KiB window; page bit zero is ignored.
     movzx ecx, byte [si+DMA_PAGE]
@@ -411,8 +425,8 @@ port_callback:
 .address_window:
     add ecx, eax
     add eax, ebx
-    cmp byte [pending_frame_shift], 0
-    jne .word_window
+    cmp byte [pending_frame_shift], 2
+    je .word_window
     cmp eax, 65536
     ja .unsupported
     jmp .address_limit
@@ -430,8 +444,8 @@ port_callback:
     mov cl, [pending_frame_shift]
     mov [game_frame_shift], cl
     mov al, 1
-    cmp cl, 0
-    je .irq_bit
+    cmp cl, 2
+    jne .irq_bit
     inc al
 .irq_bit:
     mov [game_irq_bit], al
