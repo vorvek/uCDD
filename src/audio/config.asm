@@ -36,8 +36,10 @@ config_load:
     jne .bad
     cmp byte [config_data+11], 0
     jne .bad
-    cmp byte [sound_card], 1
+    cmp byte [sound_card], 2
     ja .bad
+    cmp byte [sound_card], 2
+    je .wss
     mov ax, [sb_base]
     sub ax, 220h
     test ax, 0ff9fh
@@ -52,10 +54,26 @@ config_load:
     cmp byte [sb_dma8], 3
     jne .bad
 .high:
+    cmp byte [sound_card], 0
+    jne .default
     cmp byte [sb_dma16], 5
     jb .bad
     cmp byte [sb_dma16], 7
     ja .bad
+    jmp .default
+.wss:
+    cmp byte [sb_irq], 7
+    jne .bad
+    mov ax, [sb_base]
+    cmp ax, 530h
+    je .dma
+    cmp ax, 604h
+    je .dma
+    cmp ax, 0e80h
+    je .dma
+    cmp ax, 0f40h
+    jne .bad
+    jmp .dma
 .default:
     clc
     ret

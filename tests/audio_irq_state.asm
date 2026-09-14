@@ -95,6 +95,7 @@ physical_eois db 0
 fault db 0
 sb_irq db 5
 game_active db 0
+game_exit_frame dd 0
 game_started dd 0
 game_rate dw 22050
 game_block_bytes dw 4096

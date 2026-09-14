@@ -19,6 +19,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => return Err("The test CPU is not valid.".into()),
     };
     profile.wss.enabled = false;
+    if std::env::var("UCDD_TEST_OUTPUT").as_deref() == Ok("wss") {
+        profile.wss.enabled = true;
+        profile.sound_blaster.enabled = false;
+    }
     let mut machine = Machine::new(profile, izarravm_firmware::izarra_bios())?;
     machine.enable_phase_marks();
     if let Some(path) = args.get(3) {

@@ -22,12 +22,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--izarra-source', type=Path, required=True)
     parser.add_argument('--jemm', action='store_true')
+    parser.add_argument('--wss', action='store_true')
+    parser.add_argument('--sbpro', action='store_true')
     args = parser.parse_args()
     capture = build_capture(args.izarra_source)
     assemble('src/setup.asm', 'UCDDSET.EXE', exe=True)
     for name, options in (('SETLIFE.COM', ()), ('SETFAIL.COM', ('EXPECT_FAILURE=1',)),
                           ('SETRETRY.COM', ('RECOVER=1',)), ('SETHIGH.COM', ('HIGH_SETUP=1',))):
-        assemble('tests/setup_lifecycle.asm', name, options)
+        assemble('tests/setup_lifecycle.asm', name, (*options, *(('WSS_TEST=1',) if args.wss else ()), *(('PRO_TEST=1',) if args.sbpro else ())))
     assemble('tests/exit.asm', 'PASS.COM')
     assemble('tests/exit.asm', 'FAIL.COM', ('EXIT_CODE=1',))
     source = CACHE / 'FD14-LiteUSB.zip'
@@ -50,9 +52,13 @@ def main():
                  'SETHIGH.COM', 'PASS.COM', 'FAIL.COM'):
         disk.add(name, (ROOT / 'build' / name).read_bytes())
     default = b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes((5, 1, 5, 0))
+    if args.wss:
+        default = b'uCDD\x01\x02' + struct.pack('<H', 0x530) + bytes((7, 1, 5, 0))
+    if args.sbpro:
+        default = default[:5] + b'\x01' + default[6:]
     disk.add('DEFAULT.CFG', default)
     disk.add('ALT.CFG', default[:8] + bytes((7, 3, 6, 0)))
-    disk.add('BADPORT.CFG', default[:6] + struct.pack('<H', 0x240) + default[8:])
+    disk.add('BADPORT.CFG', default[:6] + struct.pack('<H', 0x604 if args.wss else 0x240) + default[8:])
     commands = ['@ECHO OFF', 'SET BLASTER=']
     for config_name, test in (('DEFAULT', 'SETLIFE'), ('ALT', 'SETLIFE'),
                               ('BADPORT', 'SETFAIL'), ('BADPORT', 'SETRETRY')):
@@ -63,6 +69,10 @@ def main():
     commands += ['PASS', ':FAIL', 'FAIL']
     disk.add('AUTOEXEC.BAT', ('\r\n'.join(commands) + '\r\n').encode())
     run = ROOT / '.local/audio' / ('setup-jemm' if args.jemm else 'setup-dos')
+    if args.wss:
+        run = run.with_name(run.name+'-wss')
+    if args.sbpro:
+        run = run.with_name(run.name+'-sbpro')
     run.mkdir(exist_ok=True)
     image, wav = run / 'setup.img', run / 'setup.wav'
     image.write_bytes(disk.image)
@@ -72,7 +82,7 @@ def main():
     (run / 'results.json').write_text(json.dumps(evidence, indent=2) + '\n')
     result = subprocess.run([str(capture), str(image), str(wav)], capture_output=True,
                             text=True, timeout=120, env=dict(os.environ, UCDD_TEST_CPU='386',
-                            UCDD_TEST_STEPS='60000'))
+                            UCDD_TEST_STEPS='60000', UCDD_TEST_OUTPUT='wss' if args.wss else 'sb16'))
     (run / 'setup.log').write_text(result.stdout + result.stderr)
     print(result.stdout + result.stderr)
     result.check_returncode()

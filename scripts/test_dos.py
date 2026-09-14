@@ -101,7 +101,7 @@ def main():
             disk.add('JEMMEX.EXE', source.read('JEMMEX.EXE'))
         config = 'DEVICE=C:\\JEMMEX.EXE NOEMS\r\n' + config.replace('DOS=LOW', 'DOS=HIGH,UMB')
     disk.add('FDCONFIG.SYS', config.encode())
-    for name in ('PROBE.COM', 'PACKETS.COM', 'CUEPACK.COM', 'CDSTATE.COM', 'FILECRC.COM', 'PASS.COM', 'FAIL.COM'):
+    for name in ('PROBE.COM', 'PACKETS.COM', 'CUEPACK.COM', 'CDSTATE.COM', 'CDBG.COM', 'FILECRC.COM', 'PASS.COM', 'FAIL.COM'):
         disk.add(name, (ROOT / 'build' / name).read_bytes())
     disk.add('ONE.ISO', make_iso('ONE'))
     disk.add('TWO.ISO', make_iso('TWO'))
@@ -146,7 +146,7 @@ def main():
         names = {Path(name).name.lower(): name for name in suite.namelist()}
         for name in ('shsucdx.com', 'shsucdhd.exe'):
             disk.add(name, suite.read(names[name]))
-    commands = ['@ECHO OFF', 'PROMPT $P$G', 'CDSTATE', 'IF ERRORLEVEL 1 GOTO FAIL',
+    commands = ['@ECHO OFF', 'PROMPT $P$G', 'CDBG', 'IF ERRORLEVEL 1 GOTO FAIL', 'CDSTATE', 'IF ERRORLEVEL 1 GOTO FAIL',
                 'PROBE absent', 'IF ERRORLEVEL 1 GOTO FAIL']
     if args.baseline:
         commands += ['SHSUCDHD /F:C:\\ONE.ISO', 'IF ERRORLEVEL 1 GOTO FAIL',
@@ -310,7 +310,7 @@ def main():
     print(log[-6000:])
     if result.returncode or not re.search(r'stop: TestExit \{ code: 0 \}', log):
         raise SystemExit('The DOS test failed. See the test log.')
-    if not args.baseline and resident_bytes != (9248 if args.single_unit else 10592):
+    if not args.baseline and resident_bytes != (9264 if args.single_unit else 10608):
         raise SystemExit('The resident memory size changed. Check the resident layout.')
     print('The DOS test passed.')
 

@@ -51,6 +51,7 @@ def main():
     assemble('tests/packets.asm', 'PACKETS.COM')
     assemble('tests/cue_packets.asm', 'CUEPACK.COM')
     assemble('tests/audio_cd_state.asm', 'CDSTATE.COM')
+    assemble('tests/audio_background.asm', 'CDBG.COM')
     assemble('tests/file_crc.asm', 'FILECRC.COM')
     assemble('tests/exit.asm', 'PASS.COM')
     assemble('tests/exit.asm', 'FAIL.COM', ('EXIT_CODE=1',))

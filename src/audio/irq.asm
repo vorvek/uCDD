@@ -29,18 +29,45 @@ virtual_irq_tick:
     cmp byte [si+DMA_MASK], 0
     jne .done
     call game_elapsed
+    cmp dword [game_exit_frame], 0
+    je .position
+    cmp eax, [game_exit_frame]
+    jb .position
+    mov eax, [game_exit_frame]
+    mov byte [game_active], 0
+.position:
     movzx ecx, word [game_rate]
     mul ecx
-    mov ecx, 44100
+    mov ecx, OUTPUT_RATE
     div ecx
     mov cl, [game_frame_shift]
     shl eax, cl
+%ifdef WSS_INPUT
+    cmp byte [game_source], 1
+    jne .block_position
+    sub eax, [wss_block_origin]
+.block_position:
+%endif
     xor edx, edx
     movzx ecx, word [game_block_bytes]
     div ecx
     cmp eax, [virtual_block_seen]
     je .done
     mov [virtual_block_seen], eax
+%ifdef WSS_INPUT
+    cmp byte [game_source], 1
+    jne .sb
+    test byte [wss_status], 1
+    jnz .done
+    or byte [wss_status], 1
+    call wss_hold
+    test byte [wss_registers+10], 2
+    jz .done
+    mov ax, [wss_guest_irq]
+    mov [wss_irq_event], ax
+    ret
+.sb:
+%endif
     cmp byte [virtual_dsp_irq], 0
     jne .done
     mov al, [game_irq_bit]

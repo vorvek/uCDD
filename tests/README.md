@@ -62,7 +62,7 @@ The interpreted 386 boot test forces a wrong physical I/O address. It checks fai
 
 The interpreted 586 game test installs before mounting an image, checks duplicate installation and rejected mount commands, copies and verifies RESOURCE.1, then starts Quake directly twice with an unmount/remount between runs. Each run must finish, leave no reported audio fault, and pass separate checks of the complete 12-second music excerpt and centered game sound. Each capture must also reject four deliberate corruptions. The phase markers delimit the two game runs in the capture. Original game files and images are read-only inputs.
 
-With `--load-high`, both one-unit resident blocks must be above conventional memory, while the DMA ring and its allocation must remain below A0000h. The measured driver/mixer block is 26,320 bytes and the internal host is 60,992 bytes, plus an 8 KiB conventional DMA allocation and a 512 KiB XMS queue. Reports are under `.local/audio/resident-high-own-host/`, or `resident-low-own-host/` without `--load-high`. These checks establish the tested Jemm/internal-host path. Other host adapters, real-mode game interrupt delivery, and refills for games that do not poll CD status remain unverified.
+With `--load-high`, both one-unit resident blocks must be above conventional memory, while the DMA ring and its allocation must remain below A0000h. The measured driver/mixer block is 30,640 bytes and the internal host is 61,056 bytes, plus an 8 KiB conventional DMA allocation and a 512 KiB XMS queue. Reports are under `.local/audio/resident-high-own-host/`, or `resident-low-own-host/` without `--load-high`. These checks establish the tested Jemm/internal-host path. Other host adapters and real-mode game interrupt delivery remain unverified. Tomb Raider covers timer refills without frequent CD status polling.
 
 ## uCDD-owned protected-mode host
 
@@ -281,3 +281,25 @@ The foreground polling behavior is defined by id Software's [DOS CD implementati
 A user reported that the current Quake experiment works on a real DOS PC with SHSUCDX, with CD music and game sound sharing the SB16. The user also confirmed that `LH UCDDRV.EXE` loads the driver into upper memory. This report does not establish measured latency, sample accuracy, long-session stability, or a minimum processor speed.
 
 With MSCDEX on the same machine, the image mounted and its files could be accessed, but Quake produced no CD audio. After the game exited, the service reported `The CD image read failed.`. Switching to SHSUCDX worked. This comparison records a redirector-dependent result; it does not identify the cause. MSCDEX audio compatibility remains unresolved.
+
+## Tomb Raider CD audio
+
+The resident SB16 test starts a new game in Caves, moves Lara, returns to the title, and exits to DOS. The 3dfx fixture runs with the Pentium dynarec, one physical SB16, WSS disabled, and no emulator CD image. A trace identified seek 83h and Q-channel input 0Ch requests. Background refill permits playback without frequent game status polls.
+
+`check_tomb_audio.py --capture capture.wav --bin disc.bin --track-lba 102044` checks 23 seconds of track 3 from this disc layout. Supply the actual INDEX 01 sector for another pressing. The check compares every stereo frame against the source and the 8-bit game output grid, then requires game sound in the residual. It rejects repeated blocks, phase jumps, exchanged channels, absent game sound, and absent CD audio. This check assumes the tested SB16 output gain and unsigned 8-bit game format. No game files or captures are distributed.
+
+The interpreted 386 CD-state tests cover seek addresses, BCD track numbers, head position, short requests, and completion. The background-state test covers DOS and BIOS exclusion, nested timer calls, stack restoration, and BIOS result flags. The DMA-state tests cover 8-bit and 16-bit exit commands, block completion, final IRQ, and silence afterward. The seek and Q-channel layouts follow Microsoft's [MSCDEX driver specification](https://gist.github.com/abrasive/7a615e6dde0c1da962f9930cc63ee43d).
+
+## WSS and SB Pro
+
+```powershell
+python scripts/test_setup.py --izarra-source D:\dev\IzarraVM --wss
+python scripts/test_setup.py --izarra-source D:\dev\IzarraVM --sbpro --jemm
+python scripts/test_audio_cards.py --izarra-source D:\dev\IzarraVM --load-high
+```
+
+The card test uses interpreted 386 execution. Protocol tests check WSS masked startup, active counter reload, transfer holds, and source changes; SB Pro checks the silent-byte initialization, high-speed stereo, and legacy mono. The codec test rejects writes made before INIT clears. A conversion test checks stereo samples, saturation, the fractional CD clock, XMS queue wrap, and a partial final buffer.
+
+A protected client then runs twice through the internal host, requests WSS IRQ 11, and checks disabled codec interrupts, PIC masking, and resumed delivery. This runs with each physical output. The lifecycle wrapper compares DOS allocation state, vectors, PIC mask, and mixer registers. The high-memory cases check both resident blocks and read the DMA allocation size from its DOS memory control block. SB16/WSS use 8 KiB; SB Pro uses 2 KiB. Reports are under `.local/audio/cards-<output>-high/`.
+
+For the same Tomb Raider Caves movement sequence, `check_tomb_audio.py --sbpro` checks nine seconds of music in intervals 1-6 and 14-18, where game effects are absent, and requires effects during seconds 6-14. Its 128-unit sample bound allows 8-bit conversion and capture filtering. It rejects repeated blocks, phase jumps, swapped channels, missing game sound, and missing CD music. This is a bounded check of this fixture, not the continuous 16-bit comparison. The physical clock uses the conventional SB Pro time constant; the CD resampler compensates for its actual rate.

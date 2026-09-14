@@ -82,8 +82,6 @@ save_error:
 test_sound:
     call resident_audio_present
     jc .resident
-    cmp byte [sound_card], 0
-    jne .unsupported
     call config_save
     jc save_error
     mov word [status], listen_message
@@ -103,9 +101,6 @@ test_sound:
 .failed:
     mov byte [result], 1
     mov word [status], test_error
-    jmp start.loaded
-.unsupported:
-    mov word [status], pro_message
     jmp start.loaded
 .resident:
     mov word [status], resident_message
@@ -154,17 +149,50 @@ exit:
     int 21h
 
 change_card:
-    xor byte [sound_card], 1
+    inc byte [sound_card]
+    cmp byte [sound_card], 2
+    je .wss
+    jb .done
+    mov byte [sound_card], 0
+    mov word [sb_base], 220h
+.done:
+    ret
+.wss:
+    mov word [sb_base], 530h
+    mov byte [sb_irq], 7
     ret
 change_port:
+    cmp byte [sound_card], 2
+    je .wss
     add word [sb_base], 20h
     cmp word [sb_base], 280h
     jbe .done
     mov word [sb_base], 220h
 .done:
     ret
+.wss:
+    cmp word [sb_base], 530h
+    je .p604
+    cmp word [sb_base], 604h
+    je .pe80
+    cmp word [sb_base], 0e80h
+    je .pf40
+    mov word [sb_base], 530h
+    ret
+.p604:
+    mov word [sb_base], 604h
+    ret
+.pe80:
+    mov word [sb_base], 0e80h
+    ret
+.pf40:
+    mov word [sb_base], 0f40h
+    ret
 change_irq:
+    cmp byte [sound_card], 2
+    je .done
     xor byte [sb_irq], 2
+.done:
     ret
 change_dma8:
     xor byte [sb_dma8], 2
@@ -202,6 +230,9 @@ draw:
     cmp byte [sound_card], 0
     je .card
     mov si, pro_name
+    cmp byte [sound_card], 2
+    jne .card
+    mov si, wss_name
 .card:
     call put
     mov ax, [sb_base]
@@ -242,8 +273,8 @@ draw:
     call put
     mov dx, 1007h
     mov si, output_16
-    cmp byte [sound_card], 0
-    je .output
+    cmp byte [sound_card], 1
+    jne .output
     mov si, output_pro
 .output:
     call put
@@ -438,20 +469,21 @@ selected db 0
 result db 0
 status dw initial_message
 changes dw change_card,change_port,change_irq,change_dma8,change_dma16
-choice_counts db 2,4,2,2,3
+choice_counts db 3,4,2,2,3
 title db 'uCDD Sound Setup',0
 subtitle db 'Select the settings for the physical sound card.',0
 labels db 'Card',13,10,13,10,'       I/O address',13,10,13,10
     db '       IRQ',13,10,13,10,'       8-bit DMA',13,10,13,10,'       16-bit DMA',0
 sb16_name db 'Sound Blaster 16',0
 pro_name db 'Sound Blaster Pro',0
+wss_name db 'Windows Sound System',0
 port_text db '220h',0
 number_text db '5',0
 unused_text db 'Not used',0
 hex_digits db '0123456789ABCDEF'
 arrow db '>',0
 output_16 db 'Output: 44.1 kHz, 16-bit stereo.',0
-output_pro db 'Output target: 22.05 kHz, 8-bit stereo. Not available yet.',0
+output_pro db 'Output: 8-bit stereo. Nominal rate: 22.05 kHz.',0
 initial_message db 'Check these settings against the sound card configuration.',0
 changed_message db 'The settings have changed. F10 saves them to UCDD.CFG.',0
 invalid_message db 'UCDD.CFG is not valid. Check all settings before you save.',0
@@ -459,7 +491,6 @@ save_message db 'The settings cannot be saved.',0
 listen_message db 'Listen for a tone from each speaker.',0
 test_message db 'The test has stopped. Check that both speakers made a sound.',0
 test_error db 'The test failed. Check the sound card and its settings.',0
-pro_message db 'SB Pro output is not available in this build.',0
 resident_message db 'Restart DOS before you run the sound test.',0
 help db 'Up/Down: Select   Left/Right/Enter: Change',13,10
     db '     F2: Save and test   F10: Save and exit   Esc: Exit',0

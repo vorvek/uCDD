@@ -74,6 +74,7 @@ own_host_install:
     mov word [own_host_file], 0ffffh
     mov bx, port_callback
     mov dx, virtual_irq_take
+    mov si, wss_irq_event
     mov al, [sb_irq]
     call far [own_host_entry]
     jc .free_bad

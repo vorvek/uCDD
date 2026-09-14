@@ -5,6 +5,7 @@
 %define MOUNTED_AUDIO 1
 %define CD_IMAGE_TEST 1
 %define VIRTUAL_IRQ 1
+%define WSS_INPUT 1
 %include "audio/layout.inc"
 
 qpi dd 0
@@ -23,6 +24,14 @@ game_segment dw 0
 game_offset dw 0
 game_started dd 0
 game_active db 0
+output_rate dd 44100
+cd_step dd 65536
+cd_step_remainder dd 0
+cd_step_error dd 0
+cd_fraction dd 0
+cd_take_bytes dd PERIOD_BYTES
+pro_pair_left dd 0
+pro_pair_right dd 0
 resident_paragraphs dw 0
 audio_linked db 0
 
@@ -33,6 +42,7 @@ audio_linked db 0
 %undef arguments
 %include "audio/config.asm"
 %include "audio/mounted.asm"
+%include "audio/background.asm"
 %include "audio/irq.asm"
 %include "audio/host_jemm.asm"
 %ifdef OWN_HOST
@@ -73,12 +83,15 @@ audio_bind:
     mov word [si+AUDIO_ENTRY], cd_request
     mov [si+AUDIO_ENTRY+2], cs
     mov byte [cd_error], 0
+    mov eax, [si+ORIGIN]
+    mov [cd_head_lba], eax
     pop es
     popad
 .done:
     ret
 
 audio_cleanup:
+    call cd_background_remove
     call sb_stop
     call trap_remove
     call host_remove

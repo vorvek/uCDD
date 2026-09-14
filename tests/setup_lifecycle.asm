@@ -10,6 +10,39 @@ org 100h
     mov ah, 4ah
     int 21h
     jc fail
+%ifdef PRO_TEST
+    mov dx, config_name
+    mov ax, 3d00h
+    int 21h
+    jc fail
+    mov bx, ax
+    mov dx, config_data
+    mov cx, 12
+    mov ah, 3fh
+    int 21h
+    jc fail
+    mov ah, 3eh
+    int 21h
+    mov dx, 224h
+    mov al, 80h
+    out dx, al
+    inc dx
+    mov al, 2
+    cmp byte [config_data+8], 5
+    je .irq_set
+    mov al, 4
+.irq_set:
+    out dx, al
+    dec dx
+    mov al, 81h
+    out dx, al
+    inc dx
+    mov cl, [config_data+9]
+    mov al, 1
+    shl al, cl
+    or al, 20h
+    out dx, al
+%endif
 %ifdef HIGH_SETUP
     mov ax, 5800h
     int 21h
@@ -157,9 +190,17 @@ snapshot:
     mov ax, bx
     stosw
     mov si, mixer_registers
+%ifdef WSS_TEST
+    mov cx, 7
+%else
     mov cx, 6
+%endif
 .mixer:
+%ifdef WSS_TEST
+    mov dx, 534h
+%else
     mov dx, 224h
+%endif
     lodsb
     out dx, al
     inc dx
@@ -168,9 +209,21 @@ snapshot:
     loop .mixer
     ret
 
+%ifdef WSS_TEST
+mixer_registers db 6,7,8,9,10,14,15
+before times 21 db 0
+after times 21 db 0
+%else
+%ifdef PRO_TEST
+mixer_registers db 04h,22h,0eh,0ch,80h,81h
+config_name db 'UCDD.CFG',0
+config_data times 12 db 0
+%else
 mixer_registers db 30h,31h,32h,33h,80h,81h
+%endif
 before times 20 db 0
 after times 20 db 0
+%endif
 saved_sp dw 0
 %ifdef HIGH_SETUP
 policy_saved db 0

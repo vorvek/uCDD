@@ -85,8 +85,16 @@ physical_reset:
     clc
     ret
 sb_start:
+    cmp byte [sound_card], 2
+    je wss_start
     cmp byte [sound_card], 0
+%ifdef RESIDENT_AUDIO
+    jne pro_start
+%elifdef DIRECT_OUTPUT
+    jne pro_start
+%else
     jne .fail
+%endif
     movzx bx, byte [sb_dma16]
     mov al, [dma_pages+bx-5]
     mov [dma_page_port], al
@@ -217,6 +225,10 @@ sb_start:
     stc
     ret
 sb_stop:
+    cmp byte [sound_card], 2
+    je wss_stop
+    cmp byte [sound_card], 1
+    je pro_stop
     cmp byte [sb_running], 0
     je .done
     mov al, 0d5h
@@ -280,6 +292,10 @@ audio_irq:
     push es
     push fs
     cld
+    cmp byte [sound_card], 2
+    je .wss
+    cmp byte [sound_card], 1
+    je .pro
     ; A reflected game IRQ must not advance the physical output buffer.
     mov dx, [sb_base]
     add dx, 4
@@ -292,6 +308,7 @@ audio_irq:
     mov dx, [sb_base]
     add dx, 0fh
     call physical_read
+.acknowledged:
     inc dword [periods]
 %ifdef MOUNTED_AUDIO
     call output_clock
@@ -300,15 +317,25 @@ audio_irq:
     and ax, 1
     xor ax, 1
     shl ax, OUTPUT_SHIFT+2
+    cmp byte [sound_card], 1
+    jne .half_ready
+    shr ax, 2
+.half_ready:
     mov [next_half], ax
 %endif
     mov es, [output_segment]
     mov di, [next_half]
-    xor word [next_half], PERIOD_BYTES
+    mov ax, PERIOD_BYTES
+    cmp byte [sound_card], 1
+    jne .half_size
+    shr ax, 2
+.half_size:
+    xor [next_half], ax
     call mix_half
 %ifdef VIRTUAL_IRQ
     call virtual_irq_tick
 %endif
+.eoi:
     mov al, 20h
     mov dx, 20h
     call physical_write
@@ -320,6 +347,34 @@ audio_irq:
     pop ax
     pop ds
     iret
+.pro:
+    cmp byte [pro_priming], 0
+    je .pro_audio
+    mov byte [pro_priming], 0
+    mov dx, [sb_base]
+    add dx, 0eh
+    call physical_read
+    jmp .eoi
+.pro_audio:
+%ifdef MOUNTED_AUDIO
+    call output_clock
+    shr eax, OUTPUT_SHIFT
+    cmp eax, [periods]
+    je .unowned
+%endif
+    mov dx, [sb_base]
+    add dx, 0eh
+    call physical_read
+    jmp .acknowledged
+.wss:
+    mov dx, [sb_base]
+    add dx, 6
+    call physical_read
+    test al, 1
+    jz .unowned
+    xor al, al
+    call physical_write
+    jmp .acknowledged
 .unowned:
     pop fs
     pop es
@@ -346,5 +401,8 @@ saved_dma db 0
 sb_running db 0
 mixer_registers db 30h,31h,32h,33h
 mixer_saved times 4 db 0
+
+%include "audio/wss_output.asm"
+%include "audio/pro_output.asm"
 times 1024 db 0
 irq_stack_top:

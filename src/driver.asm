@@ -100,6 +100,8 @@ interrupt:
     je .success
     cmp al, 80h
     je .read
+    cmp al, 83h
+    je .audio
     cmp al, 84h
     je .audio
     cmp al, 85h
@@ -184,7 +186,11 @@ ioctl_input:
     call ioctl_buffer
     jc request_error
     movzx bx, byte [es:di]
+    cmp bl, 1
+    je audio_request
     cmp bl, 4
+    je audio_request
+    cmp bl, 12
     je audio_request
     cmp bl, 15
     je .audio_status

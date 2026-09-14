@@ -131,6 +131,8 @@ cd_open:
     inc si
     jmp .find
 .found:
+    mov eax, [cd_info+INFO_ORIGIN]
+    mov [cd_head_lba], eax
     mov dx, cd_info
     mov ax, 3da0h
     int 21h
@@ -177,6 +179,8 @@ cd_request:
 .dispatch:
     mov word [cd_result], 810ch
     mov al, [fs:bp+2]
+    cmp al, 83h
+    je .seek
     cmp al, 84h
     je .play
     cmp al, 85h
@@ -215,8 +219,12 @@ cd_request:
     mov [cd_gain+4], eax
     jmp .ok
 .input:
+    cmp byte [es:di], 1
+    je .head
     cmp byte [es:di], 4
     je .volume
+    cmp byte [es:di], 12
+    je .q_channel
     cmp byte [es:di], 15
     jne .done
     cmp cx, 11
@@ -232,6 +240,90 @@ cd_request:
     mov [es:di+3], eax
     mov eax, [cd_status_end]
     mov [es:di+7], eax
+    jmp .ok
+.head:
+    cmp cx, 6
+    jb .done
+    cmp byte [es:di+1], 1
+    ja .done
+    call cd_head
+    cmp byte [es:di+1], 0
+    je .head_lba
+    call cd_msf
+    jmp .head_store
+.head_lba:
+    sub eax, [cd_info+INFO_ORIGIN]
+.head_store:
+    mov [es:di+2], eax
+    jmp .ok
+.q_channel:
+    cmp cx, 11
+    jb .done
+    push es
+    push di
+    call cd_foreground
+    pop di
+    pop es
+    call cd_head
+    mov ebx, eax
+    mov si, cd_info+INFO_TRACKS
+    movzx ecx, word [cd_info+INFO_COUNT]
+    test cx, cx
+    jz .done
+    mov dl, 1
+.q_track:
+    cmp cx, 1
+    je .q_found
+    cmp eax, [si+TRACK_SIZE+TRACK_INDEX0]
+    jb .q_found
+    add si, TRACK_SIZE
+    inc dl
+    loop .q_track
+.q_found:
+    mov al, [si+TRACK_CONTROL]
+    or al, 1
+    mov [es:di+1], al
+    mov al, dl
+    aam
+    shl ah, 4
+    or al, ah
+    mov [es:di+2], al
+    mov byte [es:di+3], 1
+    mov eax, ebx
+    sub eax, [si+TRACK_START]
+    jnc .q_relative
+    neg eax
+    mov byte [es:di+3], 0
+.q_relative:
+    call cd_frames_msf
+    mov [es:di+6], al
+    mov [es:di+5], ah
+    shr eax, 16
+    mov [es:di+4], al
+    mov byte [es:di+7], 0
+    mov eax, ebx
+    call cd_msf
+    mov [es:di+10], al
+    mov [es:di+9], ah
+    shr eax, 16
+    mov [es:di+8], al
+    jmp .ok
+.seek:
+    cmp bp, 10000h-24
+    ja .done
+    cmp byte [fs:bp], 13
+    je .seek_header
+    cmp byte [fs:bp], 24
+    jb .done
+.seek_header:
+    mov eax, [fs:bp+20]
+    call cd_address
+    jc .done
+    cmp eax, [cd_info+INFO_TOTAL]
+    jae .done
+    call cd_clear_state
+    mov [cd_head_lba], eax
+    mov byte [cd_error], 0
     jmp .ok
 .volume:
     cmp cx, 9
@@ -278,27 +370,7 @@ cd_request:
     jb .done
 .play_header:
     mov eax, [fs:bp+14]
-    cmp byte [fs:bp+13], 0
-    je .lba
-    cmp byte [fs:bp+13], 1
-    jne .done
-    test eax, 0ff000000h
-    jnz .done
-    movzx edx, al
-    cmp dl, 75
-    jae .done
-    movzx ecx, ah
-    cmp cl, 60
-    jae .done
-    shr eax, 16
-    imul eax, 60
-    add eax, ecx
-    imul eax, 75
-    add eax, edx
-    sub eax, 150
-    jc .done
-.lba:
-    add eax, [cd_info+INFO_ORIGIN]
+    call cd_address
     jc .done
     mov edx, [fs:bp+18]
     test edx, edx
@@ -339,6 +411,10 @@ cd_request:
     mov [cd_offset], eax
     mov dword [cd_produced], 0
     mov dword [cd_consumed], 0
+%ifdef RESIDENT_AUDIO
+    mov dword [cd_fraction], 0
+    mov dword [cd_step_error], 0
+%endif
 %ifndef CD_FAILURE_TEST
     mov byte [cd_error], 0
 %endif
@@ -380,6 +456,10 @@ cd_request:
     retf
 
 cd_clear_state:
+    push eax
+    call cd_head
+    mov [cd_head_lba], eax
+    pop eax
     mov byte [cd_started], 0
     mov byte [cd_paused], 0
     mov dword [cd_remaining], 0
@@ -388,9 +468,10 @@ cd_clear_state:
     ret
 
 cd_msf:
-    push ebx
     sub eax, [cd_info+INFO_ORIGIN]
     add eax, 150
+cd_frames_msf:
+    push ebx
     xor edx, edx
     mov ecx, 4500
     div ecx
@@ -404,6 +485,56 @@ cd_msf:
     or eax, ebx
     or eax, edx
     pop ebx
+    ret
+
+cd_address:
+    cmp byte [fs:bp+13], 0
+    je .lba
+    cmp byte [fs:bp+13], 1
+    jne .bad
+    test eax, 0ff000000h
+    jnz .bad
+    movzx edx, al
+    cmp dl, 75
+    jae .bad
+    movzx ecx, ah
+    cmp cl, 60
+    jae .bad
+    shr eax, 16
+    imul eax, 60
+    add eax, ecx
+    imul eax, 75
+    add eax, edx
+    sub eax, 150
+    jc .bad
+.lba:
+    add eax, [cd_info+INFO_ORIGIN]
+    ret
+.bad:
+    stc
+    ret
+
+cd_head:
+    push ecx
+    push edx
+    mov eax, [cd_head_lba]
+    cmp byte [cd_started], 0
+    jne .active
+    cmp byte [cd_paused], 0
+    je .done
+.active:
+    mov eax, [cd_consumed]
+    cmp eax, [cd_length]
+    jbe .position
+    mov eax, [cd_length]
+.position:
+    xor edx, edx
+    mov ecx, 2352
+    div ecx
+    add eax, [cd_start_lba]
+.done:
+    pop edx
+    pop ecx
     ret
 
 cd_foreground:
@@ -509,13 +640,25 @@ cd_pump:
     cmp ax, 1
     jne .bad
     add dword [cd_produced], CD_READ_BYTES
+%ifdef RESIDENT_AUDIO
+    cmp byte [cd_background_reads], 0
+    je cd_pump
+    dec byte [cd_background_reads]
+    jz .done
+%endif
     jmp cd_pump
 .bad:
     mov byte [cd_error], 1
 .done:
     ret
 
+%ifdef RESIDENT_AUDIO
+%include "audio/cd_resample.asm"
+%endif
 cd_begin_half:
+%ifdef RESIDENT_AUDIO
+    jmp cd_begin_resampled
+%endif
     mov byte [cd_valid], 0
     cmp byte [cd_started], 0
     je .done
@@ -621,6 +764,7 @@ cd_offset dd 0
 cd_length dd 0
 cd_remaining dd 0
 cd_start_lba dd 0
+cd_head_lba dd 0
 cd_end_lba dd 0
 cd_status_start dd 0
 cd_status_end dd 0
@@ -647,7 +791,11 @@ cd_read_source dw 0
 cd_read_offset dd 0
     dw 0
 cd_read_address dw cd_half,0
+%ifdef RESIDENT_AUDIO
+cd_half times PERIOD_BYTES+PERIOD_BYTES/32+4 db 0
+%else
 cd_half times PERIOD_BYTES db 0
+%endif
 cd_stage times CD_READ_BYTES db 0
     times 2048 db 0
 cd_stack_top:

@@ -33,6 +33,65 @@ start:
     write_port 2, 0
     write_port 2, 0
     write_port 83h, 6
+    write_port 3, 0
+    write_port 3, 0
+    write_port 0bh, 49h
+    write_port 0ah, 1
+    write_port 22ch, 14h
+    write_port 22ch, 0
+    write_port 22ch, 0
+    cmp byte [fault], 0
+    jne failed
+    cmp byte [virtual_dsp_irq], 1
+    jne failed
+    cmp byte [game_active], 0
+    jne failed
+    mov dx, 22eh
+    call read
+    write_port 224h, 0eh
+    write_port 225h, 22h
+    write_port 22ch, 40h
+    write_port 22ch, 233
+    write_port 22ch, 48h
+    write_port 22ch, 0ffh
+    write_port 22ch, 3
+    write_port 0ch, 0
+    write_port 2, 0
+    write_port 2, 0
+    write_port 83h, 6
+    write_port 3, 0ffh
+    write_port 3, 0fh
+    write_port 0ah, 1
+    write_port 22ch, 90h
+    cmp byte [fault], 0
+    jne failed
+    cmp word [game_rate], 21739
+    jne failed
+    cmp byte [game_frame_shift], 1
+    jne failed
+    cmp word [game_block_bytes], 1024
+    jne failed
+    cmp byte [arguments], 0
+    jne failed
+    write_port 226h, 1
+    write_port 226h, 0
+    write_port 224h, 0eh
+    write_port 225h, 0
+    write_port 22ch, 40h
+    write_port 22ch, 156
+    write_port 22ch, 1ch
+    cmp word [game_rate], 10000
+    jne failed
+    cmp byte [game_frame_shift], 0
+    jne failed
+    write_port 226h, 1
+    write_port 226h, 0
+    mov word [game_rate], 22050
+    mov dword [game_step], 32768
+    write_port 0ch, 0
+    write_port 2, 0
+    write_port 2, 0
+    write_port 83h, 6
     write_port 3, 0ffh
     write_port 3, 0fh
     write_port 0ah, 1
@@ -309,8 +368,8 @@ game_phase dd 0
 cd_position dw 0
 periods dd 0
 dma_count_port dw 0c6h
-success db 'The DMA state test passed.',13,10,'$'
-failure db 'The DMA state test failed.',13,10,'$'
+success db 'The SB Pro state test passed.',13,10,'$'
+failure db 'The SB Pro state test failed.',13,10,'$'
 samples times 256 db 192,64,160,96
 output times PERIOD_BYTES db 0
 cd_samples times 16384 db 0

@@ -19,3 +19,9 @@
 %define DMA_ADDRESS 4
 %define DMA_COUNT 6
 %define DMA_SNAPSHOT 8
+
+%ifdef RESIDENT_AUDIO
+%define OUTPUT_RATE dword [output_rate]
+%else
+%define OUTPUT_RATE 44100
+%endif

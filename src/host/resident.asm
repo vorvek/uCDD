@@ -6,6 +6,7 @@ cpu 386
 org 0
 %define HOST_DPMI 1
 %define VIRTUAL_IRQ 1
+%define WSS_INPUT 1
     jmp resident_host_init
     db 'uCDH'
 resident_host_init:
@@ -17,6 +18,11 @@ resident_host_init:
     mov [cs:resident_port+2], ds
     mov [cs:resident_take], dx
     mov [cs:resident_take+2], ds
+    movzx eax, si
+    movzx ecx, word [cs:resident_take+2]
+    shl ecx, 4
+    add eax, ecx
+    mov [cs:resident_wss_event], eax
     push cs
     pop ds
     call dpmi_install
@@ -49,12 +55,20 @@ resident_host_init:
 
 resident_port dd 0
 resident_take dd 0
+resident_wss_event dd 0
 resident_ports:
 %include "audio/ports.inc"
 resident_port_count equ ($-resident_ports)/2
 
 bits 32
 resident_pending:
+    mov esi, [ebp+resident_wss_event]
+    movzx eax, word [esi]
+    cmp eax, 16
+    jae .sb
+    mov word [esi], 0ffffh
+    bts [ebp+dpmi_pending_irqs], eax
+.sb:
     call dpmi_pic_audio_allowed
     jc .none
     cmp byte [ebp+dpmi_vif], 1

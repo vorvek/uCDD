@@ -98,6 +98,12 @@ output_clock:
     push bx
     mov al, 0
     mov dx, 0d8h
+%ifdef RESIDENT_AUDIO
+    cmp byte [sound_card], 0
+    je .reset_dma
+    mov dx, 0ch
+.reset_dma:
+%endif
     call physical_write
     mov dx, [dma_count_port]
     call physical_read
@@ -105,6 +111,18 @@ output_clock:
     call physical_read
     mov ah, al
     mov al, bl
+%ifdef RESIDENT_AUDIO
+    cmp byte [sound_card], 2
+    jne .pro_count
+    shr ax, 1
+    jmp .count_ready
+.pro_count:
+    cmp byte [sound_card], 1
+    jne .count_ready
+    shl ax, 1
+    or ax, 1
+.count_ready:
+%endif
     pop bx
     ret
 
@@ -112,6 +130,14 @@ game_elapsed:
     cmp byte [game_start_pending], 1
     je .zero
     call output_clock
+%ifdef WSS_INPUT
+    cmp byte [game_source], 1
+    jne .clock_ready
+    cmp byte [wss_paused], 0
+    je .clock_ready
+    mov eax, [wss_pause_clock]
+.clock_ready:
+%endif
     sub eax, [game_started]
     cmp byte [game_start_pending], 2
     jne .done
@@ -132,9 +158,20 @@ port_callback:
     push fs
     push cs
     pop ds
+%ifdef RESIDENT_AUDIO
+    mov [callback_port], dx
+    mov [callback_value], al
+%endif
     inc dword [port_calls]
     test cl, 18h
     jnz .unsupported
+%ifdef WSS_INPUT
+    cmp dx, 530h
+    jb .normal_port
+    cmp dx, 537h
+    jbe .wss_port
+.normal_port:
+%endif
     call dma_port
     test cl, 4
     jz .read
@@ -170,7 +207,9 @@ port_callback:
 %ifdef RESIDENT_AUDIO
     cmp byte [fault], 0
     jne .fault_recorded
-    mov [fault_port], dx
+    mov ax, [callback_port]
+    mov [fault_port], ax
+    mov al, [callback_value]
     mov [fault_value], al
 .fault_recorded:
 %endif
@@ -183,6 +222,7 @@ port_callback:
 .reset:
     mov byte [game_active], 0
     mov byte [game_start_pending], 0
+    mov dword [game_exit_frame], 0
 %ifdef VIRTUAL_IRQ
     call virtual_irq_reset
 %endif
@@ -210,8 +250,16 @@ port_callback:
     jne .unsupported
     and al, 4
     mov [si+DMA_MASK], al
+%ifdef WSS_INPUT
+    test al, al
+    jnz .done
+    cmp si, dma8
+    je .wss_arm
+%endif
     jmp .done
 .mode:
+    cmp al, 49h
+    je .done
     cmp al, 59h
     jne .unsupported
     jmp .done
@@ -227,6 +275,7 @@ port_callback:
     mov bx, DMA_ADDRESS
     jmp .dma_word
 .count:
+    mov byte [si+3], 0
     mov bx, DMA_COUNT
 .dma_word:
     movzx cx, byte [si+DMA_FLIP]
@@ -244,7 +293,11 @@ port_callback:
     je .time_constant
     cmp al, 48h
     je .rate
+    cmp al, 14h
+    je .rate
     cmp al, 1ch
+    je .legacy_start
+    cmp al, 90h
     je .legacy_start
     cmp al, 0c6h
     je .play
@@ -258,6 +311,10 @@ port_callback:
     je .pause8
     cmp al, 0d5h
     je .pause16
+    cmp al, 0dah
+    je .exit8
+    cmp al, 0d9h
+    je .exit16
     cmp al, 0d3h
     je .pause
     cmp al, 0d1h
@@ -266,6 +323,40 @@ port_callback:
     jne .unsupported
     mov word [reply], 0504h
     mov byte [reply_count], 2
+    jmp .done
+.exit8:
+    cmp byte [game_frame_shift], 2
+    je .done
+    jmp .exit_block
+.exit16:
+    cmp byte [game_frame_shift], 2
+    jne .done
+.exit_block:
+    cmp byte [game_active], 0
+    je .done
+    cmp dword [game_exit_frame], 0
+    jne .done
+    call game_elapsed
+    movzx ecx, word [game_rate]
+    mul ecx
+    mov ecx, OUTPUT_RATE
+    div ecx
+    movzx ebx, word [game_block_bytes]
+    mov cl, [game_frame_shift]
+    shr ebx, cl
+    xor edx, edx
+    div ebx
+    inc eax
+    mul ebx
+    mov ecx, OUTPUT_RATE
+    mul ecx
+    movzx ecx, word [game_rate]
+    div ecx
+    test edx, edx
+    jz .exit_store
+    inc eax
+.exit_store:
+    mov [game_exit_frame], eax
     jmp .done
 .pause8:
     cmp byte [game_frame_shift], 2
@@ -291,9 +382,24 @@ port_callback:
     jmp .done
 .legacy_start:
     mov byte [pending_frame_shift], 0
+    mov ax, [legacy_rate]
+    test byte [virtual_mixer+0eh], 2
+    jz .legacy_rate
+    mov byte [pending_frame_shift], 1
+    shr ax, 1
+.legacy_rate:
+    mov [game_rate], ax
+    movzx eax, ax
+    shl eax, 16
+    xor edx, edx
+    mov ecx, OUTPUT_RATE
+    div ecx
+    mov [game_step], eax
     mov ax, [legacy_block]
     jmp .validate_start
 .argument:
+    cmp byte [dsp_command], 14h
+    je .length
     cmp byte [dsp_command], 40h
     je .set_time_constant
     cmp byte [dsp_command], 48h
@@ -314,7 +420,7 @@ port_callback:
     movzx eax, word [game_rate]
     shl eax, 16
     xor edx, edx
-    mov ecx, 44100
+    mov ecx, OUTPUT_RATE
     div ecx
     mov [game_step], eax
     jmp .argument_done
@@ -344,8 +450,13 @@ port_callback:
     mov eax, 1000000
     xor edx, edx
     div ecx
-    cmp eax, 44100
+    cmp eax, 65535
     ja .unsupported
+    mov [legacy_rate], ax
+    test byte [virtual_mixer+0eh], 2
+    jz .time_mono
+    shr ax, 1
+.time_mono:
     mov [game_rate], ax
     jmp .set_rate
 .legacy_length:
@@ -364,7 +475,24 @@ port_callback:
 .start:
     mov ah, al
     mov al, [block_low]
+    cmp byte [dsp_command], 14h
+    jne .validate_start
+    test ax, ax
+    jnz .unsupported
+    cmp word [dma8+DMA_COUNT], 0
+    jne .unsupported
+    mov byte [dma8+3], 1
+%ifdef VIRTUAL_IRQ
+    mov byte [virtual_dsp_irq], 1
+    mov byte [virtual_pic_request], 20h
+%endif
+    jmp .argument_done
 .validate_start:
+%ifdef WSS_INPUT
+    mov byte [wss_paused], 0
+    and byte [wss_registers+9], 0feh
+%endif
+    mov byte [game_source], 0
     mov si, dma8
     mov cl, 0
     cmp byte [pending_frame_shift], 2
@@ -377,6 +505,7 @@ port_callback:
     movzx edx, ax
     inc edx
     shl edx, cl
+.validate_dma:
     cmp edx, 512
     jb .unsupported
     movzx ebx, word [si+DMA_COUNT]
@@ -400,18 +529,22 @@ port_callback:
 .block_aligned:
     cmp edx, ebx
     je .buffer_address
+%ifdef WSS_INPUT
+    cmp byte [game_source], 1
+    je .buffer_address
+%endif
     mov eax, ebx
     sub eax, edx
     mov cl, [pending_frame_shift]
     shr eax, cl
-    imul eax, 44100
+    imul eax, OUTPUT_RATE
     movzx ecx, word [game_rate]
     imul ecx, PERIOD_FRAMES*2
     cmp eax, ecx
     jb .unsupported
 .buffer_address:
     movzx eax, word [si+DMA_ADDRESS]
-    cmp byte [pending_frame_shift], 2
+    cmp si, dma16
     jne .byte_address
     shl eax, 1
     ; High DMA uses a 128 KiB window; page bit zero is ignored.
@@ -425,7 +558,7 @@ port_callback:
 .address_window:
     add ecx, eax
     add eax, ebx
-    cmp byte [pending_frame_shift], 2
+    cmp si, dma16
     je .word_window
     cmp eax, 65536
     ja .unsupported
@@ -458,16 +591,29 @@ port_callback:
     shr esi, 4
     mov [game_segment], si
     mov byte [game_start_pending], 1
+    mov dword [game_exit_frame], 0
 %ifdef VIRTUAL_IRQ
     call virtual_irq_reset
 %endif
     mov byte [game_active], 1
     inc word [virtual_starts]
+%ifdef WSS_INPUT
+    cmp byte [game_source], 1
+    jne .sb_started
+    call wss_hold
+    jmp .done
+.sb_started:
+%endif
     cmp byte [dsp_command], 1ch
+    je .done
+    cmp byte [dsp_command], 90h
     je .done
 .argument_done:
     dec byte [arguments]
     jmp .done
+%ifdef WSS_INPUT
+%include "audio/wss_input.inc"
+%endif
 .read:
 %ifdef VIRTUAL_IRQ
     cmp dx, 20h
@@ -534,11 +680,13 @@ port_callback:
     call game_elapsed
     movzx ecx, word [game_rate]
     mul ecx
-    mov ecx, 44100
+    mov ecx, OUTPUT_RATE
     div ecx
-    cmp byte [game_frame_shift], 0
-    je .count_units
-    shl eax, 1
+    mov cl, [game_frame_shift]
+    shl eax, cl
+    cmp si, dma16
+    jne .count_units
+    shr eax, 1
 .count_units:
     and ax, [si+DMA_COUNT]
     mov bx, [si+DMA_COUNT]
@@ -546,6 +694,9 @@ port_callback:
     jmp .snapshot
 .idle_count:
     mov bx, [si+DMA_COUNT]
+    cmp byte [si+3], 0
+    je .snapshot
+    mov bx, 0ffffh
 .snapshot:
     mov [si+DMA_SNAPSHOT], bx
     mov al, bl
@@ -613,9 +764,12 @@ last_clock dd 0
 game_start_pending db 0 ; 1: wait for mixing, 2: wait for output.
 game_dma dw dma8
 game_frame_shift db 0
+game_source db 0
 pending_frame_shift db 0
 game_irq_bit db 1
 game_block_bytes dw 4096
+game_exit_frame dd 0
+game_mix_frame dd 0
 virtual_resets dw 0
 virtual_starts dw 0
 virtual_mixer_index db 0
@@ -628,5 +782,13 @@ dsp_command db 0
 arguments db 0
 block_low db 0
 legacy_block dw 0
+legacy_rate dw 22050
 reply dw 0
 reply_count db 0
+%ifdef RESIDENT_AUDIO
+callback_port dw 0
+callback_value db 0
+%endif
+%ifdef WSS_INPUT
+%include "audio/wss_state.inc"
+%endif
