@@ -4,7 +4,18 @@
 bits 32
 dpmi_get_real_vector:
     movzx eax, byte [ebx+24]
+%ifdef RESIDENT_HOST
+    cmp al, 0dh
+    jne .physical
+    cmp byte [ebp+dpmi_audio_irq], 5
+    jne .physical
+    mov esi, [ebp+resident_game_vector]
+    mov edx, [esi]
+    jmp .result
+.physical:
+%endif
     mov edx, [eax*4]
+.result:
     mov [ebx+28], dx
     shr edx, 16
     mov [ebx+32], dx
@@ -14,6 +25,16 @@ dpmi_set_real_vector:
     mov dx, [ebx+32]
     shl edx, 16
     mov dx, [ebx+28]
+%ifdef RESIDENT_HOST
+    cmp al, 0dh
+    jne .physical
+    cmp byte [ebp+dpmi_audio_irq], 5
+    jne .physical
+    mov esi, [ebp+resident_game_vector]
+    mov [esi], edx
+    jmp mon_dpmi.success
+.physical:
+%endif
     mov [eax*4], edx
     jmp mon_dpmi.success
 dpmi_get_exception:

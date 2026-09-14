@@ -103,6 +103,7 @@ start:
     mov dword [game_started], 0
     mov byte [game_start_pending], 0
     mov byte [game_active], 1
+    mov byte [sb_paused], 0
     mov dword [game_step], 32768
     call virtual_irq_reset
     write_port 22ch, 0d9h

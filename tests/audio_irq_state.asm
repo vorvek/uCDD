@@ -98,6 +98,6 @@ game_active db 0
 game_exit_frame dd 0
 game_started dd 0
 game_rate dw 22050
-game_block_bytes dw 4096
+game_block_bytes dd 4096
 success db 'The interrupt priority test passed.',13,10,'$'
 failure db 'The interrupt priority test failed.',13,10,'$'

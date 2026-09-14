@@ -75,12 +75,17 @@ own_host_install:
     mov bx, port_callback
     mov dx, virtual_irq_take
     mov si, wss_irq_event
+    mov di, own_host_active
     mov al, [sb_irq]
+    push bp
+    mov bp, sb_game_vector
     call far [own_host_entry]
+    pop bp
     jc .free_bad
     clc
     ret
 .free_bad:
+    mov dword [own_host_active], 0
     mov es, [own_host_entry+2]
     mov ah, 49h
     int 21h

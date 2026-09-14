@@ -7,6 +7,7 @@ org 0
 %define HOST_DPMI 1
 %define VIRTUAL_IRQ 1
 %define WSS_INPUT 1
+%define RESIDENT_HOST 1
     jmp resident_host_init
     db 'uCDH'
 resident_host_init:
@@ -14,6 +15,12 @@ resident_host_init:
     push es
     pushad
     mov [cs:dpmi_audio_irq], al
+    movzx eax, bp
+    xor ecx, ecx
+    mov cx, ds
+    shl ecx, 4
+    add eax, ecx
+    mov [cs:resident_game_vector], eax
     mov [cs:resident_port], bx
     mov [cs:resident_port+2], ds
     mov [cs:resident_take], dx
@@ -44,6 +51,8 @@ resident_host_init:
     popad
     pop es
     pop ds
+    mov word [ds:di], dpmi_active
+    mov [ds:di+2], cs
     clc
     retf
 .bad:
@@ -56,6 +65,7 @@ resident_host_init:
 resident_port dd 0
 resident_take dd 0
 resident_wss_event dd 0
+resident_game_vector dd 0
 resident_ports:
 %include "audio/ports.inc"
 resident_port_count equ ($-resident_ports)/2

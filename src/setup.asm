@@ -153,7 +153,10 @@ change_card:
     cmp byte [sound_card], 2
     je .wss
     jb .done
+    cmp byte [sound_card], 3
+    je .sb
     mov byte [sound_card], 0
+.sb:
     mov word [sb_base], 220h
 .done:
     ret
@@ -229,6 +232,9 @@ draw:
     mov si, sb16_name
     cmp byte [sound_card], 0
     je .card
+    mov si, sb_name
+    cmp byte [sound_card], 3
+    je .card
     mov si, pro_name
     cmp byte [sound_card], 2
     jne .card
@@ -272,6 +278,9 @@ draw:
 .high_dma:
     call put
     mov dx, 1007h
+    mov si, output_sb
+    cmp byte [sound_card], 3
+    je .output
     mov si, output_16
     cmp byte [sound_card], 1
     jne .output
@@ -448,12 +457,19 @@ suggest_blaster:
     jne .token
     cmp ax, 6
     je .sb16
+    cmp ax, 1
+    je .sb
+    cmp ax, 3
+    je .sb
     cmp ax, 2
     je .pro
     cmp ax, 4
     jne .token
 .pro:
     mov byte [sound_card], 1
+    jmp .token
+.sb:
+    mov byte [sound_card], 3
     jmp .token
 .sb16:
     mov byte [sound_card], 0
@@ -469,8 +485,10 @@ selected db 0
 result db 0
 status dw initial_message
 changes dw change_card,change_port,change_irq,change_dma8,change_dma16
-choice_counts db 3,4,2,2,3
+choice_counts db 4,4,2,2,3
 title db 'uCDD Sound Setup',0
+sb_name db 'Sound Blaster / 1.5 / 2',0
+output_sb db 'Output: 22.22 kHz, 8-bit mono.',0
 subtitle db 'Select the settings for the physical sound card.',0
 labels db 'Card',13,10,13,10,'       I/O address',13,10,13,10
     db '       IRQ',13,10,13,10,'       8-bit DMA',13,10,13,10,'       16-bit DMA',0

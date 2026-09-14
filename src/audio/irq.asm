@@ -1,6 +1,8 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%include "audio/sb_state.inc"
+
 ; One virtual, edge-triggered master-PIC input at IRQ 5.
 virtual_irq_init:
     mov dx, 21h
@@ -29,12 +31,54 @@ virtual_irq_tick:
     cmp byte [si+DMA_MASK], 0
     jne .done
     call game_elapsed
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_single], 0
+    je .elapsed_ready
+    cmp byte [game_start_pending], 1
+    je .done
+    mov eax, [game_mix_frame]
+.elapsed_ready:
+%endif
     cmp dword [game_exit_frame], 0
     je .position
     cmp eax, [game_exit_frame]
     jb .position
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_single], 0
+    je .no_patch
+    add eax, [game_started]
+    mov [sb_patch_limit], eax
+    mov eax, [game_exit_frame]
+    add eax, [game_started]
+    mov [sb_patch_clock], eax
+    mov byte [sb_patch_available], 1
+.no_patch:
+%endif
     mov eax, [game_exit_frame]
     mov byte [game_active], 0
+    cmp byte [sb_single], 0
+    je .position
+    push eax
+    mov eax, [game_block_bytes]
+    add eax, [si+DMA_POSITION]
+    movzx ecx, word [si+DMA_COUNT]
+    inc ecx
+    test byte [si+DMA_MODE], 10h
+    jz .single_position
+    xor edx, edx
+    div ecx
+    mov eax, edx
+.single_position:
+    mov [si+DMA_POSITION], eax
+    mov bx, [si+DMA_COUNT]
+    sub bx, ax
+    mov [si+DMA_SNAPSHOT], bx
+    cmp bx, 0ffffh
+    jne .single_done
+    mov byte [si+3], 1
+.single_done:
+    mov byte [sb_finished], 1
+    pop eax
 .position:
     movzx ecx, word [game_rate]
     mul ecx
@@ -49,7 +93,7 @@ virtual_irq_tick:
 .block_position:
 %endif
     xor edx, edx
-    movzx ecx, word [game_block_bytes]
+    mov ecx, [game_block_bytes]
     div ecx
     cmp eax, [virtual_block_seen]
     je .done

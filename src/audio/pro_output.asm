@@ -4,6 +4,8 @@
 pro_start:
     call physical_reset
     jc .fail
+    cmp byte [sound_card], 3
+    je .dma
     mov si, pro_registers
     mov di, pro_saved
     mov cx, 3
@@ -26,6 +28,7 @@ pro_start:
     mov ah, [pro_saved+2]
     or ah, 22h
     call indexed_write
+.dma:
     mov al, [sb_dma8]
     mov [dma_channel], al
     movzx bx, al
@@ -59,6 +62,8 @@ pro_start:
     and al, ah
     call physical_write
     mov byte [sb_running], 1
+    cmp byte [sound_card], 3
+    je .mono
     mov byte [pro_priming], 1
     mov es, [output_segment]
     mov byte [es:RING_BYTES/4], 80h
@@ -101,9 +106,31 @@ pro_start:
     call dsp_write
     clc
     ret
+.mono:
+    xor bx, bx
+    mov cx, RING_BYTES/8-1
+    mov ah, 58h
+    call pro_dma
+    mov al, 40h
+    call dsp_write
+    mov al, 211
+    call dsp_write
+    mov al, 0d1h
+    call dsp_write
+    call sb_mono_next
+    clc
+    ret
 .fail:
     stc
     ret
+
+sb_mono_next:
+    mov al, 14h
+    call dsp_write
+    mov al, (PERIOD_BYTES/8-1) & 0ffh
+    call dsp_write
+    mov al, (PERIOD_BYTES/8-1) >> 8
+    jmp dsp_write
 
 pro_dma:
     pushf
@@ -168,6 +195,8 @@ pro_stop:
     mov ah, 25h
     int 21h
     pop ds
+    cmp byte [sound_card], 3
+    je .stopped
     xor bx, bx
 .restore:
     mov al, [pro_registers+bx]
@@ -176,6 +205,7 @@ pro_stop:
     inc bx
     cmp bx, 3
     jb .restore
+.stopped:
     mov byte [sb_running], 0
 .done:
     ret

@@ -42,6 +42,8 @@ start:
     write_port 22ch, 0
     cmp byte [fault], 0
     jne failed
+    mov byte [game_start_pending], 0
+    call virtual_irq_tick
     cmp byte [virtual_dsp_irq], 1
     jne failed
     cmp byte [game_active], 0
@@ -162,6 +164,7 @@ start:
     mov dword [game_started], 0
     mov byte [game_start_pending], 0
     mov byte [game_active], 1
+    mov byte [sb_paused], 0
     mov dword [game_step], 32768
     call virtual_irq_reset
     write_port 22ch, 0d9h

@@ -6,6 +6,13 @@ audio_install:
     jne .bad
     call config_load
     jc .bad
+    cmp byte [sound_card], 3
+    jne .pro_rate
+    mov dword [output_rate], 44444
+    mov dword [cd_step], (44100*65536)/44444
+    mov dword [cd_step_remainder], (44100*65536) % 44444
+    jmp .format_ready
+.pro_rate:
     cmp byte [sound_card], 1
     jne .format_ready
     mov dword [output_rate], 43478
@@ -30,14 +37,24 @@ audio_install:
     jc .cleanup
     call virtual_irq_init
     mov bx, RING_PARAS*2
-    cmp byte [sound_card], 1
-    jne .allocate_dma
+    cmp byte [sound_card], 3
+    jne .pro_size
+    shr bx, 1
+.pro_size:
+    test byte [sound_card], 1
+    jz .allocate_dma
     shr bx, 2
 .allocate_dma:
     mov ah, 48h
     int 21h
     jc .cleanup
     mov [output_allocation], ax
+    cmp byte [sound_card], 3
+    jne .pro_align
+    add ax, RING_PARAS/8-1
+    and ax, ~(RING_PARAS/8-1)
+    jmp .dma_ready
+.pro_align:
     cmp byte [sound_card], 1
     jne .align_dma
     add ax, RING_PARAS/4-1
@@ -60,6 +77,18 @@ audio_install:
 %ifdef OWN_HOST
     call own_host_install
     jc .cleanup
+    cmp byte [sb_irq], 5
+    jne .dos_vector_ready
+    mov eax, [old_irq]
+    mov [sb_game_vector], eax
+    mov ax, 3521h
+    int 21h
+    mov [sb_old_dos], bx
+    mov [sb_old_dos+2], es
+    mov dx, sb_dos_vector
+    mov ax, 2521h
+    int 21h
+.dos_vector_ready:
 %endif
     mov ax, 3508h
     int 21h

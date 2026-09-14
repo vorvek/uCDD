@@ -303,3 +303,18 @@ The card test uses interpreted 386 execution. Protocol tests check WSS masked st
 A protected client then runs twice through the internal host, requests WSS IRQ 11, and checks disabled codec interrupts, PIC masking, and resumed delivery. This runs with each physical output. The lifecycle wrapper compares DOS allocation state, vectors, PIC mask, and mixer registers. The high-memory cases check both resident blocks and read the DMA allocation size from its DOS memory control block. SB16/WSS use 8 KiB; SB Pro uses 2 KiB. Reports are under `.local/audio/cards-<output>-high/`.
 
 For the same Tomb Raider Caves movement sequence, `check_tomb_audio.py --sbpro` checks nine seconds of music in intervals 1-6 and 14-18, where game effects are absent, and requires effects during seconds 6-14. Its 128-unit sample bound allows 8-bit conversion and capture filtering. It rejects repeated blocks, phase jumps, swapped channels, missing game sound, and missing CD music. This is a bounded check of this fixture, not the continuous 16-bit comparison. The physical clock uses the conventional SB Pro time constant; the CD resampler compensates for its actual rate.
+
+## Original Sound Blaster DMA audio
+
+```powershell
+python scripts/test_setup.py --izarra-source D:\dev\IzarraVM --sb --jemm
+python scripts/test_audio_cards.py --izarra-source D:\dev\IzarraVM --load-high
+python scripts/test_audio_sb.py --izarra-source D:\dev\IzarraVM --cpu 586
+python scripts/test_audio_sb.py --izarra-source D:\dev\IzarraVM --cpu 586 --irq 5
+```
+
+The initial protocol, setup, and residency tests use the 386 interpreter. `audio_sb_state.asm` checks single-cycle lengths of 1, 257, 997, and 65,536 bytes, chained DMA cursor retention, auto-init wrapping, pause/resume, speaker control, final IRQ delivery, and stereo-enabled one-byte priming. Existing Pro, SB16, and WSS protocol tests still run. The original SB output uses a 1 KiB conventional DMA allocation.
+
+The mixed streaming test uses a generated CUE/BIN with separate 733 Hz and 1237 Hz CD channels. Real-mode and 32-bit DPMI clients submit chained 1,000-byte PCM blocks at 10 kHz from their IRQ handlers. Captures require all three sources and check 10 ms windows for gaps between PCM blocks. Controls remove the game, remove the CD, and insert a 20 ms gap. The lifecycle wrapper checks memory, vectors, PIC state, and mixer state after each client. IRQ 5 tests also check DOS and DPMI real-vector isolation and cleanup of a client-owned logical vector.
+
+This workload passes with the interpreted Pentium profile through SB, SB Pro, SB16, and WSS output. The interpreted 386 misses refill deadlines, so it is not a passing mixed-streaming configuration. The emulator exposes ReSonique 2 compatibility paths; these results are not separate physical SB1, SB1.5, or SB2 certifications. No game or third-party files are distributed by these tests.

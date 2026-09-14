@@ -44,6 +44,7 @@ audio_linked db 0
 %include "audio/mounted.asm"
 %include "audio/background.asm"
 %include "audio/irq.asm"
+%include "audio/sb_patch.asm"
 %include "audio/host_jemm.asm"
 %ifdef OWN_HOST
 %include "audio/resident_host.asm"
@@ -92,6 +93,17 @@ audio_bind:
 
 audio_cleanup:
     call cd_background_remove
+%ifdef OWN_HOST
+    cmp word [sb_old_dos+2], 0
+    je .dos_restored
+    push ds
+    lds dx, [sb_old_dos]
+    mov ax, 2521h
+    int 21h
+    pop ds
+    mov dword [sb_old_dos], 0
+.dos_restored:
+%endif
     call sb_stop
     call trap_remove
     call host_remove

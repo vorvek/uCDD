@@ -21,12 +21,13 @@ from test_dos import SHSUCD_SHA256
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--izarra-source', type=Path, required=True)
-    parser.add_argument('--output', choices=('sb16', 'sbpro', 'wss'), action='append')
+    parser.add_argument('--output', choices=('sb16', 'sbpro', 'wss', 'sb'), action='append')
     parser.add_argument('--load-high', action='store_true')
     args = parser.parse_args()
     capture, disk, files = prepare_resident_tests(args.izarra_source)
     assemble_resident_host()
     programs = [('audio_wss_state', 'WSSSTATE.COM'), ('audio_pro_state', 'PROSTATE.COM'),
+                ('audio_sb_state', 'SBSTATE.COM'),
                 ('audio_pro_mix', 'PROMIX.COM'),
                 ('audio_wss_codec', 'CODEC.COM'), ('audio_wss_irq', 'WSSIRQ.COM')]
     for source, name in programs:
@@ -46,15 +47,15 @@ def main():
     if args.load_high:
         files['FDCONFIG.SYS'] = files['FDCONFIG.SYS'].replace(b'DOS=LOW', b'DOS=HIGH,UMB')
     commands = ['@ECHO OFF']
-    for name in ('WSSSTATE', 'PROSTATE', 'PROMIX', 'CODEC',
+    for name in ('WSSSTATE', 'PROSTATE', 'SBSTATE', 'PROMIX', 'CODEC',
                  ('LH ' if args.load_high else '')+'UCDD -install', 'WSSLIFE', 'WSSLIFE'):
         commands += [name, 'IF ERRORLEVEL 1 GOTO FAIL']
     commands += ['SHSUCDX /D:UCDD0001 /L:F', 'IF ERRORLEVEL 246 GOTO FAIL',
                  'RESSTATE H' if args.load_high else 'RESSTATE', 'IF ERRORLEVEL 1 GOTO FAIL']
     commands += ['PASS', ':FAIL', 'FAIL']
     files['AUTOEXEC.BAT'] = ('\r\n'.join(commands)+'\r\n').encode()
-    for output in args.output or ('sb16', 'sbpro', 'wss'):
-        card = ('sb16', 'sbpro', 'wss').index(output)
+    for output in args.output or ('sb16', 'sbpro', 'wss', 'sb'):
+        card = ('sb16', 'sbpro', 'wss', 'sb').index(output)
         files['UCDD.CFG'] = b'uCDD\x01'+bytes([card])+struct.pack('<H', 0x530 if card == 2 else 0x220)+bytes((7, 1, 5, 0))
         disk.clear()
         for name, data in files.items():
@@ -82,7 +83,7 @@ def main():
         _, segment, paragraphs, allocation, ring, fault, host, host_paragraphs = struct.unpack('<8H', state)
         memory = (run/'memory.bin').read_bytes()
         dma_bytes = struct.unpack_from('<H', memory, (allocation-1)*16+3)[0]*16
-        if dma_bytes != (2048 if card == 1 else 8192):
+        if dma_bytes != (1024 if card == 3 else 2048 if card == 1 else 8192):
             raise ValueError('The DMA allocation size is incorrect.')
         evidence.update(resident_bytes=paragraphs*16, resident_segment=segment,
                         host_bytes=host_paragraphs*16, host_segment=host,

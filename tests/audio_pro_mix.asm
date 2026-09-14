@@ -62,6 +62,37 @@ start:
     jne fail
     cmp dword [cd_half+4], 0
     jne fail
+    mov byte [sound_card], 3
+    mov dword [output_rate], 44444
+    mov dword [cd_step], (44100*65536)/44444
+    mov dword [cd_step_remainder], (44100*65536) % 44444
+    mov dword [cd_step_error], 0
+    mov dword [cd_fraction], 0
+    mov dword [cd_consumed], 0
+    mov dword [cd_length], 32768
+    mov di, queue
+    mov cx, CD_QUEUE_BYTES/4
+    mov eax, 40004000h
+    rep stosd
+    mov byte [game_frame_shift], 1
+    mov word [game_offset], mono_samples
+    mov di, output
+    call mix_half
+    cmp di, output+256
+    jne fail
+    mov si, output
+    mov cx, 256
+.mono:
+    cmp byte [si], 176
+    jne fail
+    inc si
+    loop .mono
+    mov byte [game_frame_shift], 2
+    mov word [game_offset], clip_samples
+    mov di, output
+    call mix_half
+    cmp byte [output], 160
+    jne fail
     mov ax, 4c00h
     int 21h
 fail:
@@ -108,6 +139,7 @@ cd_read_offset dd 0
     dw 0
 cd_read_address dw cd_half,0
 xms_calls dw 0
+game_source db 0
 game_active db 1
 game_start_pending db 0
 game_started dd 0
@@ -123,6 +155,7 @@ game_dma dw dma
 dma db 0,0
 periods dd 0
 samples db 192,64
+mono_samples db 192,128
 clip_samples dw 32767,-32768
 output times PERIOD_BYTES db 0
 cd_half times PERIOD_BYTES+PERIOD_BYTES/32+4 db 0

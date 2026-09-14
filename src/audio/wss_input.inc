@@ -137,7 +137,7 @@
     shl edx, cl
     cmp edx, 65535
     ja .unsupported
-    mov [game_block_bytes], dx
+    mov [game_block_bytes], edx
     call game_elapsed
     movzx ecx, word [game_rate]
     mul ecx
@@ -161,6 +161,9 @@
     cmp byte [game_active], 1
     je .done
 .wss_start:
+    mov byte [sb_single], 0
+    mov byte [sb_finished], 0
+    mov byte [sb_paused], 0
     mov byte [wss_paused], 0
     mov dword [wss_block_origin], 0
     movzx bx, byte [wss_registers+8]

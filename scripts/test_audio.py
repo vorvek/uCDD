@@ -92,7 +92,7 @@ def verify_capture(path, extra_windows=()):
     return measured
 
 
-def verify_speaker_sequence(path, sequences=2):
+def verify_speaker_sequence(path, sequences=2, mono=False):
     with wave.open(str(path)) as source:
         frames = list(struct.iter_unpack('<hh', source.readframes(source.getnframes())))
     runs = []
@@ -102,12 +102,25 @@ def verify_speaker_sequence(path, sequences=2):
         peak = [max(abs(pair[ch]) for pair in block) for ch in (0, 1)]
         channel = 1 if energy[0] > 1000000 and peak[1] < 8 else (
             2 if energy[1] > 1000000 and peak[0] < 8 else 0)
+        if mono:
+            channel = 3 if min(energy) > 100000 and max(abs(l-r) for l, r in block) < 8 else 0
         if runs and runs[-1]['channel'] == channel:
             runs[-1]['end'] = start+441
         else:
             runs.append(dict(channel=channel, start=start, end=start+441))
     tones = [row for row in runs if row['channel'] and row['end']-row['start'] > 4410]
-    if [row['channel'] for row in tones] != [1, 2]*sequences:
+    if mono:
+        counts = [round((row['end']-row['start'])/44100/1.12) for row in tones]
+        if sum(counts) != 2*sequences or any(n not in (1, 2) for n in counts):
+            raise ValueError('The mono sound test tone count is incorrect.')
+        for row, n in zip(tones, counts):
+            if not 1.08*n <= (row['end']-row['start'])/44100 <= 1.15*n:
+                raise ValueError('The mono sound test duration is incorrect.')
+        gaps = [(right['start']-left['end'])/44100 for left, right in zip(tones, tones[1:])]
+        if sum(0.35 <= gap <= 0.40 for gap in gaps) != sequences:
+            raise ValueError('The mono sound test pauses are incorrect.')
+        return tones
+    if [row['channel'] for row in tones] != ([3, 3] if mono else [1, 2])*sequences:
         raise ValueError('Each sound test must play the left speaker, then the right speaker.')
     for row in tones:
         if not 1.08 <= (row['end']-row['start'])/44100 <= 1.14:

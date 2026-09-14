@@ -1,6 +1,10 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%include "audio/sb_state.inc"
+
+sb_mono_left dd 0
+
 ; ES:DI is one output half. Sources use the current virtual playback state.
 mix_half:
 %ifdef SPEAKER_TEST
@@ -21,11 +25,24 @@ mix_half:
 %endif
 %ifdef CD_IMAGE_TEST
     push gs
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    jne .cd_ready
+%endif
     call cd_begin_half
+%ifdef RESIDENT_AUDIO
+.cd_ready:
+%endif
 %endif
     mov eax, [periods]
     inc eax
     shl eax, OUTPUT_SHIFT
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    je .normal_half
+    mov eax, [sb_patch_clock]
+.normal_half:
+%endif
     cmp byte [game_active], 0
     je .phase
     cmp byte [game_start_pending], 1
@@ -36,9 +53,24 @@ mix_half:
     sub eax, [game_started]
     mov [game_mix_frame], eax
     mul dword [game_step]
+    add eax, [game_origin]
+    adc edx, 0
+    cmp dword [game_limit], 0
+    je .full_ring
     div dword [game_limit]
-    mov ebp, edx
+    mov eax, edx
+.full_ring:
+    mov ebp, eax
     mov cx, PERIOD_FRAMES
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    je .length_ready
+    mov ecx, [sb_patch_limit]
+    sub ecx, [sb_patch_clock]
+    mov dword [pro_pair_left], 0
+    mov dword [pro_pair_right], 0
+.length_ready:
+%endif
     mov bx, [cd_position]
     mov fs, [game_segment]
 .frame:
@@ -59,6 +91,11 @@ mix_half:
     cmp eax, [game_exit_frame]
     jae .sum
 .source:
+    cmp byte [game_source], 0
+    jne .audible
+    cmp byte [sb_speaker], 0
+    je .advance
+.audible:
     mov si, [game_dma]
     cmp byte [si+DMA_MASK], 0
     mov si, 0
@@ -123,12 +160,20 @@ mix_half:
 .phase_step:
 %endif
     add ebp, [game_step]
+    cmp dword [game_limit], 0
+    je .sum
+.wrap:
     cmp ebp, [game_limit]
     jb .sum
     sub ebp, [game_limit]
+    jmp .wrap
 .sum:
 %ifdef CD_IMAGE_TEST
     xor eax, eax
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    jne .left
+%endif
     cmp byte [cd_valid], 0
     je .left
     movsx eax, word [gs:bx]
@@ -153,6 +198,11 @@ mix_half:
     add eax, edx
     call .clip
 %ifdef RESIDENT_AUDIO
+    cmp byte [sound_card], 3
+    jne .pro_left
+    mov [sb_mono_left], eax
+    jmp .left_stored
+.pro_left:
     cmp byte [sound_card], 1
     jne .left_word
     test cl, 1
@@ -167,10 +217,23 @@ mix_half:
     jle .round_left
     mov eax, 127
 .round_left:
+    cmp byte [sb_patch_active], 0
+    je .encode_left
+    movzx edx, byte [es:di]
+    sub edx, 128
+    add eax, edx
+    call .clip_byte
+.encode_left:
     xor al, 80h
     stosb
     jmp .left_stored
 .left_word:
+    cmp byte [sb_patch_active], 0
+    je .left_save
+    movsx edx, word [es:di]
+    add eax, edx
+    call .clip
+.left_save:
 %endif
     stosw
 %ifdef RESIDENT_AUDIO
@@ -178,6 +241,10 @@ mix_half:
 %endif
 %ifdef CD_IMAGE_TEST
     xor eax, eax
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    jne .right
+%endif
     cmp byte [cd_valid], 0
     je .right
     movsx eax, word [gs:bx+2]
@@ -204,6 +271,32 @@ mix_half:
     add eax, esi
     call .clip
 %ifdef RESIDENT_AUDIO
+    cmp byte [sound_card], 3
+    jne .pro_right
+    add eax, [sb_mono_left]
+    test cl, 1
+    jnz .mono_pair
+    mov [pro_pair_left], eax
+    jmp .right_stored
+.mono_pair:
+    add eax, [pro_pair_left]
+    add eax, 512
+    sar eax, 10
+    cmp eax, 127
+    jle .mono_round
+    mov eax, 127
+.mono_round:
+    cmp byte [sb_patch_active], 0
+    je .mono_encode
+    movzx edx, byte [es:di]
+    sub edx, 128
+    add eax, edx
+    call .clip_byte
+.mono_encode:
+    xor al, 80h
+    stosb
+    jmp .right_stored
+.pro_right:
     cmp byte [sound_card], 1
     jne .right_word
     test cl, 1
@@ -218,10 +311,23 @@ mix_half:
     jle .round_right
     mov eax, 127
 .round_right:
+    cmp byte [sb_patch_active], 0
+    je .encode_right
+    movzx edx, byte [es:di]
+    sub edx, 128
+    add eax, edx
+    call .clip_byte
+.encode_right:
     xor al, 80h
     stosb
     jmp .right_stored
 .right_word:
+    cmp byte [sb_patch_active], 0
+    je .right_save
+    movsx edx, word [es:di]
+    add eax, edx
+    call .clip
+.right_save:
 %endif
     stosw
 %ifdef RESIDENT_AUDIO
@@ -229,6 +335,8 @@ mix_half:
 %endif
     inc dword [game_mix_frame]
 %ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    jne .cd_advanced
     mov eax, [cd_fraction]
     add eax, [cd_step]
     mov edx, [cd_step_error]
@@ -245,6 +353,7 @@ mix_half:
     shr eax, 16
     shl ax, 2
     add bx, ax
+.cd_advanced:
 %else
     add bx, 4
 %endif
@@ -256,6 +365,10 @@ mix_half:
     mov [cd_position], bx
     mov [game_phase], ebp
 %ifdef CD_IMAGE_TEST
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_patch_active], 0
+    jne .done_half
+%endif
     cmp byte [cd_valid], 0
     je .done_half
 %ifdef RESIDENT_AUDIO
@@ -268,6 +381,18 @@ mix_half:
     pop gs
 %endif
     ret
+%ifdef RESIDENT_AUDIO
+.clip_byte:
+    cmp eax, 127
+    jle .byte_low
+    mov eax, 127
+.byte_low:
+    cmp eax, -128
+    jge .byte_done
+    mov eax, -128
+.byte_done:
+    ret
+%endif
 .clip:
     cmp eax, 32767
     jle .low

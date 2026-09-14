@@ -1,6 +1,8 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%include "audio/sb_state.inc"
+
 trap_install:
     mov ax, 1a06h
     call far [qpi]
@@ -117,6 +119,12 @@ output_clock:
     shr ax, 1
     jmp .count_ready
 .pro_count:
+    cmp byte [sound_card], 3
+    jne .stereo_count
+    shl ax, 2
+    or ax, 3
+    jmp .count_ready
+.stereo_count:
     cmp byte [sound_card], 1
     jne .count_ready
     shl ax, 1
@@ -130,6 +138,10 @@ game_elapsed:
     cmp byte [game_start_pending], 1
     je .zero
     call output_clock
+    cmp byte [sb_paused], 0
+    je .sb_clock
+    mov eax, [sb_pause_clock]
+.sb_clock:
 %ifdef WSS_INPUT
     cmp byte [game_source], 1
     jne .clock_ready
@@ -220,6 +232,13 @@ port_callback:
 %endif
     jmp .done
 .reset:
+%ifdef RESIDENT_AUDIO
+    mov byte [sb_patch_available], 0
+%endif
+    mov byte [sb_finished], 0
+    mov byte [sb_paused], 0
+    mov byte [sb_single], 0
+    mov byte [sb_speaker], 1
     mov byte [game_active], 0
     mov byte [game_start_pending], 0
     mov dword [game_exit_frame], 0
@@ -259,9 +278,11 @@ port_callback:
     jmp .done
 .mode:
     cmp al, 49h
-    je .done
+    je .set_mode
     cmp al, 59h
     jne .unsupported
+.set_mode:
+    mov [si+DMA_MODE], al
     jmp .done
 .clear_mask:
     test al, al
@@ -278,6 +299,9 @@ port_callback:
     mov byte [si+3], 0
     mov bx, DMA_COUNT
 .dma_word:
+    mov dword [si+DMA_POSITION], 0
+    mov byte [si+3], 0
+    mov byte [sb_finished], 0
     movzx cx, byte [si+DMA_FLIP]
     add bx, cx
     mov [si+bx], al
@@ -299,6 +323,8 @@ port_callback:
     je .legacy_start
     cmp al, 90h
     je .legacy_start
+    cmp al, 91h
+    je .legacy_start
     cmp al, 0c6h
     je .play
     cmp al, 0c4h
@@ -315,14 +341,66 @@ port_callback:
     je .exit8
     cmp al, 0d9h
     je .exit16
+    cmp al, 0d4h
+    je .resume8
+    cmp al, 0d6h
+    je .resume16
     cmp al, 0d3h
-    je .pause
+    je .speaker_off
     cmp al, 0d1h
-    je .done
+    je .speaker_on
+    cmp al, 0d8h
+    je .speaker_status
+    cmp al, 0e0h
+    je .time_constant
+    cmp al, 0e4h
+    je .time_constant
+    cmp al, 0e8h
+    je .test_read
+    cmp al, 0f2h
+    je .force_irq
     cmp al, 0e1h
     jne .unsupported
     mov word [reply], 0504h
     mov byte [reply_count], 2
+    jmp .done
+.speaker_off:
+    mov byte [sb_speaker], 0
+    jmp .done
+.speaker_on:
+    mov byte [sb_speaker], 1
+    jmp .done
+.speaker_status:
+    mov al, [sb_speaker]
+    neg al
+    jmp .one_reply
+.test_read:
+    mov al, [sb_test_register]
+.one_reply:
+    mov [reply], al
+    mov byte [reply_count], 1
+    jmp .done
+.force_irq:
+%ifdef VIRTUAL_IRQ
+    mov byte [virtual_dsp_irq], 1
+    mov byte [virtual_pic_request], 20h
+%endif
+    jmp .done
+.resume8:
+    cmp byte [game_frame_shift], 2
+    je .done
+    jmp .resume
+.resume16:
+    cmp byte [game_frame_shift], 2
+    jne .done
+.resume:
+    cmp byte [sb_paused], 0
+    je .done
+    call output_clock
+    sub eax, [sb_pause_clock]
+    add [game_started], eax
+    mov byte [sb_paused], 0
+    mov byte [game_active], 1
     jmp .done
 .exit8:
     cmp byte [game_frame_shift], 2
@@ -341,7 +419,7 @@ port_callback:
     mul ecx
     mov ecx, OUTPUT_RATE
     div ecx
-    movzx ebx, word [game_block_bytes]
+    mov ebx, [game_block_bytes]
     mov cl, [game_frame_shift]
     shr ebx, cl
     xor edx, edx
@@ -366,8 +444,35 @@ port_callback:
     cmp byte [game_frame_shift], 2
     jne .done
 .pause:
+    cmp byte [game_active], 0
+    je .done
+    call output_clock
+    mov [sb_pause_clock], eax
+    call game_elapsed
+    movzx ecx, word [game_rate]
+    mul ecx
+    mov ecx, OUTPUT_RATE
+    div ecx
+    mov cl, [game_frame_shift]
+    shl eax, cl
+    mov si, [game_dma]
+    cmp si, dma16
+    jne .pause_units
+    shr eax, 1
+.pause_units:
+    cmp byte [sb_single], 0
+    je .pause_count
+    add eax, [si+DMA_POSITION]
+.pause_count:
+    movzx ecx, word [si+DMA_COUNT]
+    inc ecx
+    xor edx, edx
+    div ecx
+    mov ax, [si+DMA_COUNT]
+    sub ax, dx
+    mov [si+DMA_SNAPSHOT], ax
+    mov byte [sb_paused], 1
     mov byte [game_active], 0
-    mov byte [game_start_pending], 0
     jmp .done
 .rate:
     mov byte [arguments], 2
@@ -381,12 +486,20 @@ port_callback:
     mov byte [arguments], 1
     jmp .done
 .legacy_start:
+    mov ax, [legacy_block]
+.legacy_format:
+    push ax
     mov byte [pending_frame_shift], 0
+    test ax, ax
+    jz .legacy_mono
     mov ax, [legacy_rate]
     test byte [virtual_mixer+0eh], 2
     jz .legacy_rate
     mov byte [pending_frame_shift], 1
     shr ax, 1
+    jmp .legacy_rate
+.legacy_mono:
+    mov ax, [legacy_rate]
 .legacy_rate:
     mov [game_rate], ax
     movzx eax, ax
@@ -395,9 +508,21 @@ port_callback:
     mov ecx, OUTPUT_RATE
     div ecx
     mov [game_step], eax
-    mov ax, [legacy_block]
+    pop ax
     jmp .validate_start
 .argument:
+    cmp byte [dsp_command], 0e0h
+    jne .test_argument
+    not al
+    mov [reply], al
+    mov byte [reply_count], 1
+    jmp .argument_done
+.test_argument:
+    cmp byte [dsp_command], 0e4h
+    jne .pcm_argument
+    mov [sb_test_register], al
+    jmp .argument_done
+.pcm_argument:
     cmp byte [dsp_command], 14h
     je .length
     cmp byte [dsp_command], 40h
@@ -477,17 +602,17 @@ port_callback:
     mov al, [block_low]
     cmp byte [dsp_command], 14h
     jne .validate_start
-    test ax, ax
-    jnz .unsupported
-    cmp word [dma8+DMA_COUNT], 0
-    jne .unsupported
-    mov byte [dma8+3], 1
-%ifdef VIRTUAL_IRQ
-    mov byte [virtual_dsp_irq], 1
-    mov byte [virtual_pic_request], 20h
-%endif
-    jmp .argument_done
+    jmp .legacy_format
 .validate_start:
+    mov byte [sb_finished], 0
+    mov byte [sb_single], 0
+    cmp byte [dsp_command], 14h
+    je .single
+    cmp byte [dsp_command], 91h
+    jne .start_kind
+.single:
+    mov byte [sb_single], 1
+.start_kind:
 %ifdef WSS_INPUT
     mov byte [wss_paused], 0
     and byte [wss_registers+9], 0feh
@@ -506,6 +631,8 @@ port_callback:
     inc edx
     shl edx, cl
 .validate_dma:
+    cmp byte [sb_single], 1
+    je .single_buffer
     cmp edx, 512
     jb .unsupported
     movzx ebx, word [si+DMA_COUNT]
@@ -542,6 +669,25 @@ port_callback:
     imul ecx, PERIOD_FRAMES*2
     cmp eax, ecx
     jb .unsupported
+    jmp .buffer_address
+.single_buffer:
+    movzx ebx, word [si+DMA_COUNT]
+    inc ebx
+    test byte [si+DMA_MODE], 10h
+    jnz .single_alignment
+    mov eax, ebx
+    sub eax, [si+DMA_POSITION]
+    cmp edx, eax
+    ja .unsupported
+.single_alignment:
+    mov cl, [pending_frame_shift]
+    mov eax, 1
+    shl eax, cl
+    dec eax
+    test edx, eax
+    jnz .unsupported
+    test ebx, eax
+    jnz .unsupported
 .buffer_address:
     movzx eax, word [si+DMA_ADDRESS]
     cmp si, dma16
@@ -573,7 +719,7 @@ port_callback:
     ja .unsupported
     mov [game_dma], si
     mov esi, ecx
-    mov [game_block_bytes], dx
+    mov [game_block_bytes], edx
     mov cl, [pending_frame_shift]
     mov [game_frame_shift], cl
     mov al, 1
@@ -582,6 +728,15 @@ port_callback:
     inc al
 .irq_bit:
     mov [game_irq_bit], al
+    mov dword [game_origin], 0
+    cmp byte [sb_single], 0
+    je .origin_ready
+    mov di, [game_dma]
+    mov eax, [di+DMA_POSITION]
+    shr eax, cl
+    shl eax, 16
+    mov [game_origin], eax
+.origin_ready:
     shr ebx, cl
     shl ebx, 16
     mov [game_limit], ebx
@@ -592,11 +747,30 @@ port_callback:
     mov [game_segment], si
     mov byte [game_start_pending], 1
     mov dword [game_exit_frame], 0
+    mov byte [sb_paused], 0
+    cmp byte [sb_single], 0
+    je .duration_ready
+    mov eax, [game_block_bytes]
+    mov cl, [game_frame_shift]
+    shr eax, cl
+    mov ecx, OUTPUT_RATE
+    mul ecx
+    movzx ecx, word [game_rate]
+    div ecx
+    test edx, edx
+    jz .duration
+    inc eax
+.duration:
+    mov [game_exit_frame], eax
+.duration_ready:
 %ifdef VIRTUAL_IRQ
     call virtual_irq_reset
 %endif
     mov byte [game_active], 1
     inc word [virtual_starts]
+%ifdef RESIDENT_AUDIO
+    call sb_patch
+%endif
 %ifdef WSS_INPUT
     cmp byte [game_source], 1
     jne .sb_started
@@ -607,6 +781,8 @@ port_callback:
     cmp byte [dsp_command], 1ch
     je .done
     cmp byte [dsp_command], 90h
+    je .done
+    cmp byte [dsp_command], 91h
     je .done
 .argument_done:
     dec byte [arguments]
@@ -688,11 +864,38 @@ port_callback:
     jne .count_units
     shr eax, 1
 .count_units:
-    and ax, [si+DMA_COUNT]
+    cmp byte [sb_single], 0
+    je .cyclic_count
+    add eax, [si+DMA_POSITION]
+    test byte [si+DMA_MODE], 10h
+    jnz .cyclic_count
+    movzx ebx, word [si+DMA_COUNT]
+    cmp eax, ebx
+    ja .terminal_count
+    sub ebx, eax
+    jmp .snapshot
+.terminal_count:
+    mov bx, 0ffffh
+    jmp .snapshot
+.cyclic_count:
+    movzx ecx, word [si+DMA_COUNT]
+    inc ecx
+    xor edx, edx
+    div ecx
     mov bx, [si+DMA_COUNT]
-    sub bx, ax
+    sub bx, dx
     jmp .snapshot
 .idle_count:
+    cmp si, [game_dma]
+    jne .idle_snapshot
+    cmp byte [sb_finished], 0
+    jne .held_count
+    cmp byte [sb_paused], 0
+    je .idle_snapshot
+.held_count:
+    mov bx, [si+DMA_SNAPSHOT]
+    jmp .snapshot
+.idle_snapshot:
     mov bx, [si+DMA_COUNT]
     cmp byte [si+3], 0
     je .snapshot
@@ -767,7 +970,7 @@ game_frame_shift db 0
 game_source db 0
 pending_frame_shift db 0
 game_irq_bit db 1
-game_block_bytes dw 4096
+game_block_bytes dd 4096
 game_exit_frame dd 0
 game_mix_frame dd 0
 virtual_resets dw 0
@@ -776,8 +979,12 @@ virtual_mixer_index db 0
 virtual_mixer times 256 db 0
 dma8 db 0,1,0,0
     dw 0,0,0
+    dd 0
+    db 49h
 dma16 db 0,1,0,0
     dw 0,0,0
+    dd 0
+    db 59h
 dsp_command db 0
 arguments db 0
 block_low db 0

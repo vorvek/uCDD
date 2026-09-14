@@ -20,9 +20,13 @@ In the same hardware test, MSCDEX mounted the image and allowed file access, but
 
 The internal-host compatibility checks also cover Daggerfall startup with CauseWay and a forced-DPMI DOS/32A configuration, plus Ultima VIII gameplay, normal exit, and CD file checks. Ultima VIII selects VCPI directly, so its result establishes coexistence rather than use of the internal DPMI interface. The 3dfx Tomb Raider build starts a new game in Caves with CD audio and game sound through the same SB16, then exits normally in a Pentium dynarec test. The capture verifies 23 seconds of continuous CD samples mixed with its unsigned 8-bit stereo output. It also checks the Sound Blaster command that stops auto-init playback at the end of a block.
 
-The mixer accepts the tested legacy Sound Blaster mono auto-init commands, SB Pro stereo commands, SB16 PCM commands, and WSS linear PCM playback. Game input and physical output are independent: a game configured for Sound Blaster can use WSS output, and a WSS game can use Sound Blaster output. The virtual Sound Blaster resources remain A220, IRQ 5, DMA 1 and 5. The virtual WSS codec is at 530h with DMA 1; Tomb Raider selects IRQ 11 through its board configuration. Recording and compressed game PCM are not supported.
+The mixer accepts the legacy Sound Blaster single-cycle and auto-init DMA playback commands, SB Pro stereo commands, SB16 PCM commands, and WSS linear PCM playback. Game input and physical output are independent: a game configured for Sound Blaster can use WSS output, and a WSS game can use Sound Blaster output. The virtual Sound Blaster resources remain A220, IRQ 5, DMA 1 and 5. The virtual WSS codec is at 530h with DMA 1; Tomb Raider selects IRQ 11 through its board configuration. Recording and compressed game PCM are not supported.
 
 Tomb Raider also completes with SB Pro and WSS game settings, including CD music and sound effects. Tests cover SB16 input to WSS output, WSS input to SB16 and WSS output, and SB Pro input to SB16 and SB Pro output. The SB Pro capture uses wider sample bounds for its 8-bit conversion. These new card paths have emulator coverage and still need real-card tests.
+
+Original SB, SB1.5, and SB2 share an 8-bit mono output backend. It uses single-cycle DSP commands and does not access Pro/16 mixer registers. Game DMA playback supports odd-sized and 64 KiB single-cycle blocks, chained transfers, pause/resume, and speaker control. Real-mode and 32-bit DPMI test clients mix chained PCM with both CD channels through each output. Captures check for missing sources and gaps at block boundaries. These tests pass on the interpreted Pentium profile; the tested 386 profile misses refill deadlines under this workload.
+
+On physical IRQ 5, uCDD keeps the game vector separate through DOS and DPMI vector services. Programs that write that IVT entry directly can bypass this protection; use physical IRQ 7 for those programs. Direct DAC commands, recording, and compressed ADPCM game playback are not implemented. This is DMA PCM compatibility, not complete Sound Blaster hardware emulation.
 
 ## Requirements and estimates
 
@@ -31,10 +35,11 @@ Tomb Raider also completes with SB Pro and WSS game settings, including CD music
 | Processor | 386 or later for the instruction set. For games with mixed CD audio, budget a Pentium-class CPU initially. This is a planning estimate, not a measured minimum. |
 | DOS | DOS 5 or later interfaces. FreeDOS 1.4 is tested. |
 | CD driver memory | 9,264 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
-| Resident audio, one unit | 30,640 bytes for the driver/mixer and 61,056 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 99,888 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. SHSUCDX and the memory manager use additional memory. |
+| Resident audio, one unit | 32,112 bytes for the driver/mixer and 61,216 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 101,520 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. SHSUCDX and the memory manager use additional memory. |
+| SB / SB1.5 / SB2 conventional memory | A 512-byte mono DMA ring uses a 1 KiB conventional allocation. The resident code blocks load high. |
 | SB Pro conventional memory | Its aligned 1 KiB DMA ring uses a 2 KiB conventional allocation. The same driver and host blocks load high in the test. |
 | Extended memory | A 512 KiB XMS audio queue, plus 12 KiB of private stacks and allocation records while a protected client is active. Client memory and VCPI page tables use additional extended memory. The Quake test machine has 16 MiB. |
-| Sound card | SB16 or WSS at 44.1 kHz, 16-bit stereo; SB Pro at its nominal 22.05 kHz, 8-bit stereo setting. The SB Pro time constant gives about 21.74 kHz; CD conversion compensates for that clock. |
+| Sound card | SB / SB1.5 / SB2 at about 22.22 kHz, 8-bit mono; SB16 or WSS at 44.1 kHz, 16-bit stereo; SB Pro at its nominal 22.05 kHz, 8-bit stereo setting. The SB Pro time constant gives about 21.74 kHz; CD conversion compensates for that clock. |
 | Port trapping | The resident experiment uses Jemm 5.86's real-mode interface and uCDD's own VCPI/DPMI host. General game support remains unverified. |
 | Image storage | A 60-minute uncompressed CD audio image uses about 635 MB (606 MiB). Data images vary with their contents. |
 | Audio reads | Uncompressed CD audio requires 176,400 source bytes per second, plus the game's disk reads. Output downsampling does not reduce the image size or source read rate. |
@@ -57,9 +62,9 @@ The DOS programs are `build/UCDD.EXE` and `build/UCDDSET.EXE`. They require a 38
 
 The build also creates `build/UCDDSET.EXE`, a transient sound setup tool. It saves the physical card settings to `UCDD.CFG` in the current directory. Saved settings take priority over initial suggestions from `BLASTER`. The CD data driver does not need this file. The Quake audio service requires saved settings.
 
-Use the arrow keys to select and change a setting. F10 saves and exits; Esc exits without saving further changes. Select SB16, SB Pro, or WSS. SB cards use I/O addresses 220h/240h/260h/280h, IRQ 5 or 7, and 8-bit DMA 1 or 3. SB16 also uses 16-bit DMA 5, 6, or 7. The initial physical WSS backend supports addresses 530h/604h/E80h/F40h, IRQ 7, and DMA 1 or 3. Configure the actual card with its jumpers or vendor utility first; the setup fields must match it.
+Use the arrow keys to select and change a setting. F10 saves and exits; Esc exits without saving further changes. Select Sound Blaster / 1.5 / 2, SB Pro, SB16, or WSS. SB cards use I/O addresses 220h/240h/260h/280h, IRQ 5 or 7, and 8-bit DMA 1 or 3. SB16 also uses 16-bit DMA 5, 6, or 7. The initial physical WSS backend supports addresses 530h/604h/E80h/F40h, IRQ 7, and DMA 1 or 3. Configure the actual card with its jumpers or vendor utility first; the setup fields must match it.
 
-F2 saves the settings and runs the built-in SB16 sound test. It plays the left speaker for about 1.1 seconds, pauses for about 0.37 seconds, then plays the right speaker for about 1.1 seconds. The other channel stays silent. The test returns to the setup screen and can be repeated. It needs no separate test program, Jemm, QPIEMU, or DPMI host. The test uses an 8 KiB conventional-memory allocation for an aligned 4 KiB DMA ring and releases it when the test stops.
+F2 saves the settings and runs the built-in sound test for the selected card. It plays the left speaker for about 1.1 seconds, pauses for about 0.37 seconds, then plays the right speaker for about 1.1 seconds. The other channel stays silent on stereo cards. On original SB cards, both test tones use the mono output. The test returns to the setup screen and can be repeated. It needs no separate test program, Jemm, QPIEMU, or DPMI host. The test releases its DMA allocation when it stops: 8 KiB for SB16/WSS, 2 KiB for SB Pro, or 1 KiB for original SB.
 
 Run the sound test before installing resident audio. If resident uCDD audio is active, F2 asks you to restart DOS before testing. F10 can still save settings for the next boot.
 
@@ -108,7 +113,7 @@ Build the two uCDD programs with:
 python scripts/build.py --resident-audio
 ```
 
-This experimental build supports one unit with SB16, SB Pro, or WSS output. Install Jemm 5.86 and SHSUCDX separately. Save the physical card settings with `UCDDSET` before installing the driver. The settings stay in `UCDD.CFG` across boots. Keep that file in the directory from which you install uCDD.
+This experimental build supports one unit with original SB, SB Pro, SB16, or WSS output. Install Jemm 5.86 and SHSUCDX separately. Save the physical card settings with `UCDDSET` before installing the driver. The settings stay in `UCDD.CFG` across boots. Keep that file in the directory from which you install uCDD.
 
 Example `CONFIG.SYS` for native DOS, using your installed Jemm path:
 

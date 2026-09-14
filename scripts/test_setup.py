@@ -24,12 +24,13 @@ def main():
     parser.add_argument('--jemm', action='store_true')
     parser.add_argument('--wss', action='store_true')
     parser.add_argument('--sbpro', action='store_true')
+    parser.add_argument('--sb', action='store_true')
     args = parser.parse_args()
     capture = build_capture(args.izarra_source)
     assemble('src/setup.asm', 'UCDDSET.EXE', exe=True)
     for name, options in (('SETLIFE.COM', ()), ('SETFAIL.COM', ('EXPECT_FAILURE=1',)),
                           ('SETRETRY.COM', ('RECOVER=1',)), ('SETHIGH.COM', ('HIGH_SETUP=1',))):
-        assemble('tests/setup_lifecycle.asm', name, (*options, *(('WSS_TEST=1',) if args.wss else ()), *(('PRO_TEST=1',) if args.sbpro else ())))
+        assemble('tests/setup_lifecycle.asm', name, (*options, *(('WSS_TEST=1',) if args.wss else ()), *(('PRO_TEST=1',) if args.sbpro or args.sb else ())))
     assemble('tests/exit.asm', 'PASS.COM')
     assemble('tests/exit.asm', 'FAIL.COM', ('EXIT_CODE=1',))
     source = CACHE / 'FD14-LiteUSB.zip'
@@ -56,6 +57,8 @@ def main():
         default = b'uCDD\x01\x02' + struct.pack('<H', 0x530) + bytes((7, 1, 5, 0))
     if args.sbpro:
         default = default[:5] + b'\x01' + default[6:]
+    if args.sb:
+        default = default[:5] + b'\x03' + default[6:]
     disk.add('DEFAULT.CFG', default)
     disk.add('ALT.CFG', default[:8] + bytes((7, 3, 6, 0)))
     disk.add('BADPORT.CFG', default[:6] + struct.pack('<H', 0x604 if args.wss else 0x240) + default[8:])
@@ -73,6 +76,8 @@ def main():
         run = run.with_name(run.name+'-wss')
     if args.sbpro:
         run = run.with_name(run.name+'-sbpro')
+    if args.sb:
+        run = run.with_name(run.name+'-sb')
     run.mkdir(exist_ok=True)
     image, wav = run / 'setup.img', run / 'setup.wav'
     image.write_bytes(disk.image)
@@ -86,7 +91,7 @@ def main():
     (run / 'setup.log').write_text(result.stdout + result.stderr)
     print(result.stdout + result.stderr)
     result.check_returncode()
-    evidence['speaker_sequence'] = verify_speaker_sequence(wav, sequences=8 if args.jemm else 6)
+    evidence['speaker_sequence'] = verify_speaker_sequence(wav, sequences=8 if args.jemm else 6, mono=args.sb)
     evidence['capture_sha256'] = hashlib.sha256(wav.read_bytes()).hexdigest()
     evidence['passed'] = True
     (run / 'results.json').write_text(json.dumps(evidence, indent=2) + '\n')

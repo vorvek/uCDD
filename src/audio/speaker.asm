@@ -33,14 +33,24 @@ speaker_test:
     int 21h
     jc .restore
     mov bx, RING_PARAS*2
-    cmp byte [sound_card], 1
-    jne .allocate_dma
+    cmp byte [sound_card], 3
+    jne .pro_size
+    shr bx, 1
+.pro_size:
+    test byte [sound_card], 1
+    jz .allocate_dma
     shr bx, 2
 .allocate_dma:
     mov ah, 48h
     int 21h
     jc .restore
     mov [output_allocation], ax
+    cmp byte [sound_card], 3
+    jne .pro_align
+    add ax, RING_PARAS/8-1
+    and ax, ~(RING_PARAS/8-1)
+    jmp .dma_ready
+.pro_align:
     cmp byte [sound_card], 1
     jne .align_dma
     add ax, RING_PARAS/4-1
@@ -115,7 +125,11 @@ mix_half:
     jae .left
     mov ax, [speaker_tone+bx]
 .left:
+    mov [speaker_left], ax
+    cmp byte [sound_card], 3
+    je .left_stored
     call .store
+.left_stored:
     xor ax, ax
     cmp dx, 16*PERIOD_SCALE
     jb .right
@@ -123,14 +137,19 @@ mix_half:
     jae .right
     mov ax, [speaker_tone+bx]
 .right:
+    cmp byte [sound_card], 3
+    jne .right_ready
+    add ax, [speaker_left]
+    sar ax, 1
+.right_ready:
     call .store
     add bx, 2
     and bx, 127
     loop .frame
     ret
 .store:
-    cmp byte [sound_card], 1
-    je .pro
+    test byte [sound_card], 1
+    jnz .pro
     stosw
     ret
 .pro:
@@ -146,6 +165,7 @@ speaker_policy db 0
 speaker_strategy dw 0
 speaker_umb db 0
 speaker_half dw 0
+speaker_left dw 0
 output_allocation dw 0
 output_segment dw 0
 fault db 0

@@ -227,8 +227,8 @@ sb_start:
 sb_stop:
     cmp byte [sound_card], 2
     je wss_stop
-    cmp byte [sound_card], 1
-    je pro_stop
+    test byte [sound_card], 1
+    jnz pro_stop
     cmp byte [sb_running], 0
     je .done
     mov al, 0d5h
@@ -294,8 +294,8 @@ audio_irq:
     cld
     cmp byte [sound_card], 2
     je .wss
-    cmp byte [sound_card], 1
-    je .pro
+    test byte [sound_card], 1
+    jnz .pro
     ; A reflected game IRQ must not advance the physical output buffer.
     mov dx, [sb_base]
     add dx, 4
@@ -317,18 +317,27 @@ audio_irq:
     and ax, 1
     xor ax, 1
     shl ax, OUTPUT_SHIFT+2
-    cmp byte [sound_card], 1
-    jne .half_ready
+    test byte [sound_card], 1
+    jz .half_ready
     shr ax, 2
+    cmp byte [sound_card], 3
+    jne .half_ready
+    shr ax, 1
 .half_ready:
     mov [next_half], ax
 %endif
     mov es, [output_segment]
     mov di, [next_half]
+%ifdef RESIDENT_AUDIO
+    mov [sb_patch_base], di
+%endif
     mov ax, PERIOD_BYTES
-    cmp byte [sound_card], 1
-    jne .half_size
+    test byte [sound_card], 1
+    jz .half_size
     shr ax, 2
+    cmp byte [sound_card], 3
+    jne .half_size
+    shr ax, 1
 .half_size:
     xor [next_half], ax
     call mix_half
@@ -339,6 +348,9 @@ audio_irq:
     mov al, 20h
     mov dx, 20h
     call physical_write
+%ifdef OWN_HOST
+    call sb_real_irq
+%endif
     pop fs
     pop es
     popad
@@ -346,7 +358,16 @@ audio_irq:
     mov sp, [irq_sp]
     pop ax
     pop ds
+%ifdef OWN_HOST
+    cmp byte [cs:sb_real_pending], 0
+    jne .real_tail
+%endif
     iret
+%ifdef OWN_HOST
+.real_tail:
+    mov byte [cs:sb_real_pending], 0
+    jmp far [cs:sb_real_vector]
+%endif
 .pro:
     cmp byte [pro_priming], 0
     je .pro_audio
@@ -365,6 +386,9 @@ audio_irq:
     mov dx, [sb_base]
     add dx, 0eh
     call physical_read
+    cmp byte [sound_card], 3
+    jne .acknowledged
+    call sb_mono_next
     jmp .acknowledged
 .wss:
     mov dx, [sb_base]

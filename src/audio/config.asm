@@ -36,7 +36,7 @@ config_load:
     jne .bad
     cmp byte [config_data+11], 0
     jne .bad
-    cmp byte [sound_card], 2
+    cmp byte [sound_card], 3
     ja .bad
     cmp byte [sound_card], 2
     je .wss

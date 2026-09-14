@@ -19,6 +19,8 @@
 %define DMA_ADDRESS 4
 %define DMA_COUNT 6
 %define DMA_SNAPSHOT 8
+%define DMA_POSITION 10
+%define DMA_MODE 14
 
 %ifdef RESIDENT_AUDIO
 %define OUTPUT_RATE dword [output_rate]

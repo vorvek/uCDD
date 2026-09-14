@@ -19,6 +19,15 @@ dpmi_ivt_snapshot:
     mov cx, 256
     cld
     rep movsd
+%ifdef RESIDENT_HOST
+    mov eax, [cs:resident_game_vector]
+    mov si, ax
+    and si, 15
+    shr eax, 4
+    mov ds, ax
+    mov eax, [si]
+    mov [cs:resident_initial_game_vector], eax
+%endif
     pop es
     pop ds
     popad
@@ -121,8 +130,29 @@ dpmi_ivt_restore_range:
     add esi, 4
     cmp esi, 256*4
     jb .vector
+%ifdef RESIDENT_HOST
+    cmp byte [ebp+dpmi_audio_irq], 5
+    jne .done
+    mov esi, [ebp+resident_game_vector]
+    mov eax, [esi]
+    mov edx, eax
+    shr edx, 16
+    shl edx, 4
+    movzx eax, ax
+    add eax, edx
+    cmp eax, ebx
+    jb .done
+    cmp eax, ecx
+    jae .done
+    mov eax, [ebp+resident_initial_game_vector]
+    mov [esi], eax
+.done:
+%endif
     popad
     ret
 
 dpmi_initial_ivt times 256 dd 0
 dpmi_first_mcb dw 0
+%ifdef RESIDENT_HOST
+resident_initial_game_vector dd 0
+%endif
