@@ -15,6 +15,9 @@ resident_host_init:
     push es
     pushad
     mov [cs:dpmi_audio_irq], al
+    mov [cs:mon_vcpi_flags_slot], ah
+    mov [cs:resident_traps], cx
+    mov [cs:resident_traps+2], ds
     movzx eax, bp
     xor ecx, ecx
     mov cx, ds
@@ -65,6 +68,7 @@ resident_host_init:
 resident_port dd 0
 resident_take dd 0
 resident_wss_event dd 0
+resident_traps dd 0
 resident_game_vector dd 0
 resident_ports:
 %include "audio/ports.inc"

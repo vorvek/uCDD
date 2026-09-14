@@ -10,6 +10,7 @@ host_old_io dd 0
 host_io_bitmap dd 0
 host_callback dd 0
 host_installed db 0
+host_backend db 0
 host_port_count dw 0
 host_ports times 64 dw 0
 host_port_old times 64 db 0
@@ -189,15 +190,22 @@ bits 16
 host_gate_slot dd 0
 host_remove:
     cmp byte [host_installed], 0
-    je .done
+    je .ok
+    cmp byte [host_backend], 2
+    je host_emm_remove
     mov ax, 1a0bh
     call far [host_api_entry]
-    jc .done
+    jc .failed
     push ds
     lds dx, [host_old_mux]
     mov ax, 252fh
     int 21h
     pop ds
     mov byte [host_installed], 0
-.done:
+    mov byte [host_backend], 0
+.ok:
+    clc
+    ret
+.failed:
+    stc
     ret

@@ -365,6 +365,8 @@ mon_enter:
     mov ax, 10h
     mov ds, ax
     mov es, ax
+    mov fs, ax
+    mov gs, ax
     mov ss, ax
     mov ebp, edi
     lea esp, [ebp+mon_kernel_stack_top]
@@ -967,8 +969,16 @@ mon_leave:
     mov ax, 10h
     mov ds, ax
     mov es, ax
+    mov fs, ax
+    mov gs, ax
     mov ss, ax
     lea esp, [ebp+mon_return]
+    cmp byte [ebp+mon_vcpi_flags_slot], 0
+    je .return_stack_ready
+    mov word [esp-2], 0
+    sub esp, 2
+.return_stack_ready:
+    clts
     mov ax, 0de0ch
     call far [ebp+mon_server]
     ud2
@@ -1065,6 +1075,7 @@ mon_irq_callback dd 0
 mon_virtual_active db 0
 mon_virtual_eip dd 0
 mon_virtual_flags dd 0
+mon_vcpi_flags_slot db 0
 mon_vectors times 256*6 db 0
 mon_resume_sp dd 0
 mon_rm_target dd 0
@@ -1081,8 +1092,8 @@ mon_switch dd 0,0,0
 %endif
     dd 0
     dw 8
-    ; VCPI's far-call return address precedes the V86 return frame.
-    times 8 db 0
+    ; Leave stack space for the VCPI host and the far-call return address.
+    times 32 db 0
 mon_return dd monitor_run.returned,0,23002h,0,0,0,0,0,0
 mon_gdtr dw mon_gdt_end-mon_gdt-1
     dd 0

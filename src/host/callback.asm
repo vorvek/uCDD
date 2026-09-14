@@ -288,7 +288,20 @@ dpmi_callback_done:
     add esi, 2
     loop .segments
     mov byte [ebp+dpmi_callback_active], 0
+    cli
+    mov ax, 10h
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
     lea esp, [ebp+dpmi_callback_return_frame]
+    cmp byte [ebp+mon_vcpi_flags_slot], 0
+    je .return_stack_ready
+    mov word [esp-2], 0
+    sub esp, 2
+.return_stack_ready:
+    clts
     mov ax, 0de0ch
     call far [ebp+mon_server]
     ud2
@@ -380,7 +393,7 @@ dpmi_callback_index dw 0
 dpmi_callback_regs times 50 db 0
 dpmi_callback_context times 102 db 0
 dpmi_callback_resume dd 0
-    times 8 db 0
+    times 32 db 0
 dpmi_callback_return_frame times 36 db 0
     times 512 db 0
 dpmi_callback_real_top:

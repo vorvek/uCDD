@@ -75,8 +75,22 @@ own_host_install:
     mov bx, port_callback
     mov dx, virtual_irq_take
     mov si, wss_irq_event
+    mov cx, host_client_traps
     mov di, own_host_active
     mov al, [sb_irq]
+    xor ah, ah
+    cmp byte [host_backend], 2
+    jne .host_mode_ready
+    cmp byte [host_emm_seen], 1
+    jne .host_mode_ready
+    cmp word [host_emm_version], 0200h
+    jb .host_mode_ready
+    cmp byte [host_emm_caps], 6
+    jne .host_mode_ready
+    cmp word [host_emm_min_port], 0
+    jne .host_mode_ready
+    mov ah, 1
+.host_mode_ready:
     push bp
     mov bp, sb_game_vector
     call far [own_host_entry]

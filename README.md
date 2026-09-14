@@ -8,7 +8,7 @@ The prototype mounts ISO data images and single-file CUE/BIN images from a local
 
 The resident audio build runs an unmodified DOS Quake 1.06 executable with CD music and game sound through the same SB16. Quake selects its map track through the virtual CD drive. The audio service reads the BIN file into a 512 KiB XMS queue and mixes it with Quake's Sound Blaster output. It supports CD seek, play, stop, resume, head position, Q-channel position, status, and channel volume requests.
 
-The experimental resident build puts the CD driver, mixer, port interception, and uCDD's own protected-mode host in `UCDD.EXE`. It installs before an image is mounted and lets the user start Quake directly. A test loads both resident blocks high, copies the installer archive, runs Quake twice, and unmounts and remounts the image between runs. Both runs pass music and game-sound capture checks. HDPMI32i, QPIEMU, JLOAD, and separate game launchers are not required. The tested memory manager is Jemm 5.86. Support for Microsoft HIMEM/EMM386 and 386MAX remains incomplete.
+The experimental resident build puts the CD driver, mixer, port interception, and uCDD's own protected-mode host in `UCDD.EXE`. It installs before an image is mounted and lets the user start Quake directly. A test loads both resident blocks high, copies the installer archive, runs Quake twice, and unmounts and remounts the image between runs. Both runs pass music and game-sound capture checks. HDPMI32i, QPIEMU, JLOAD, and separate game launchers are not required. Jemm 5.86 is the main tested memory manager. A Microsoft HIMEM.SYS and EMM386 test passes protected and real-mode 8-bit game clients with SB16 output. The 386MAX port-trap adapter is implemented from its published interface, but its runtime path is not yet verified.
 
 An interpreted Pentium test loads the start map, plays and loops a real music excerpt, plays a game sound, and exits. Captures check the complete 12-second music excerpt and the complete game sound. A separate test copies and checks the 24,684,755-byte installer archive through the mounted image. These tests use unchanged game files supplied by the tester. No game data is distributed.
 
@@ -16,11 +16,11 @@ The resident build stays installed after the game exits. It refills during CD re
 
 A user has reported successful standalone BIN playback and Quake with shared CD music and game sound on a real DOS PC using SHSUCDX and the earlier external-host launcher. The driver also loaded into upper memory. The new internal host still needs real-hardware testing. Long gameplay sessions and broad MS-DOS compatibility remain unverified.
 
-In the same hardware test, MSCDEX mounted the image and allowed file access, but Quake had no CD audio and the service reported `The CD image read failed.` after the game exited. Use SHSUCDX for the current Quake experiment. The cause of the MSCDEX audio failure is not yet established.
+In the earlier hardware test, MSCDEX mounted the image and allowed file access, but Quake had no CD audio and the service reported `The CD image read failed.` after the game exited. The current build fixes foreground image reads made while MSCDEX has entered DOS. An interpreted MSCDEX 2.25 test now mounts the image, copies data, and runs Quake with CD music and game sound. This fix still needs a real-hardware retest. SHSUCDX remains the tested hardware path.
 
 The internal-host compatibility checks also cover Daggerfall startup with CauseWay and a forced-DPMI DOS/32A configuration, plus Ultima VIII gameplay, normal exit, and CD file checks. Ultima VIII selects VCPI directly, so its result establishes coexistence rather than use of the internal DPMI interface. The 3dfx Tomb Raider build starts a new game in Caves with CD audio and game sound through the same SB16, then exits normally in a Pentium dynarec test. The capture verifies 23 seconds of continuous CD samples mixed with its unsigned 8-bit stereo output. It also checks the Sound Blaster command that stops auto-init playback at the end of a block.
 
-The mixer accepts the legacy Sound Blaster single-cycle and auto-init DMA playback commands, SB Pro stereo commands, SB16 PCM commands, and WSS linear PCM playback. Game input and physical output are independent: a game configured for Sound Blaster can use WSS output, and a WSS game can use Sound Blaster output. The virtual Sound Blaster resources remain A220, IRQ 5, DMA 1 and 5. The virtual WSS codec is at 530h with DMA 1; Tomb Raider selects IRQ 11 through its board configuration. Recording and compressed game PCM are not supported.
+The mixer accepts the legacy Sound Blaster single-cycle and auto-init DMA playback commands, SB Pro stereo commands, SB16 PCM commands, and WSS linear PCM playback. Game input and physical output are independent: a game configured for Sound Blaster can use WSS output, and a protected-mode WSS game can use Sound Blaster output. The virtual Sound Blaster resources remain A220, IRQ 5, DMA 1 and 5. The virtual WSS codec is at 530h with DMA 1; Tomb Raider selects IRQ 11 through its board configuration. Direct real-mode WSS interrupt delivery, recording, and compressed game PCM are not supported.
 
 Tomb Raider also completes with SB Pro and WSS game settings, including CD music and sound effects. Tests cover SB16 input to WSS output, WSS input to SB16 and WSS output, and SB Pro input to SB16 and SB Pro output. The SB Pro capture uses wider sample bounds for its 8-bit conversion. These new card paths have emulator coverage and still need real-card tests.
 
@@ -32,23 +32,23 @@ On physical IRQ 5, uCDD keeps the game vector separate through DOS and DPMI vect
 
 | Item | Current requirement or planning estimate |
 | --- | --- |
-| Processor | 386 or later for the instruction set. For games with mixed CD audio, budget a Pentium-class CPU initially. This is a planning estimate, not a measured minimum. |
+| Processor | 386 or later for the instruction set. The interpreted 486 profile passes the generated mixed-stream workload through every output format. Current Quake and Tomb Raider tests use a Pentium profile. Real hardware is required to establish a minimum processor. |
 | DOS | DOS 5 or later interfaces. FreeDOS 1.4 is tested. |
 | CD driver memory | 9,264 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
-| Resident audio, one unit | 32,112 bytes for the driver/mixer and 61,216 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 101,520 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. SHSUCDX and the memory manager use additional memory. |
+| Resident audio, one unit | 33,056 bytes for the driver/mixer and 61,424 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 102,672 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. The redirector and memory manager use additional memory. |
 | SB / SB1.5 / SB2 conventional memory | A 512-byte mono DMA ring uses a 1 KiB conventional allocation. The resident code blocks load high. |
 | SB Pro conventional memory | Its aligned 1 KiB DMA ring uses a 2 KiB conventional allocation. The same driver and host blocks load high in the test. |
 | Extended memory | A 512 KiB XMS audio queue, plus 12 KiB of private stacks and allocation records while a protected client is active. Client memory and VCPI page tables use additional extended memory. The Quake test machine has 16 MiB. |
 | Sound card | SB / SB1.5 / SB2 at about 22.22 kHz, 8-bit mono; SB16 or WSS at 44.1 kHz, 16-bit stereo; SB Pro at its nominal 22.05 kHz, 8-bit stereo setting. The SB Pro time constant gives about 21.74 kHz; CD conversion compensates for that clock. |
-| Port trapping | The resident experiment uses Jemm 5.86's real-mode interface and uCDD's own VCPI/DPMI host. General game support remains unverified. |
+| Port trapping | Jemm 5.86 is the main tested backend. Microsoft EMM386 uses its 4A15h service for real-mode ports and the internal VCPI monitor for protected clients. Its old service cannot trap DMA and PIC ports below 100h, so real-mode clients that share the physical output DMA remain unsupported. The external 4A15h trap is suspended while a protected client runs. Sound drivers called through an INT 31h real-mode transfer are unsupported. The 386MAX adapter requests the complete port set but has not completed a runtime test. |
 | Image storage | A 60-minute uncompressed CD audio image uses about 635 MB (606 MiB). Data images vary with their contents. |
 | Audio reads | Uncompressed CD audio requires 176,400 source bytes per second, plus the game's disk reads. Output downsampling does not reduce the image size or source read rate. |
 
 Audio conversion, port trapping, and game execution share the CPU. Disk seeks and refill delays also matter. Real-hardware tests are required to establish supported processor speeds and buffer sizes. The interpreted emulator test does not establish real-386 performance.
 
-The audio queue uses the standard XMS allocation, move, and free calls. HIMEM.SYS compatibility is a target and has not yet been tested. HIMEM alone does not supply the port-trapping interface used by the audio service or the upper-memory blocks used by `LH`. The data driver does not require XMS or port trapping.
+The audio queue uses the standard XMS allocation, move, and free calls. Microsoft HIMEM.SYS passes the current XMS audio test when EMM386 supplies VCPI and port trapping. HIMEM alone does not supply port trapping or upper-memory blocks for `LH`. The data driver does not require XMS or port trapping.
 
-[Jemm's documentation](https://github.com/Baron-von-Riedesel/Jemm/blob/master/Readme.txt) supports HIMEM.SYS followed by JEMM386 as an alternative to JEMMEX. That combination remains untested with uCDD. Do not load a separate HIMEM with JEMMEX, which includes its own XMS manager.
+[Jemm's documentation](https://github.com/Baron-von-Riedesel/Jemm/blob/master/Readme.txt) supports HIMEM.SYS followed by JEMM386 as an alternative to JEMMEX. Do not load a separate HIMEM with JEMMEX, which includes its own XMS manager. The [386MAX source](https://github.com/sudleyplace/386MAX) documents the compatible 4A15h port-trap interface used by its adapter.
 
 ## Build
 
@@ -113,7 +113,7 @@ Build the two uCDD programs with:
 python scripts/build.py --resident-audio
 ```
 
-This experimental build supports one unit with original SB, SB Pro, SB16, or WSS output. Install Jemm 5.86 and SHSUCDX separately. The driver reads `UCDD.CFG` beside `UCDD.EXE`, including when started through PATH or with an absolute path. If the file is missing, `UCDD -install` starts `UCDDSET.EXE` from the same directory. Save the physical card settings to continue installation. Exiting without saving stops installation. Invalid or unreadable settings produce an error; run UCDDSET to correct them. The settings stay across boots, and the working directory is unchanged.
+This experimental build supports one unit with original SB, SB Pro, SB16, or WSS output. Install a supported memory manager and CD redirector separately. Jemm 5.86 with SHSUCDX is the main tested setup. The driver reads `UCDD.CFG` beside `UCDD.EXE`, including when started through PATH or with an absolute path. If the file is missing, `UCDD -install` starts `UCDDSET.EXE` from the same directory. Save the physical card settings to continue installation. Exiting without saving stops installation. Invalid or unreadable settings produce an error; run UCDDSET to correct them. The settings stay across boots, and the working directory is unchanged.
 
 Example `CONFIG.SYS` for native DOS, using your installed Jemm path:
 

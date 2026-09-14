@@ -2,6 +2,7 @@
 ; SPDX-License-Identifier: GPL-3.0-only
 
 audio_install:
+    mov word [audio_error_text], audio_unit_message
     cmp byte [unit_count], 1
     jne .bad
     call audio_configure
@@ -20,6 +21,7 @@ audio_install:
     mov dword [cd_step_remainder], (44100*65536) % 43478
 .format_ready:
 %ifndef OWN_HOST
+    mov word [audio_error_text], dpmi_host_message
     mov ax, 1687h
     int 2fh
     test ax, ax
@@ -27,12 +29,15 @@ audio_install:
     test bl, 1
     jz .bad
 %endif
+    mov word [audio_error_text], port_trap_missing_message
     call host_install
     jc .bad
     mov eax, [host_api_entry]
     mov [qpi], eax
+    mov word [audio_error_text], memory_control_message
     call cd_memory_low
     jc .cleanup
+    mov word [audio_error_text], xms_memory_message
     call cd_open
     jc .cleanup
     call virtual_irq_init
@@ -45,6 +50,7 @@ audio_install:
     jz .allocate_dma
     shr bx, 2
 .allocate_dma:
+    mov word [audio_error_text], dos_memory_message
     mov ah, 48h
     int 21h
     jc .cleanup
@@ -69,12 +75,15 @@ audio_install:
     xor di, di
     call mix_half
     call mix_half
+    mov word [audio_error_text], port_trap_rejected_message
     call trap_install
     jc .cleanup
+    mov word [audio_error_text], sound_card_message
     call sb_start
     jc .cleanup
     call cd_memory_restore
 %ifdef OWN_HOST
+    mov word [audio_error_text], internal_host_message
     call own_host_install
     jc .cleanup
     cmp byte [sb_irq], 5
@@ -114,6 +123,13 @@ audio_install:
     ret
 
 %include "audio/host_jemm_init.asm"
+%include "audio/host_emm_init.asm"
+host_install:
+    call host_jemm_install
+    jnc .done
+    call host_emm_install
+.done:
+    ret
 %ifdef OWN_HOST
 %include "audio/resident_host_init.asm"
 %endif

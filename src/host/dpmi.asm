@@ -50,6 +50,14 @@ dpmi_entry:
     jne .bad
     cmp byte [cs:dpmi_active], 0
     jne .bad
+%ifdef RESIDENT_HOST
+    push ax
+    xor al, al
+    call far [cs:resident_traps]
+    pop ax
+    jc .bad
+    mov byte [cs:dpmi_traps_suspended], 1
+%endif
     pushf
     pushad
     push ds
@@ -145,6 +153,18 @@ dpmi_entry:
     jz .exit
     mov byte [dpmi_exit_code], 1
 .exit:
+%ifdef RESIDENT_HOST
+    cmp byte [dpmi_traps_suspended], 0
+    je .traps_ready
+    mov al, 1
+    call far [resident_traps]
+    jnc .traps_resumed
+    mov byte [dpmi_exit_code], 1
+    jmp .traps_ready
+.traps_resumed:
+    mov byte [dpmi_traps_suspended], 0
+.traps_ready:
+%endif
     mov es, [dpmi_psp]
     mov ax, [dpmi_environment]
     mov [es:2ch], ax
@@ -154,6 +174,10 @@ dpmi_entry:
 .bad:
     stc
     retf
+
+%ifdef RESIDENT_HOST
+dpmi_traps_suspended db 0
+%endif
 
 dpmi_initial_descriptor:
     movzx eax, ax
@@ -246,6 +270,7 @@ dpmi_enter_client:
     lea edi, [ebp+dpmi_exit_frame]
     mov ecx, 9
     rep movsd
+    mov byte [ebp+dpmi_release_failed], 0
     call dpmi_locked_init
     jc dpmi_locked_abort
     call dpmi_memory_init
@@ -511,6 +536,10 @@ dpmi_finish:
     lea eax, [ebp+mon_enter]
     mov [ebp+mon_switch+16], eax
     call dpmi_memory_cleanup
+    cmp byte [ebp+dpmi_release_failed], 0
+    je .cleanup_ready
+    mov byte [ebp+dpmi_exit_code], 1
+.cleanup_ready:
     jmp mon_leave
 
 %include "host/descriptors.asm"

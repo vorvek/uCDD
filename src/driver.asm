@@ -1109,8 +1109,35 @@ duplicate_message db 'The uCDD driver is already installed.',13,10,'$'
 %ifdef RESIDENT_AUDIO
 install_audio_error:
     mov dx, [audio_error_text]
+    cmp byte [audio_detach_failed], 0
+    je install_fail
+    mov ah, 9
+    int 21h
+    mov dx, trap_resident_message
+    mov ah, 9
+    int 21h
+    movzx dx, byte [unit_count]
+    imul dx, UNIT_SIZE
+    add dx, [units_base]
+    add dx, 15
+    shr dx, 4
+    add dx, 16
+    mov ax, 3101h
+    int 21h
     jmp install_fail
-audio_install_message db 'The audio driver cannot be installed.',13,10,'$'
-audio_error_text dw audio_install_message
+trap_resident_message db 'uCDD keeps its port-trap code in memory.',13,10,'$'
+audio_unit_message db 'CD audio currently requires one uCDD drive.',13,10,'$'
+dpmi_host_message db 'A compatible DPMI host is not available.',13,10,'$'
+port_trap_missing_message db 'No compatible port-trap service is available.',13,10
+    db 'Use HIMEM with EMM386, JEMMEX, JEMM386, or 386MAX.',13,10,'$'
+port_trap_rejected_message db 'The memory manager rejected the port-trap request.',13,10
+    db 'Check for another sound virtualizer.',13,10,'$'
+memory_control_message db 'DOS does not provide the required memory controls.',13,10,'$'
+xms_memory_message db 'uCDD cannot allocate XMS memory for the CD audio queue.',13,10,'$'
+dos_memory_message db 'uCDD cannot allocate DOS memory for the sound buffer.',13,10,'$'
+sound_card_message db 'The selected sound card did not start.',13,10
+    db 'Check the settings with UCDDSET.',13,10,'$'
+internal_host_message db 'The internal DPMI host did not start.',13,10,'$'
+audio_error_text dw audio_unit_message
 %include "audio/resident_init.asm"
 %endif

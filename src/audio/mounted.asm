@@ -540,12 +540,12 @@ cd_head:
 cd_foreground:
     cmp dword [cd_remaining], 0
     je .done
-    les bx, [cd_indos]
-    cmp byte [es:bx], 0
-    jne .bad
 %ifdef RESIDENT_AUDIO
     call dos_enter
 %else
+    les bx, [cd_indos]
+    cmp byte [es:bx], 0
+    jne .bad
     mov ah, 51h
     int 21h
     push bx
@@ -578,8 +578,11 @@ cd_foreground:
     int 21h
 %endif
     ret
+%ifndef RESIDENT_AUDIO
 .bad:
     mov byte [cd_error], 1
+    ret
+%endif
 .done:
     ret
 

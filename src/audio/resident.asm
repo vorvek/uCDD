@@ -47,6 +47,7 @@ audio_linked db 0
 %include "audio/irq.asm"
 %include "audio/sb_patch.asm"
 %include "audio/host_jemm.asm"
+%include "audio/host_emm.asm"
 %ifdef OWN_HOST
 %include "audio/resident_host.asm"
 %else
@@ -93,6 +94,7 @@ audio_bind:
     ret
 
 audio_cleanup:
+    mov byte [audio_detach_failed], 0
     call cd_background_remove
 %ifdef OWN_HOST
     cmp word [sb_old_dos+2], 0
@@ -107,7 +109,13 @@ audio_cleanup:
 %endif
     call sb_stop
     call trap_remove
+    jnc .trap_removed
+    mov byte [audio_detach_failed], 1
+.trap_removed:
     call host_remove
+    jnc .host_removed
+    mov byte [audio_detach_failed], 1
+.host_removed:
     cmp word [output_allocation], 0
     je .xms
     mov es, [output_allocation]
@@ -117,12 +125,19 @@ audio_cleanup:
 .xms:
     call cd_close
     call cd_memory_restore
+    cmp byte [audio_detach_failed], 0
+    je .ok
+    stc
+    ret
+.ok:
+    clc
     ret
 
 audio_abort:
     push cs
     pop ds
     call audio_cleanup
+    jc .failed
     cmp byte [audio_linked], 0
     je .done
     mov ah, 52h
@@ -131,4 +146,10 @@ audio_abort:
     mov [es:bx+22h], eax
     mov byte [audio_linked], 0
 .done:
+    clc
     retf
+.failed:
+    stc
+    retf
+
+audio_detach_failed db 0

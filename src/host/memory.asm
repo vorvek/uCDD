@@ -429,9 +429,13 @@ dpmi_page_free:
     test ah, ah
     jnz .bad
     popad
+    clc
     ret
 .bad:
-    ud2
+    mov byte [ebp+dpmi_release_failed], 1
+    popad
+    stc
+    ret
 
 dpmi_flush:
     push eax
@@ -447,6 +451,7 @@ DPMI_BLOCK_COUNT equ 256
 dpmi_blocks_page dd 0
 dpmi_blocks_pte dd 0
 dpmi_map_source dd 0
+dpmi_release_failed db 0
 
 dpmi_physical_map:
     movzx edx, word [ebx+24]

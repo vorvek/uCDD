@@ -38,6 +38,7 @@ trap_install:
     stc
     ret
 trap_remove:
+    mov byte [trap_remove_failed], 0
     mov si, trap_ports
     mov cx, [trapped_count]
     jcxz .callback
@@ -46,14 +47,26 @@ trap_remove:
     mov dx, ax
     mov ax, 1a0ah
     call far [qpi]
+    jnc .next_port
+    mov byte [trap_remove_failed], 1
+.next_port:
     loop .next
 .callback:
     cmp byte [callback_set], 0
-    je .done
+    je .status
+    mov byte [callback_set], 0
     les di, [old_callback]
     mov ax, 1a07h
     call far [qpi]
-.done:
+    jnc .status
+    mov byte [trap_remove_failed], 1
+.status:
+    cmp byte [trap_remove_failed], 0
+    je .ok
+    stc
+    ret
+.ok:
+    clc
     ret
 
 output_clock:
@@ -163,13 +176,34 @@ game_elapsed:
     ret
 
 port_callback:
+%ifdef RESIDENT_AUDIO
+    cmp byte [cs:callback_set], 0
+    jne .active
+    stc
+    retf
+.active:
+%endif
     pushad
     mov bp, sp
+%ifdef RESIDENT_AUDIO
+    cmp byte [cs:host_emm_active], 1
+    jne .stack_ready
+    mov ebp, esp
+.stack_ready:
+%endif
     push ds
     push es
     push fs
+%ifdef RESIDENT_AUDIO
+    cmp byte [cs:host_emm_active], 1
+    jne .real_data
+    inc byte [emm_in_callback]
+    jmp .data_ready
+.real_data:
+%endif
     push cs
     pop ds
+.data_ready:
 %ifdef RESIDENT_AUDIO
     mov [callback_port], dx
     mov [callback_value], al
@@ -625,6 +659,16 @@ port_callback:
     mov si, dma16
     mov cl, 1
 .dma_selected:
+%ifdef RESIDENT_AUDIO
+    cmp byte [host_backend], 2
+    jne .dma_state_ready
+    cmp byte [host_emm_active], 1
+    jne .dma_state_ready
+    cmp word [host_emm_min_port], 100h
+    jb .dma_state_ready
+    call emm_dma_snapshot
+.dma_state_ready:
+%endif
     cmp ax, [si+DMA_COUNT]
     ja .unsupported
     movzx edx, ax
@@ -769,7 +813,10 @@ port_callback:
     mov byte [game_active], 1
     inc word [virtual_starts]
 %ifdef RESIDENT_AUDIO
+    cmp byte [host_emm_active], 1
+    je .patch_deferred
     call sb_patch
+.patch_deferred:
 %endif
 %ifdef WSS_INPUT
     cmp byte [game_source], 1
@@ -816,6 +863,9 @@ port_callback:
 .status:
 %ifdef VIRTUAL_IRQ
     and byte [virtual_dsp_irq], 0feh
+%ifdef RESIDENT_AUDIO
+    call emm_irq_ack
+%endif
 %endif
     xor al, al
     cmp byte [reply_count], 0
@@ -825,6 +875,9 @@ port_callback:
 .status16:
 %ifdef VIRTUAL_IRQ
     and byte [virtual_dsp_irq], 0fdh
+%ifdef RESIDENT_AUDIO
+    call emm_irq_ack
+%endif
 %endif
     xor al, al
     jmp .result
@@ -917,8 +970,21 @@ port_callback:
     call virtual_pic_read
 %endif
 .result:
+%ifdef RESIDENT_AUDIO
+    cmp byte [host_emm_active], 1
+    jne .real_result
+    mov [ss:ebp+28], al
+    jmp .done
+.real_result:
+%endif
     mov [ss:bp+28], al
 .done:
+%ifdef RESIDENT_AUDIO
+    cmp byte [host_emm_active], 1
+    jne .restore
+    dec byte [emm_in_callback]
+.restore:
+%endif
     pop fs
     pop es
     pop ds
@@ -956,11 +1022,86 @@ dma_port:
 .done:
     ret
 
+%ifdef RESIDENT_AUDIO
+emm_irq_ack:
+    cmp byte [host_backend], 2
+    jne .done
+    cmp byte [host_emm_active], 1
+    jne .done
+    cmp word [host_emm_min_port], 100h
+    jb .done
+    mov byte [virtual_pic_service], 0
+.done:
+    ret
+
+emm_dma_snapshot:
+    push ax
+    push bx
+    push dx
+    cmp si, dma16
+    je .high
+    movzx bx, byte [sb_dma8]
+    mov dx, 0ch
+    xor al, al
+    call physical_write
+    mov dx, bx
+    shl dx, 1
+    jmp .ports_ready
+.high:
+    movzx bx, byte [sb_dma16]
+    sub bx, 4
+    mov dx, 0d8h
+    xor al, al
+    call physical_write
+    mov dx, bx
+    shl dx, 2
+    add dx, 0c0h
+.ports_ready:
+    call physical_read
+    mov [si+DMA_ADDRESS], al
+    call physical_read
+    mov [si+DMA_ADDRESS+1], al
+    inc dx
+    cmp si, dma16
+    jne .count_ready
+    inc dx
+.count_ready:
+    call physical_read
+    mov [si+DMA_COUNT], al
+    call physical_read
+    mov [si+DMA_COUNT+1], al
+    cmp si, dma16
+    je .high_page
+    mov bx, dma8_pages
+    movzx dx, byte [sb_dma8]
+    add bx, dx
+    jmp .page_ready
+.high_page:
+    mov bx, dma16_pages-5
+    movzx dx, byte [sb_dma16]
+    add bx, dx
+.page_ready:
+    mov dl, [bx]
+    xor dh, dh
+    call physical_read
+    mov [si+DMA_PAGE], al
+    mov byte [si+DMA_MASK], 0
+    mov dword [si+DMA_POSITION], 0
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+dma8_pages db 87h,83h,81h,82h
+dma16_pages db 8bh,89h,8ah
+%endif
+
 trap_ports:
 %include "audio/ports.inc"
     dw 0
 trapped_count dw 0
 callback_set db 0
+trap_remove_failed db 0
 old_callback dd 0
 port_calls dd 0
 last_clock dd 0

@@ -2,7 +2,7 @@
 ; SPDX-License-Identifier: GPL-3.0-only
 
 bits 16
-host_install:
+host_jemm_install:
     cld
     xor ax, ax
     mov es, ax
@@ -12,7 +12,10 @@ host_install:
     int 2fh
     mov ax, es
     or ax, di
-    jnz host_fail
+    jz .provider_ready
+    mov word [audio_error_text], port_trap_rejected_message
+    jmp host_fail
+.provider_ready:
     mov dx, host_device
     mov ax, 3d00h
     int 21h
@@ -79,9 +82,11 @@ host_install:
     mov ax, 252fh
     int 21h
     mov byte [host_installed], 1
+    mov byte [host_backend], 1
     clc
     ret
 .close_bad:
+    mov word [audio_error_text], port_trap_rejected_message
     mov ah, 3eh
     int 21h
 host_fail:
@@ -129,7 +134,7 @@ host_protected_install:
 bits 16
 host_linear_base dd 0
 host_switch times 22 db 0
-host_return_frame dd host_install.return,0,23002h,0,0,0,0,0,0
+host_return_frame dd host_jemm_install.return,0,23002h,0,0,0,0,0,0
 host_info db 2
     times 27 db 0
 host_device db 'EMMXXXX0',0

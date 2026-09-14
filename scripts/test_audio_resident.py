@@ -52,6 +52,7 @@ def main():
     parser.add_argument('--load-high', action='store_true')
     parser.add_argument('--own-host', action='store_true')
     parser.add_argument('--runs', type=int, choices=(1, 2), default=2)
+    parser.add_argument('--mscdex', type=Path)
     args = parser.parse_args()
     if args.own_host:
         capture, base, files = prepare_resident_tests(args.izarra_source)
@@ -73,6 +74,8 @@ def main():
         raise ValueError('The SHSUCDX archive hash is incorrect.')
     with zipfile.ZipFile(archive_path) as archive:
         files['SHSUCDX.COM'] = archive.read('shsucdx.com')
+    if args.mscdex:
+        files['MSCDEX.EXE'] = args.mscdex.read_bytes()
     raw, cue, resource, excerpt = quake_image(args.quake_bin)
     files['QUAKE.BIN'], files['QUAKE.CUE'] = raw, cue
     files['BAD.ISO'] = b'This is not a disc image.'
@@ -83,9 +86,10 @@ def main():
         config = config.replace(b'DOS=LOW', b'DOS=HIGH,UMB')
     files['FDCONFIG.SYS'] = config
     state = 'RESSTATE H' if args.load_high else 'RESSTATE'
+    redirector = 'MSCDEX /D:UCDD0001 /L:F' if args.mscdex else 'SHSUCDX /D:UCDD0001 /L:F'
     checks = [('HDPMI32I -r', None),
               (('LH ' if args.load_high else '') + 'UCDD -install', True),
-              ('UCDD -install', False), ('SHSUCDX /D:UCDD0001 /L:F', None),
+              ('UCDD -install', False), (redirector, None),
               (state, True), ('UCDD -unmount', False), ('UCDD -mount C:\\QUAKE.CUE', True),
               ('UCDD -mount C:\\QUAKE.CUE', False), ('UCDD -mount C:\\BAD.ISO -drive F', False),
               ('COPY F:\\RESOURCE.1 C:\\RESCOPY.1', True),
@@ -107,6 +111,8 @@ def main():
             commands.append('IF ERRORLEVEL 3 GOTO FAIL')
         elif command.startswith('SHSUCDX '):
             commands.append('IF ERRORLEVEL 246 GOTO FAIL')
+        elif command.startswith('MSCDEX '):
+            commands.append('IF ERRORLEVEL 1 GOTO FAIL')
         if success is not None:
             commands.append('IF ERRORLEVEL 1 GOTO FAIL' if success else 'IF NOT ERRORLEVEL 1 GOTO FAIL')
     commands += ['PASS', ':FAIL', 'FAIL']
@@ -122,10 +128,13 @@ def main():
     run = ROOT / '.local/audio' / ('resident-high' if args.load_high else 'resident-low')
     if args.own_host:
         run = run.with_name(run.name + '-own-host')
+    if args.mscdex:
+        run = run.with_name(run.name + '-mscdex')
     run.mkdir(exist_ok=True)
     image, wav = run / 'quake.img', run / 'quake.wav'
     image.write_bytes(disk.image)
     evidence = dict(passed=False, cpu='586', backend='interpreter', load_high=args.load_high,
+                    redirector='MSCDEX' if args.mscdex else 'SHSUCDX',
                     program_sha256={n: sha256(ROOT/'build'/n) for n in ('UCDD.EXE', 'UCDDSET.EXE')},
                     disk_files=sorted(files), disk_sha256=sha256(image), capture_executable_sha256=sha256(capture))
     report = run / 'results.json'
