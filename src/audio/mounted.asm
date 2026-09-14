@@ -45,6 +45,7 @@ cd_memory_restore:
     ret
 
 cd_open:
+%ifndef RESIDENT_AUDIO
     mov ax, 3523h
     int 21h
     mov [cd_old_break], bx
@@ -60,6 +61,7 @@ cd_open:
     mov ax, 2524h
     int 21h
     mov byte [cd_vectors_set], 1
+%endif
     mov ax, 4300h
     int 2fh
     cmp al, 80h
@@ -82,6 +84,10 @@ cd_open:
     int 21h
     mov [cd_indos], bx
     mov [cd_indos+2], es
+%ifdef RESIDENT_AUDIO
+    clc
+    ret
+%endif
     push ds
     pop es
     xor bx, bx
@@ -406,14 +412,20 @@ cd_foreground:
     les bx, [cd_indos]
     cmp byte [es:bx], 0
     jne .bad
+%ifdef RESIDENT_AUDIO
+    call dos_enter
+%else
     mov ah, 51h
     int 21h
     push bx
     mov bx, cs
     mov ah, 50h
     int 21h
+%endif
+%ifndef RESIDENT_AUDIO
     cmp byte [cd_seek], 0
     je .pump
+%endif
     mov byte [cd_seek], 0
     mov bx, [cd_handle]
     mov dx, [cd_offset]
@@ -427,9 +439,13 @@ cd_foreground:
 .read_bad:
     mov byte [cd_error], 1
 .restore:
+%ifdef RESIDENT_AUDIO
+    call dos_leave
+%else
     pop bx
     mov ah, 50h
     int 21h
+%endif
     ret
 .bad:
     mov byte [cd_error], 1
@@ -471,6 +487,9 @@ cd_pump:
     cmp ax, [cd_read_size]
     jne .bad
     movzx eax, ax
+%ifdef RESIDENT_AUDIO
+    add [cd_offset], eax
+%endif
     sub [cd_remaining], eax
     inc dword [cd_reads]
     push ds
@@ -530,6 +549,7 @@ cd_begin_half:
 
 cd_close:
     mov byte [cd_started], 0
+%ifndef RESIDENT_AUDIO
     cmp byte [cd_attached], 0
     je .file
     mov ax, 5
@@ -544,6 +564,7 @@ cd_close:
     mov ah, 3eh
     int 21h
     mov word [cd_handle], 0ffffh
+%endif
 .xms:
     mov dx, [cd_xms_handle]
     test dx, dx

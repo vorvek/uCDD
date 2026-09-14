@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import struct
@@ -41,8 +42,13 @@ def build_capture(izarra_source):
     (crate / 'Cargo.toml').write_text('\n'.join(manifest) + '\n')
     subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(crate / 'Cargo.toml')],
                    check=True)
-    return crate / 'target' / 'release' / ('ucdd-audio-capture.exe' if os.name == 'nt'
-                                          else 'ucdd-audio-capture')
+    executable = crate / 'target' / 'release' / ('ucdd-audio-capture.exe' if os.name == 'nt'
+                                                else 'ucdd-audio-capture')
+    digest = hashlib.sha256(executable.read_bytes()).hexdigest()[:16]
+    snapshot = crate / f'capture-{digest}{executable.suffix}'
+    if not snapshot.exists():
+        shutil.copy2(executable, snapshot)
+    return snapshot
 
 
 def verify_capture(path, extra_windows=()):
@@ -86,7 +92,7 @@ def verify_capture(path, extra_windows=()):
     return measured
 
 
-def verify_speaker_sequence(path):
+def verify_speaker_sequence(path, sequences=2):
     with wave.open(str(path)) as source:
         frames = list(struct.iter_unpack('<hh', source.readframes(source.getnframes())))
     runs = []
@@ -101,8 +107,8 @@ def verify_speaker_sequence(path):
         else:
             runs.append(dict(channel=channel, start=start, end=start+441))
     tones = [row for row in runs if row['channel'] and row['end']-row['start'] > 4410]
-    if [row['channel'] for row in tones] != [1, 2, 1, 2]:
-        raise ValueError('Both sound tests must play the left speaker, then the right speaker.')
+    if [row['channel'] for row in tones] != [1, 2]*sequences:
+        raise ValueError('Each sound test must play the left speaker, then the right speaker.')
     for row in tones:
         if not 1.08 <= (row['end']-row['start'])/44100 <= 1.14:
             raise ValueError('The speaker test duration is incorrect.')

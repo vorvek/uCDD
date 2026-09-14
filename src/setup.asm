@@ -80,47 +80,23 @@ save_error:
     mov word [status], save_message
     jmp start.loaded
 test_sound:
+    call resident_audio_present
+    jc .resident
     cmp byte [sound_card], 0
     jne .unsupported
     call config_save
     jc save_error
     mov word [status], listen_message
     call draw
-    mov [exec_block+4], cs
-    mov ax, [psp]
-    mov [exec_block+8], ax
-    mov [exec_block+12], ax
-    mov [saved_ss], ss
-    mov [saved_sp], sp
-    mov bx, ss
-    sub bx, [psp]
-    mov ax, sp
-    add ax, 15
-    shr ax, 4
-    add bx, ax
+    mov bx, (setup_end-$$+15)/16+64+16
     mov es, [psp]
     mov ah, 4ah
     int 21h
     jc .failed
     push cs
     pop es
-    mov dx, test_name
-    mov bx, exec_block
-    mov ax, 4b00h
-    int 21h
-    cli
-    mov ss, [cs:saved_ss]
-    mov sp, [cs:saved_sp]
-    sti
-    push cs
-    pop ds
-    push cs
-    pop es
+    call speaker_test
     jc .failed
-    mov ah, 4dh
-    int 21h
-    test ax, ax
-    jnz .failed
     mov word [status], test_message
     mov byte [result], 0
     jmp start.loaded
@@ -131,6 +107,44 @@ test_sound:
 .unsupported:
     mov word [status], pro_message
     jmp start.loaded
+.resident:
+    mov word [status], resident_message
+    jmp start.loaded
+
+resident_audio_present:
+    pushad
+    push es
+    mov ah, 52h
+    int 21h
+    add bx, 22h
+.scan:
+    cmp dword [es:bx+10], 'UCDD'
+    jne .next
+    cmp dword [es:bx+14], '0001'
+    jne .next
+    cmp dword [es:bx+22], 'uCDD'
+    jne .next
+    cmp word [es:bx+26], 2
+    jne .next
+    mov eax, [es:bx+28]
+    mov [resident_entry], eax
+    xor bx, bx
+    mov ax, 6
+    mov dx, resident_report
+    call far [resident_entry]
+    cmp ax, 1
+    jmp .done
+.next:
+    cmp word [es:bx], 0ffffh
+    je .absent
+    les bx, [es:bx]
+    jmp .scan
+.absent:
+    clc
+.done:
+    pop es
+    popad
+    ret
 
 exit:
     mov ax, 3
@@ -418,16 +432,13 @@ suggest_blaster:
     ret
 
 psp dw 0
-saved_ss dw 0
-saved_sp dw 0
+resident_entry dd 0
+resident_report times 12 db 0
 selected db 0
 result db 0
 status dw initial_message
 changes dw change_card,change_port,change_irq,change_dma8,change_dma16
 choice_counts db 2,4,2,2,3
-exec_block dw 0,command_tail,0,5ch,0,6ch,0
-command_tail db 0,13
-test_name db 'UCDDTST.COM',0
 title db 'uCDD Sound Setup',0
 subtitle db 'Select the settings for the physical sound card.',0
 labels db 'Card',13,10,13,10,'       I/O address',13,10,13,10
@@ -447,7 +458,11 @@ invalid_message db 'UCDD.CFG is not valid. Check all settings before you save.',
 save_message db 'The settings cannot be saved.',0
 listen_message db 'Listen for a tone from each speaker.',0
 test_message db 'The test has stopped. Check that both speakers made a sound.',0
-test_error db 'The test failed. Check the settings, Jemm, and UCDDTST.COM.',0
+test_error db 'The test failed. Check the sound card and its settings.',0
 pro_message db 'SB Pro output is not available in this build.',0
+resident_message db 'Restart DOS before you run the sound test.',0
 help db 'Up/Down: Select   Left/Right/Enter: Change',13,10
     db '     F2: Save and test   F10: Save and exit   Esc: Exit',0
+
+%include "audio/speaker.asm"
+setup_end:

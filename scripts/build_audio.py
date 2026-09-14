@@ -9,7 +9,7 @@ import struct
 from build import BUILD, assemble
 
 
-def build_audio():
+def write_samples():
     BUILD.mkdir(exist_ok=True)
     (BUILD / 'CDTEST.PCM').write_bytes(b''.join(
         struct.pack('<hh', round(12000 * math.sin(2 * math.pi * 37 * i / 4096)),
@@ -19,6 +19,10 @@ def build_audio():
         round(128 + 32 * math.sin(2 * math.pi * i / 64)) for i in range(64)))
     (BUILD / 'ONSET.PCM').write_bytes(bytes([192]*32 + [64]*32 + [160]*32 + [96]*32 + [144]*3968))
     (BUILD / 'QUIET.PCM').write_bytes(bytes([128]*4096))
+
+
+def build_audio():
+    write_samples()
     assemble('tests/audio_trap.asm', 'ATRAP.COM')
     assemble('tests/audio_share.asm', 'ASHARE.COM')
     assemble('tests/audio_share.asm', 'UCDDTST.COM', ('OUTPUT_TEST=1', 'SPEAKER_TEST=1'))

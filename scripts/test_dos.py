@@ -153,13 +153,19 @@ def main():
                      'SHSUCDX /D:SHSU-CDH /L:D', 'IF ERRORLEVEL 246 GOTO FAIL',
                      'PROBE D:\\ONE.TXT', 'IF ERRORLEVEL 1 GOTO FAIL']
     else:
-        for name in ('UCDDRV.EXE', 'UCDD.EXE'):
-            disk.add(name, (ROOT / 'build' / name).read_bytes())
+        disk.add('UCDD.EXE', (ROOT / 'build' / 'UCDD.EXE').read_bytes())
         disk.add('BAD.ISO', b'This is not a disc image.')
-        install = 'UCDDRV' if args.single_unit else 'UCDDRV -units 2'
+        invalid = ('', '-units 2', '-install -units 0', '-install -units 5',
+                   '-install -units 12', '-install -units', '-install -units 1 -units 2',
+                   '-install -install', '-install -drive F', '-install -mount C:\\ONE.ISO',
+                   '-unmount -install', '-mount C:\\ONE.ISO -units 1', '-installer')
+        for options in invalid:
+            commands += [f'UCDD {options}', 'IF NOT ERRORLEVEL 1 GOTO FAIL']
+        install = 'C:\\UCDD.EXE -install' if args.single_unit else 'UCDD -units 2 -INSTALL'
         if args.load_high:
             install = 'LH ' + install
         commands += [install, 'IF ERRORLEVEL 1 GOTO FAIL',
+                     'UCDD -install', 'IF NOT ERRORLEVEL 1 GOTO FAIL',
                      'SHSUCDX /D:UCDD0001 /L:F', 'IF ERRORLEVEL 246 GOTO FAIL']
         full_crc = zlib.crc32(b'All uCDD drives are in use.\r\n')
         same_a_crc = zlib.crc32(b'uCDD test file.\r\n')
@@ -286,21 +292,26 @@ def main():
     result = subprocess.run(invocation, capture_output=True, text=True, timeout=180)
     log = result.stdout + result.stderr
     (RUN / (image.stem + '.log')).write_text(log, encoding='utf-8')
+    resident = re.search(r'Resident bytes: (\d+)', log)
+    resident_bytes = int(resident[1]) if resident else None
     evidence = {
         'command': invocation,
         'emulator_sha256': hashlib.sha256(args.emulator.read_bytes()).hexdigest(),
         'freedos_archive_sha256': FREEDOS_SHA256,
         'shsucd_archive_sha256': SHSUCD_SHA256,
         'program_sha256': {name: hashlib.sha256((ROOT / 'build' / name).read_bytes()).hexdigest()
-                          for name in ('UCDDRV.EXE', 'UCDD.EXE')},
+                          for name in ('UCDD.EXE',)},
         'disk_sha256': hashlib.sha256(disk.image).hexdigest(),
         'exit_code': result.returncode,
+        'resident_bytes': resident_bytes,
         'guest_passed': bool(re.search(r'stop: TestExit \{ code: 0 \}', log)),
     }
     (RUN / (image.stem + '.json')).write_text(json.dumps(evidence, indent=2) + '\n')
     print(log[-6000:])
     if result.returncode or not re.search(r'stop: TestExit \{ code: 0 \}', log):
         raise SystemExit('The DOS test failed. See the test log.')
+    if not args.baseline and resident_bytes != (9248 if args.single_unit else 10592):
+        raise SystemExit('The resident memory size changed. Check the resident layout.')
     print('The DOS test passed.')
 
 

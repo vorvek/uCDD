@@ -6,15 +6,19 @@ uCDD is a virtual CD drive for DOS. The aim is a tool similar in use to Daemon T
 
 The prototype mounts ISO data images and single-file CUE/BIN images from a local hard disk. CUE images can contain a MODE1/2352 data track followed by audio tracks. DOS programs can read and copy files through the assigned CD drive letter. Tests use FreeDOS 1.4 and SHSUCDX 3.09.
 
-`UCDDAUD.COM` runs an unmodified DOS Quake 1.06 executable with CD music and game sound through the same SB16. Quake selects its map track through the virtual CD drive. The audio service reads the BIN file into a 512 KiB XMS queue and mixes it with Quake's virtual Sound Blaster output. It supports CD play, stop, resume, status, and channel volume requests.
+The resident audio build runs an unmodified DOS Quake 1.06 executable with CD music and game sound through the same SB16. Quake selects its map track through the virtual CD drive. The audio service reads the BIN file into a 512 KiB XMS queue and mixes it with Quake's Sound Blaster output. It supports CD play, stop, resume, status, and channel volume requests.
+
+The experimental resident build puts the CD driver, mixer, port interception, and uCDD's own protected-mode host in `UCDD.EXE`. It installs before an image is mounted and lets the user start Quake directly. A test loads both resident blocks high, copies the installer archive, runs Quake twice, and unmounts and remounts the image between runs. Both runs pass music and game-sound capture checks. HDPMI32i, QPIEMU, JLOAD, and separate game launchers are not required. The tested memory manager is Jemm 5.86. Support for Microsoft HIMEM/EMM386 and 386MAX remains incomplete.
 
 An interpreted Pentium test loads the start map, plays and loops a real music excerpt, plays a game sound, and exits. Captures check the complete 12-second music excerpt and the complete game sound. A separate test copies and checks the 24,684,755-byte installer archive through the mounted image. These tests use unchanged game files supplied by the tester. No game data is distributed.
 
-The current audio service runs for the lifetime of the launched game. It refills during foreground CD requests; Quake normally polls playback status four times per second. It is not yet a general background audio TSR. Games that do not poll often enough need another refill mechanism. An empty buffer or a read error stops the CD source and reports an error when the game exits.
+The resident build stays installed after the game exits. It refills during foreground CD requests; Quake normally polls playback status four times per second. Games that do not poll often enough still need another refill mechanism. An empty buffer or a read error stops the CD source.
 
-A user has reported successful standalone BIN playback and Quake with shared CD music and game sound on a real DOS PC using SHSUCDX. The driver also loaded into upper memory. These are user-reported hardware results; long gameplay sessions, other games, and broad MS-DOS compatibility remain unverified. The standalone `UCDDPLAY.COM` test and the synthetic audio tests remain available.
+A user has reported successful standalone BIN playback and Quake with shared CD music and game sound on a real DOS PC using SHSUCDX and the earlier external-host launcher. The driver also loaded into upper memory. The new internal host still needs real-hardware testing. Long gameplay sessions and broad MS-DOS compatibility remain unverified.
 
 In the same hardware test, MSCDEX mounted the image and allowed file access, but Quake had no CD audio and the service reported `The CD image read failed.` after the game exited. Use SHSUCDX for the current Quake experiment. The cause of the MSCDEX audio failure is not yet established.
+
+The internal-host compatibility checks also cover Daggerfall startup with CauseWay and a forced-DPMI DOS/32A configuration, plus Ultima VIII gameplay, normal exit, and CD file checks. Ultima VIII selects VCPI directly, so its result establishes coexistence rather than use of the internal DPMI interface. Tomb Raider remains unresolved: the tested software and 3dfx paths reach a nearly black frame with both uCDD and the HDPMI comparison setup. These checks do not establish mixed audio support outside Quake.
 
 ## Requirements and estimates
 
@@ -23,9 +27,10 @@ In the same hardware test, MSCDEX mounted the image and allowed file access, but
 | Processor | 386 or later for the instruction set. For games with mixed CD audio, budget a Pentium-class CPU initially. This is a planning estimate, not a measured minimum. |
 | DOS | DOS 5 or later interfaces. FreeDOS 1.4 is tested. |
 | CD driver memory | 9,248 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
-| Audio memory | The Quake service uses a 512 KiB XMS queue, a 4 KiB disk staging buffer, a 2 KiB mixing buffer, and an 8 KiB conventional allocation for its aligned 4 KiB DMA ring. Its code and staging buffers can load high. The DPMI launcher, environments, SHSUCDX, and memory manager use additional memory. The test machine has 16 MiB. |
+| Resident audio, one unit | 26,320 bytes for the driver/mixer and 60,992 bytes for the internal host. Both blocks load high in the test. A separate 8 KiB conventional allocation supplies the aligned 4 KiB DMA ring: 95,504 resident DOS bytes in total, of which 8 KiB remain conventional in the tested high-memory configuration. SHSUCDX and the memory manager use additional memory. |
+| Extended memory | A 512 KiB XMS audio queue, plus 12 KiB of private stacks and allocation records while a protected client is active. Client memory and VCPI page tables use additional extended memory. The Quake test machine has 16 MiB. |
 | Sound card | The first audio experiment uses SB16 output at 44.1 kHz, 16-bit stereo. SB Pro-compatible output at 22.05 kHz, 8-bit stereo is planned. |
-| Port trapping | The audio experiment requires Jemm with QPIEMU. The protected-mode test also requires HDPMI32i. General game support remains unverified. |
+| Port trapping | The resident experiment uses Jemm 5.86's real-mode interface and uCDD's own VCPI/DPMI host. General game support remains unverified. |
 | Image storage | A 60-minute uncompressed CD audio image uses about 635 MB (606 MiB). Data images vary with their contents. |
 | Audio reads | Uncompressed CD audio requires 176,400 source bytes per second, plus the game's disk reads. Output downsampling does not reduce the image size or source read rate. |
 
@@ -33,7 +38,7 @@ Audio conversion, port trapping, and game execution share the CPU. Disk seeks an
 
 The audio queue uses the standard XMS allocation, move, and free calls. HIMEM.SYS compatibility is a target and has not yet been tested. HIMEM alone does not supply the port-trapping interface used by the audio service or the upper-memory blocks used by `LH`. The data driver does not require XMS or port trapping.
 
-[Jemm's documentation](https://github.com/Baron-von-Riedesel/Jemm/blob/master/Readme.txt) supports HIMEM.SYS followed by JEMM386 as an alternative to JEMMEX. This combination still needs QPIEMU and HDPMI32i for the Quake experiment; it remains untested with uCDD. Do not load a separate HIMEM with JEMMEX, which includes its own XMS manager.
+[Jemm's documentation](https://github.com/Baron-von-Riedesel/Jemm/blob/master/Readme.txt) supports HIMEM.SYS followed by JEMM386 as an alternative to JEMMEX. That combination remains untested with uCDD. Do not load a separate HIMEM with JEMMEX, which includes its own XMS manager.
 
 ## Build
 
@@ -43,28 +48,30 @@ Use NASM and Python 3.10 or later:
 python scripts/build.py
 ```
 
-The DOS programs are `build/UCDDRV.EXE` and `build/UCDD.EXE`. They require a 386 or later processor. The driver uses the DOS 5 or later swappable data area interface.
+The DOS programs are `build/UCDD.EXE` and `build/UCDDSET.EXE`. They require a 386 or later processor. The default `UCDD.EXE` installs the CD data driver and handles mount and unmount commands. The driver uses the DOS 5 or later swappable data area interface. Use the resident audio build below to include the mixer.
 
 The build also creates `build/UCDDSET.EXE`, a transient sound setup tool. It saves the physical card settings to `UCDD.CFG` in the current directory. Saved settings take priority over initial suggestions from `BLASTER`. The CD data driver does not need this file. The Quake audio service requires saved settings.
 
 Use the arrow keys to select and change a setting. F10 saves and exits; Esc exits without saving further changes. The current choices are SB16 or SB Pro, I/O addresses 220h/240h/260h/280h, IRQ 5 or 7, 8-bit DMA 1 or 3, and 16-bit DMA 5, 6, or 7. SB Pro output remains unavailable in this build.
 
-For the experimental SB16 sound test, run `python scripts/build_audio.py` and place `UCDDTST.COM` beside `UCDDSET.EXE` in the current directory. Load Jemm and QPIEMU first. F2 saves the settings and plays the left speaker for about 1.1 seconds, pauses, then plays the right speaker for about 1.1 seconds. The other channel stays silent. The test is not resident.
+F2 saves the settings and runs the built-in SB16 sound test. It plays the left speaker for about 1.1 seconds, pauses for about 0.37 seconds, then plays the right speaker for about 1.1 seconds. The other channel stays silent. The test returns to the setup screen and can be repeated. It needs no separate test program, Jemm, QPIEMU, or DPMI host. The test uses an 8 KiB conventional-memory allocation for an aligned 4 KiB DMA ring and releases it when the test stops.
+
+Run the sound test before installing resident audio. If resident uCDD audio is active, F2 asks you to restart DOS before testing. F10 can still save settings for the next boot.
 
 ## Boot setup
 
 Copy both programs to a directory on the DOS hard disk. Add these lines to `AUTOEXEC.BAT`, using the correct program paths:
 
 ```dos
-C:\UCDD\UCDDRV.EXE
+C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
-This example creates one virtual unit and assigns F:. The driver supports one to four units; use `-units 2` to create two. Install it once per boot, before SHSUCDX. Restart DOS to change the number of units.
+This example creates one virtual unit and assigns F:. The driver supports one to four units; use `UCDD -install -units 2` to create two. Install it once per boot, before SHSUCDX. Restart DOS to change the number of units. Running `UCDD` without arguments shows usage and does not install a driver.
 
-Each unit can be empty or hold one disc image. Unmounting ejects the image but keeps the unit and its drive letter. The helper runs only while it processes a command.
+Each unit can be empty or hold one disc image. Unmounting ejects the image but keeps the unit and its drive letter. Mount and unmount commands run in a temporary copy of `UCDD.EXE` and communicate with the installed driver.
 
-The one-unit driver used 9,248 resident bytes in the FreeDOS test. With upper memory available, `LH C:\UCDD\UCDDRV.EXE` loaded the complete driver above conventional memory and passed the same tests. This measurement excludes the audio service. SHSUCDX uses additional memory.
+The one-unit driver used 9,248 resident bytes in the FreeDOS test. With upper memory available, `LH C:\UCDD\UCDD.EXE -install` loaded the complete driver above conventional memory and passed the same tests. Installation and mount-command code are discarded after installation. This measurement excludes the audio service. SHSUCDX uses additional memory.
 
 ## Mount and unmount
 
@@ -84,34 +91,47 @@ ucdd.exe -unmount -drive G
 
 Automatic selection uses ascending drive-letter order and considers only uCDD drives. If all units hold images, an automatic mount displays `All uCDD drives are in use.` and fails. It does not replace an image or create another unit.
 
-An explicit letter must identify a uCDD drive. Both `G` and `G:` are accepted. Close all files on a drive before changing its image. A locked drive, or a drive attached to the running audio service, cannot be changed. A rejected replacement leaves the current image mounted.
+An explicit letter must identify a uCDD drive. Both `G` and `G:` are accepted. Close all files on a drive before changing its image. A locked drive cannot be changed. The earlier external audio launcher also locks its image while it runs. The resident build permits image changes and stops the old CD source when its image is ejected. A rejected replacement leaves the current image mounted.
 
 Commands return exit code 0 on success and 1 on failure. Use DOS paths and 8.3 file names. Images on CD drives, floppy drives, and network drives are not supported. ISO images must use 2048-byte data sectors. CUE sheets must name one BINARY file, with sequential tracks and INDEX 01 for each track. INDEX 00 is supported. Multi-file sheets, MODE2 sectors, compressed audio, FLAGS, and synthetic PREGAP commands are not supported. Image files must be smaller than 2 GiB.
 
-## Quake audio experiment
+## Resident audio experiment
 
-Build with `python scripts/build_audio.py`. Boot native DOS with JemmEx, QPIEMU, and HDPMI32i. Install one uCDD unit and SHSUCDX as shown above. The virtual drive must be the first CD drive, because Quake selects the first CD drive that DOS reports.
+Build the two uCDD programs with:
 
-Mount the original CUE sheet from DOS. For example:
-
-```dos
-C:\UCDD\UCDD.EXE -mount C:\IMAGES\QUAKE.CUE
-F:
-INSTALL
+```text
+python scripts/build.py --resident-audio
 ```
 
-Use the installer on your disc. If it starts Quake at the end, quit that first run. Copy `UCDDAUD.COM`, `UCDDPM.COM`, and the saved physical-card `UCDD.CFG` into the installed game directory. Keep both the CUE and its BIN file on the local hard disk.
+This experimental build supports one unit with SB16 output. Install Jemm 5.86 and SHSUCDX separately. Save the physical card settings with `UCDDSET` before installing the driver. The settings stay in `UCDD.CFG` across boots. Keep that file in the directory from which you install uCDD.
 
-From the game directory, set the virtual resources that Quake will use and start the audio service:
+Example `CONFIG.SYS` for native DOS, using your installed Jemm path:
 
 ```dos
+DEVICE=C:\DOS\JEMMEX.EXE NOEMS
+DOS=HIGH,UMB
+FILES=64
+LASTDRIVE=Z
+```
+
+FreeDOS uses `FDCONFIG.SYS` if that file is present. Example `AUTOEXEC.BAT`:
+
+```dos
+CD \UCDD
+LH C:\UCDD\UCDD.EXE -install
+IF ERRORLEVEL 1 GOTO UCDDERR
+C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
+IF ERRORLEVEL 246 GOTO UCDDERR
 SET BLASTER=A220 I5 D1 H5 T6
-LH UCDDAUD.COM
+GOTO UCDDDONE
+:UCDDERR
+ECHO The uCDD setup failed.
+:UCDDDONE
 ```
 
-The saved `UCDD.CFG` selects the actual card's resources; the virtual BLASTER values above stay fixed. The launcher starts `QUAKE.EXE` in the current directory. It attaches to the first mounted uCDD CUE image and detaches when Quake exits. Use `UCDDSET` before this step to save the actual SB16 settings. Restore your normal BLASTER line before starting other audio programs.
+Mount an image with `UCDD -mount C:\IMAGES\QUAKE.CUE`, then install or start the game normally. There is no game launcher or audio program to copy into the game directory. The saved settings select the physical card; the BLASTER line selects the virtual resources used by games. The data-only build remains the default while the resident build's host support and refill mechanism are developed.
 
-The audio parent can load high. DMA allocations and the game's DOS allocations are kept in conventional memory. The DPMI launcher is still a separate temporary program; complete upper-memory audio residency is not yet established. The 512 KiB queue holds about 2.97 seconds of CD audio. Avoid Quake's `-cdmediacheck` option, which reduces its normal status polling rate.
+The internal host supports one active 32-bit DPMI client, descriptor and memory services, real-mode calls and callbacks, protected interrupts, and exception returns. It is a tested subset of DPMI 0.9, not a general replacement for every DOS extender. Sixteen-bit DPMI clients, nested clients, nested callbacks, and general copied-stack real-mode calls are unsupported. Games that select VCPI directly can bypass the protected audio interception. Do not install another DPMI host before resident uCDD; installation rejects an existing host.
 
 ## Tests
 
@@ -123,8 +143,9 @@ Copyright (C) 2026 vorvek. uCDD source code, build and test scripts, and documen
 
 External tools retain their own licenses. uCDD packages do not include DOS, memory managers, port-trapping hosts, CD redirectors, sound-card initialization tools, or game files. Install the required tools separately:
 
-- [Jemm 5.86](https://github.com/Baron-von-Riedesel/Jemm/releases/tag/v5.86): JEMMEX, JLOAD, and QPIEMU for the tested audio setup.
-- [HDPMI32i from SBEMU beta 6](https://github.com/crazii/SBEMU/releases/tag/Release_1.0.0-beta.6): the DPMI host with port-trapping support. The SBEMU sound driver is not used.
+- [Jemm 5.86](https://github.com/Baron-von-Riedesel/Jemm/releases/tag/v5.86): JEMMEX for the tested resident setup.
 - [SHSUCDX](http://adoxa.altervista.org/shsucdx/): the CD redirector. Tests use version 3.09 from suite 3-7.
 
 The test runners download or use private local copies of their dependencies. These copies are excluded from the source repository and distribution packages.
+
+Historical comparison tests use QPIEMU/JLOAD and [HDPMI32i from SBEMU beta 6](https://github.com/crazii/SBEMU/releases/tag/Release_1.0.0-beta.6). Those tools are not dependencies of the internal-host resident build.

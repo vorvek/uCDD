@@ -13,7 +13,7 @@ The dependency script downloads the FreeDOS 1.4 LiteUSB archive and SHSUCD suite
 
 The test runner creates a disposable FAT16 disk from the FreeDOS image. It copies the stock kernel and command interpreter into that disk, then adds the test programs and images. It does not modify the source archive or a physical disk.
 
-The baseline checks that no CD extensions are installed, loads SHSUCDHD and SHSUCDX, and reads a generated ISO. The uCDD test checks the same initial state, then loads UCDDRV and SHSUCDX.
+The baseline checks that no CD extensions are installed, loads SHSUCDHD and SHSUCDX, and reads a generated ISO. The uCDD test checks the same initial state, then runs `UCDD -install` and loads SHSUCDX. The test disk contains no separate driver executable. Invalid installation options and a second installation must fail.
 
 The tests cover automatic and explicit drive selection, the full-drive error text, image replacement, invalid images, empty drives, repeated commands, and immediate cache updates. Packet tests cover a 128 KiB transfer across a segment boundary, PSP and DTA restoration, invalid requests, buffer bounds, and drive locking. A guest program reports success or failure through IzarraVM's test device.
 
@@ -38,7 +38,63 @@ python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.ex
 python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --single-unit --load-high
 ```
 
-The single-unit run uses the driver's default unit count. It checks mounting, replacement, full-drive handling, repeated commands, and direct CD packets. The upper-memory run adds Jemm, starts the driver with `LH`, and checks that its resident segment is above conventional memory. Both runs report the size of the driver's DOS memory block. Download Jemm with the audio test runner before the upper-memory test.
+The single-unit run uses the driver's default unit count. It checks mounting, replacement, full-drive handling, repeated commands, and direct CD packets. The upper-memory run adds Jemm, runs `LH C:\UCDD.EXE -install`, and checks that the resident segment is above conventional memory. Both runs require the driver's DOS memory block to remain at 9,248 bytes; the two-unit run requires 10,592 bytes. Download Jemm with the audio test runner before the upper-memory test.
+
+## Integrated speaker test
+
+```powershell
+python scripts/test_setup.py --izarra-source D:\dev\IzarraVM
+python scripts/test_setup.py --izarra-source D:\dev\IzarraVM --jemm
+```
+
+These interpreted 386 tests run the release configurator in FreeDOS, first without a memory manager and then with Jemm. Neither disk contains QPIEMU, JLOAD, a DPMI host, or UCDDTST.COM. They check repeated F2 tests, alternate IRQ/DMA settings, failure at a missing I/O address, and correction of that address in the same setup session. The Jemm run also checks linked UMBs with an upper-memory allocation preference. Captures check six left/pause/right sequences without Jemm and eight with Jemm. A DOS probe checks that the interrupt vectors, PIC mask, saved mixer registers, DOS allocation policy, and largest available memory block are restored after each setup session.
+
+## Resident audio
+
+```powershell
+python scripts/test_audio_resident_boot.py --izarra-source D:\dev\IzarraVM
+python scripts/test_audio_resident.py --izarra-source D:\dev\IzarraVM --quake-dir C:\games\quake --quake-bin C:\images\quake.bin --load-high --own-host
+```
+
+These commands build the internal-host resident UCDD.EXE and release UCDDSET.EXE. Their guests contain no HDPMI32i, QPIEMU, JLOAD, UCDDAUD, or UCDDPM. Jemm 5.86 and SHSUCDX remain external dependencies. Run `scripts/fetch_test_deps.py` first to obtain the DOS and CD-extension archives. Omitting `--own-host` from the game runner selects the historical external-host comparison.
+
+The interpreted 386 boot test forces a wrong physical I/O address. It checks failed-install rollback of interrupt vectors, PIC mask, saved mixer registers, DOS allocation policy, and largest available DOS block. The driver header and private port interface must be absent afterward. A corrected configuration must then install successfully. F2 in the configurator must produce no speaker-test tone while resident audio owns the card; F10 must preserve the settings. Reports are under `.local/audio/resident-boot-own-host/`.
+
+The interpreted 586 game test installs before mounting an image, checks duplicate installation and rejected mount commands, copies and verifies RESOURCE.1, then starts Quake directly twice with an unmount/remount between runs. Each run must finish, leave no reported audio fault, and pass separate checks of the complete 12-second music excerpt and centered game sound. Each capture must also reject four deliberate corruptions. The phase markers delimit the two game runs in the capture. Original game files and images are read-only inputs.
+
+With `--load-high`, both one-unit resident blocks must be above conventional memory, while the DMA ring and its allocation must remain below A0000h. The measured driver/mixer block is 26,320 bytes and the internal host is 60,992 bytes, plus an 8 KiB conventional DMA allocation and a 512 KiB XMS queue. Reports are under `.local/audio/resident-high-own-host/`, or `resident-low-own-host/` without `--load-high`. These checks establish the tested Jemm/internal-host path. Other host adapters, real-mode game interrupt delivery, and refills for games that do not poll CD status remain unverified.
+
+## uCDD-owned protected-mode host
+
+```powershell
+python scripts/test_host.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --no-vcpi
+python scripts/test_host.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --audio --izarra-source D:\dev\IzarraVM --load-high
+python scripts/test_host.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --audio --izarra-source D:\dev\IzarraVM --alternate
+python scripts/test_host.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --audio --izarra-source D:\dev\IzarraVM --no-delivery
+python scripts/test_host_audit.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --izarra-source D:\dev\IzarraVM
+```
+
+These interpreted 386 tests exercise `src/host/monitor.asm` without HDPMI32i, CWSDPMI, QPIEMU, or JLOAD on the guest disk. The monitor uses standard VCPI entry and return calls and owns its page tables, descriptor tables, task state, and protected-mode interrupt handlers. The tested manager is Jemm 5.86; other VCPI providers have not been tested. Without VCPI, initialization must fail cleanly. The [VCPI specification](https://www.edm2.com/index.php/Virtual_Control_Program_Interface_specification_v1) defines the manager interface.
+
+The monitor test runs a controlled 32-bit client at CPL 3 and IOPL 0. It checks repeated entry/exit, trapped byte/word/dword I/O with immediate and DX port operands, untrapped I/O, CLI/STI, timer forwarding, and a DOS call through the register-frame interface. Invalid port ranges and unsupported requests must fail. A rejected port callback and a privileged HLT instruction must return a fault to DOS, after which another client run must succeed. `--load-high` adds a run that requires the complete monitor test program to be in upper memory.
+
+The audio test runs the existing mixer against a protected-mode Sound Blaster client. The physical IRQ is reflected to the real-mode mixer; virtual IRQ 5 is delivered to the client's installed handler and acknowledged through the virtual DSP/PIC. Captures check separate CD channels and game sound at 22.05 kHz, a reset interval, 11.025 kHz, and 22.05 kHz again. The default physical resources are IRQ 5/DMA 1/5; `--alternate` uses IRQ 7/DMA 3/6. `--no-delivery` must fail with zero virtual interrupts while physical output continues. A DOS probe checks restoration of vectors, PIC mask, mixer registers, allocation policy, and the largest available DOS block. Reports and captures are under `.local/host/`.
+
+The internal host is linked into the resident UCDD.EXE build. `test_host_audit.py` checks the external 32-bit DPMI client interface in 19 cases: core services, descriptor and buffer validation, allocation exhaustion, virtual PIC routing, nested IRQ/callback stacks, revoked callbacks, callback faults and exits, private entry rejection, malformed return frames, IVT cleanup, and allocation rollback. Each case runs its client twice and requires exact VCPI free-page recovery. It records source and executable hashes, guest logs, and memory dumps under `.local/host/audit/`. Use `--case` to select a case.
+
+The API tests cover immutable segment descriptors, DOS allocation ownership, 256 extended-memory allocation records, page permissions, arithmetic flags through chained interrupt vectors, inherited NT clearing, and high-selector register-only DOS calls. Exception tests relocate their return frames on the locked stack. A nested test combines 2 KiB of IRQ locals, 3 KiB of callback locals, and another IRQ, with stack canaries.
+
+This remains a subset for one active 32-bit client. Sixteen-bit DPMI clients, nested clients and callbacks, and general real-mode stack copying are unsupported. Direct VCPI extenders can bypass the protected audio interception. The audit does not establish general DOS or real-hardware compatibility.
+
+## Additional game fixtures
+
+`test_host.py --game tomb|u8 --game-dir <directory> --cd-bin <image.bin> --cd-cue <image.cue> --resident --cpu 486 --izarra-source <checkout> --emulator <executable>` creates an isolated disk from local game files. `--game-exe` selects an alternate executable without changing the source installation. `--mouse-driver` supplies a DOS mouse driver for Ultima VIII. A mounted Ultima VIII test copies and CRC-checks `INSTALL.BAT` before and after the game; it has no Redbook requirement.
+
+The Tomb fixture renames the BIN and removes unsupported FLAGS and PREGAP lines from its test CUE sheet. Its input BIN is unchanged. A successful fixture test would not establish support for those CUE commands. `--legacy-host` selects the previous HDPMI resident path for a controlled comparison.
+
+`test_host_causeway.py --help` describes the Daggerfall CauseWay and DOS/32A fixtures. Supply extracted local game files and the ISO. The original executable, extender choice, configuration adjustments, and hashes are recorded with the run. A test-only VCPI discovery filter can force DOS/32A to use DPMI; that case does not establish automatic host selection by the unmodified extender environment.
+
+Capture controls include `UCDD_TEST_STEPS`, `UCDD_TEST_TIMEOUT`, `UCDD_TEST_MEMORY_MIB` (default 16), and `UCDD_TEST_KEYS` (`step:hex-scancode` entries separated by commas). `UCDD_TEST_LIVE` names an existing directory for periodic frames and an `input.txt` file containing `key <hex-scancodes>` or `mouse <dx> <dy> <buttons>` commands. A cycle limit is an incomplete run, never a test pass. Emulator instruction stepping and protected CLI/STI must work correctly; the validated IzarraVM interpreter changes are tracked in [PR 883](https://github.com/vorvek/IzarraVM/pull/883).
 
 ## Shared-card audio experiment
 

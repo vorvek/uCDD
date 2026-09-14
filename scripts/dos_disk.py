@@ -11,9 +11,13 @@ class Fat16:
         image = bytearray(size_mib*1024*1024)
         image[:self.start+512] = self.image[:self.start+512]
         sectors = (len(image)-self.start)//512
+        spc = self.spc
+        while sectors//spc > 65524:
+            spc *= 2
+        image[self.start+13] = spc
         fat_sectors = 1
         while True:
-            clusters = (sectors-1-self.entries*32//512-self.nfats*fat_sectors)//self.spc
+            clusters = (sectors-1-self.entries*32//512-self.nfats*fat_sectors)//spc
             required = ((clusters+2)*2+511)//512
             if required <= fat_sectors:
                 break
@@ -21,11 +25,12 @@ class Fat16:
         if not 4085 <= clusters <= 65524:
             raise ValueError('The disk size is outside the FAT16 range.')
         struct.pack_into('<I', image, 458, sectors)
-        image[450] = 6
+        image[450] = 0x0e if sectors >= 1024*16*63 else 6
         last = len(image)//512-1
         cylinder, remainder = divmod(last, 16*63)
         head, sector = divmod(remainder, 63)
-        image[451:454] = bytes((head, sector+1 | (cylinder >> 2 & 0xc0), cylinder & 0xff))
+        image[451:454] = (bytes((254, 255, 255)) if cylinder > 1023 else
+                            bytes((head, sector+1 | (cylinder >> 2 & 0xc0), cylinder & 0xff)))
         struct.pack_into('<H', image, self.start+19, 0)
         struct.pack_into('<I', image, self.start+32, sectors)
         struct.pack_into('<H', image, self.start+22, fat_sectors)

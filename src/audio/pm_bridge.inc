@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-; The bridge reuses the real-mode experiment; it is not a resident design.
+; Protected-mode callbacks enter the real-mode mixer.
 port_bridge:
     pushad
     push es

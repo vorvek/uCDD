@@ -3,6 +3,9 @@
 
 ; Configuration selects the physical card resources.
 physical_read:
+%ifdef DIRECT_OUTPUT
+    in al, dx
+%else
     push bx
     push cx
     mov ax, 1a00h
@@ -10,8 +13,12 @@ physical_read:
     mov al, bl
     pop cx
     pop bx
+%endif
     ret
 physical_write:
+%ifdef DIRECT_OUTPUT
+    out dx, al
+%else
     push ax
     push bx
     push cx
@@ -21,6 +28,7 @@ physical_write:
     pop cx
     pop bx
     pop ax
+%endif
     ret
 dsp_write:
     push ax
@@ -256,6 +264,7 @@ sb_stop:
     inc dx
     mov al, [saved_dma]
     call physical_write
+    mov byte [sb_running], 0
 .done:
     ret
 audio_irq:
@@ -284,6 +293,15 @@ audio_irq:
     add dx, 0fh
     call physical_read
     inc dword [periods]
+%ifdef MOUNTED_AUDIO
+    call output_clock
+    shr eax, OUTPUT_SHIFT
+    mov [periods], eax
+    and ax, 1
+    xor ax, 1
+    shl ax, OUTPUT_SHIFT+2
+    mov [next_half], ax
+%endif
     mov es, [output_segment]
     mov di, [next_half]
     xor word [next_half], PERIOD_BYTES

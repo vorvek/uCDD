@@ -109,6 +109,24 @@ def verify_controls(path, source, sound, check):
     return rejected
 
 
+def quake_image(path):
+    start = 12695*2352
+    with path.open('rb') as source:
+        raw = source.read(start)
+        for lba in (12695, 35840, 46791):
+            source.seek(lba*2352)
+            excerpt = source.read(12*75*2352)
+            if len(excerpt) != 12*75*2352:
+                raise ValueError('The image is too short.')
+            raw += excerpt
+    image = raw
+    cue = (b'FILE "QUAKE.BIN" BINARY\r\nTRACK 01 MODE1/2352\r\nINDEX 01 00:00:00\r\n'
+        b'TRACK 02 AUDIO\r\nINDEX 01 02:49:20\r\nTRACK 03 AUDIO\r\nINDEX 01 03:01:20\r\n'
+        b'TRACK 04 AUDIO\r\nINDEX 01 03:13:20\r\n')
+    resource = b''.join(raw[i+16:i+2064] for i in range(21*2352, 12075*2352, 2352))[:24684755]
+    return image, cue, resource, excerpt
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--izarra-source', type=Path, required=True)
@@ -140,25 +158,13 @@ def main():
     if args.release:
         parent_name = 'UCDDAUD.COM'
     files['APSHARE.COM'] = (ROOT/'build'/parent_name).read_bytes()
-    for name in ('UCDDPM.COM', 'UCDDRV.EXE', 'UCDD.EXE', 'FILECRC.COM'):
+    for name in ('UCDDPM.COM', 'UCDD.EXE', 'FILECRC.COM'):
         files[name] = (ROOT/'build'/name).read_bytes()
     with zipfile.ZipFile(CACHE/'shcd3-7.zip') as archive:
         name = next(n for n in archive.namelist() if Path(n).name.lower() == 'shsucdx.com')
         files['SHSUCDX.COM'] = archive.read(name)
-    start = 12695*2352
-    with args.quake_bin.open('rb') as source:
-        raw = source.read(start)
-        for lba in (12695, 35840, 46791):
-            source.seek(lba*2352)
-            excerpt = source.read(12*75*2352)
-            if len(excerpt) != 12*75*2352:
-                raise ValueError('The image is too short.')
-            raw += excerpt
-    files['QUAKE.BIN'] = raw
-    files['QUAKE.CUE'] = (b'FILE "QUAKE.BIN" BINARY\r\nTRACK 01 MODE1/2352\r\nINDEX 01 00:00:00\r\n'
-        b'TRACK 02 AUDIO\r\nINDEX 01 02:49:20\r\nTRACK 03 AUDIO\r\nINDEX 01 03:01:20\r\n'
-        b'TRACK 04 AUDIO\r\nINDEX 01 03:13:20\r\n')
-    resource = b''.join(raw[i+16:i+2064] for i in range(21*2352, 12075*2352, 2352))[:24684755]
+    raw, cue, resource, excerpt = quake_image(args.quake_bin)
+    files['QUAKE.BIN'], files['QUAKE.CUE'] = raw, cue
     crc = zlib.crc32(resource)
     files['QUAKE.EXE'] = (args.quake_dir/'QUAKE.EXE').read_bytes()
     files['FDCONFIG.SYS'] = files['FDCONFIG.SYS'].replace(b'FILES=40', b'LASTDRIVE=Z\r\nFILES=40')
@@ -167,12 +173,12 @@ def main():
     copy_commands = ('COPY F:\\RESOURCE.1 C:\\RESCOPY.1\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         f'FILECRC C:\\RESCOPY.1 {crc:08X}\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n') if args.copy_installer else ''
     files['AUTOEXEC.BAT'] = ('@ECHO OFF\r\nJLOAD QPIEMU.DLL\r\nHDPMI32I -r\r\n'
-        'UCDDRV\r\nIF ERRORLEVEL 1 GOTO FAIL\r\nSHSUCDX /D:UCDD0001 /L:F\r\n'
+        'UCDD -install\r\nIF ERRORLEVEL 1 GOTO FAIL\r\nSHSUCDX /D:UCDD0001 /L:F\r\n'
         'IF ERRORLEVEL 246 GOTO FAIL\r\nUCDD -mount C:\\QUAKE.CUE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         + copy_commands + 'SET BLASTER=A220 I5 D1 H5 T6\r\nAPSHARE\r\nIF ERRORLEVEL 1 GOTO FAIL\r\n'
         'UCDD -unmount\r\nIF ERRORLEVEL 1 GOTO FAIL\r\nPASS\r\n:FAIL\r\nFAIL\r\n').encode()
     if args.load_high:
-        files['AUTOEXEC.BAT'] = files['AUTOEXEC.BAT'].replace(b'\r\nUCDDRV\r\n', b'\r\nLH UCDDRV\r\n').replace(
+        files['AUTOEXEC.BAT'] = files['AUTOEXEC.BAT'].replace(b'\r\nUCDD -install\r\n', b'\r\nLH UCDD -install\r\n').replace(
             b'\r\nAPSHARE\r\n', b'\r\nLH APSHARE\r\n')
     for name, data in files.items():
         disk.add(name, data)
@@ -237,7 +243,7 @@ def main():
         xms_bytes=524288, disk_reads=reads, audio=audio,
         waveform_controls_rejected=controls,
         executable_sha256=sha256(executable), program_sha256={n: sha256(ROOT/'build'/n)
-            for n in ('UCDDRV.EXE', 'UCDD.EXE', parent_name, 'UCDDAUD.COM', 'UCDDPM.COM')},
+            for n in ('UCDD.EXE', parent_name, 'UCDDAUD.COM', 'UCDDPM.COM')},
         disk_sha256=sha256(image), capture_sha256=sha256(wav)), indent=2)+'\n')
     print(json.dumps(audio, indent=2))
 

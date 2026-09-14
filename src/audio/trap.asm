@@ -167,6 +167,13 @@ port_callback:
     cmp dx, 3
     je .count
 .unsupported:
+%ifdef RESIDENT_AUDIO
+    cmp byte [fault], 0
+    jne .fault_recorded
+    mov [fault_port], dx
+    mov [fault_value], al
+.fault_recorded:
+%endif
 %ifdef MOUNTED_AUDIO
     mov byte [fault], 3
 %else

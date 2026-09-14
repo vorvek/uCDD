@@ -1,13 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 16
-cpu 386
-org 0
-
-%include "disc.inc"
-
-    jmp install
+    jmp command_entry
 
 header:
     dd 0ffffffffh
@@ -524,11 +518,25 @@ control:
     je .attach
     cmp word [control_op], 5
     je .detach
+%ifdef RESIDENT_AUDIO
+    cmp word [control_op], 6
+    je .audio_report
+%endif
     mov word [control_result], 8002h
     cmp byte [si+LOCKED], 0
     jne .done
     cmp dword [si+AUDIO_ENTRY], 0
+%ifdef RESIDENT_AUDIO
+    je .change
+    cmp word [si+AUDIO_ENTRY], cd_request
     jne .done
+    mov ax, cs
+    cmp [si+AUDIO_ENTRY+2], ax
+%endif
+    jne .done
+%ifdef RESIDENT_AUDIO
+.change:
+%endif
     les bx, [indos_pointer]
     cmp byte [es:bx], 0
     jne .done
@@ -557,6 +565,30 @@ control:
 .state:
     mov [control_result], ax
     jmp .done
+%ifdef RESIDENT_AUDIO
+.audio_report:
+    les di, [path_pointer]
+    cmp di, 10000h-12
+    ja .done
+    mov ax, 1
+    stosw
+    mov ax, cs
+    stosw
+    mov ax, [resident_paragraphs]
+    stosw
+    mov ax, [output_allocation]
+    stosw
+    mov ax, [output_segment]
+    stosw
+    mov al, [fault]
+    or al, [cd_error]
+    or al, [pm_bridge_fault]
+    or al, [pm_cleanup_fault]
+    xor ah, ah
+    stosw
+    mov word [control_result], 0
+    jmp .done
+%endif
 .describe:
     cmp word [si+HANDLE], 0ffffh
     je .done
@@ -836,6 +868,9 @@ mount_image:
     pop ds
     mov si, [unit_pointer]
     mov byte [si+CHANGED], 0ffh
+%ifdef RESIDENT_AUDIO
+    call audio_bind
+%endif
     mov word [control_result], 0
     ret
 .reject:
@@ -853,6 +888,11 @@ eject_unit:
     int 21h
     jc .return
 .empty:
+%ifdef RESIDENT_AUDIO
+    call cd_clear_state
+    mov word [cd_handle], 0ffffh
+    mov dword [si+AUDIO_ENTRY], 0
+%endif
     mov word [si+HANDLE], 0ffffh
     mov dword [si+SECTORS], 0
     mov byte [si+CHANGED], 0ffh
@@ -924,6 +964,10 @@ critical_error:
     mov al, 3
     iret
 
+%ifdef RESIDENT_AUDIO
+%include "audio/resident.asm"
+%endif
+
 pvd times 192 db 0
     align 16
     times 1024 db 0
@@ -933,44 +977,9 @@ sda_save:
 
 install:
     cld
-    mov [cs:resident_psp], ds
-    push ds
-    pop es
-    push cs
-    pop ds
-    mov si, 81h
-.spaces:
-    mov al, [es:si]
-    inc si
-    cmp al, ' '
-    je .spaces
-    cmp al, 13
-    je .options_done
-    dec si
-    mov di, units_option
-    mov cx, 7
-.option:
-    mov al, [es:si]
-    cmp al, [di]
-    jne install_usage
-    inc si
-    inc di
-    loop .option
-    mov al, [es:si]
-    sub al, '1'
-    cmp al, MAX_UNITS-1
-    ja install_usage
-    inc al
-    mov [unit_count], al
-    inc si
-.trailing:
-    mov al, [es:si]
-    inc si
-    cmp al, ' '
-    je .trailing
-    cmp al, 13
-    jne install_usage
-.options_done:
+    mov ah, 62h
+    int 21h
+    mov [resident_psp], bx
     mov ah, 30h
     int 21h
     cmp al, 5
@@ -1031,6 +1040,15 @@ install:
 .link:
     pop bx
     pop es
+%ifdef RESIDENT_AUDIO
+    push es
+    push bx
+    call audio_install
+    pop bx
+    pop es
+    jc install_audio_error
+    mov byte [audio_linked], 1
+%endif
     mov eax, [es:bx]
     mov [header], eax
     mov [header+30], cs
@@ -1048,20 +1066,23 @@ install:
     mov ah, 49h
     int 21h
 .message:
+%ifndef RESIDENT_AUDIO
     mov dx, installed_message
     mov ah, 9
     int 21h
+%endif
     movzx dx, byte [unit_count]
     imul dx, UNIT_SIZE
     add dx, [units_base]
     add dx, 15
     shr dx, 4
     add dx, 16
+%ifdef RESIDENT_AUDIO
+    mov [resident_paragraphs], dx
+    jmp audio_enter_pm
+%endif
     mov ax, 3100h
     int 21h
-install_usage:
-    mov dx, usage_message
-    jmp install_fail
 install_dos_error:
     mov dx, dos_message
     jmp install_fail
@@ -1076,8 +1097,13 @@ install_fail:
     int 21h
     mov ax, 4c01h
     int 21h
-units_option db '-units '
 installed_message db 'The uCDD driver is installed.',13,10,'$'
-usage_message db 'Use UCDDRV -units 1 to 4.',13,10,'$'
 dos_message db 'This DOS version is not supported.',13,10,'$'
 duplicate_message db 'The uCDD driver is already installed.',13,10,'$'
+%ifdef RESIDENT_AUDIO
+install_audio_error:
+    mov dx, audio_install_message
+    jmp install_fail
+audio_install_message db 'The audio driver cannot be installed.',13,10,'$'
+%include "audio/resident_init.asm"
+%endif

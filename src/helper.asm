@@ -1,11 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 16
-cpu 386
-org 0
-%include "disc.inc"
-
+command_entry:
     cld
     mov si, 81h
     movzx cx, byte [80h]
@@ -32,7 +28,32 @@ org 0
     mov di, drive_option
     call option_equal
     je .drive
+    mov di, install_option
+    call option_equal
+    je .install
+    mov di, units_option
+    call option_equal
+    je .units
     jmp usage
+.install:
+    cmp byte [operation], 0
+    jne usage
+    mov byte [operation], 3
+    jmp .parse
+.units:
+    cmp byte [requested_units], 0
+    jne usage
+    call token
+    jc usage
+    cmp byte [bx+1], 0
+    jne usage
+    mov al, [bx]
+    sub al, '1'
+    cmp al, MAX_UNITS-1
+    ja usage
+    inc al
+    mov [requested_units], al
+    jmp .parse
 .mount:
     cmp byte [operation], 0
     jne usage
@@ -65,6 +86,18 @@ org 0
     jne usage
     jmp .parse
 .parsed:
+    cmp byte [operation], 3
+    jne .image_command
+    cmp byte [wanted_drive], 0ffh
+    jne usage
+    mov al, [requested_units]
+    test al, al
+    jz install
+    mov [unit_count], al
+    jmp install
+.image_command:
+    cmp byte [requested_units], 0
+    jne usage
     cmp byte [operation], 0
     je usage
     xor bx, bx
@@ -395,6 +428,7 @@ error:
     int 21h
 
 operation db 0
+requested_units db 0
 found_ucdd db 0
 wanted_drive db 0ffh
 selected_drive db 0ffh
@@ -406,6 +440,8 @@ control_entry dd 0
 mount_option db '-MOUNT',0
 unmount_option db '-UNMOUNT',0
 drive_option db '-DRIVE',0
+install_option db '-INSTALL',0
+units_option db '-UNITS',0
 packet:
     db 20,0,3
     dw 0
@@ -414,7 +450,8 @@ packet:
     dd 0
     dw 2
 change_buffer db 9,0
-usage_message db 'Use UCDD -mount <image> [-drive <letter>].',13,10
+usage_message db 'Use UCDD -install [-units <1 to 4>].',13,10
+    db 'Use UCDD -mount <image> [-drive <letter>].',13,10
     db 'Use UCDD -unmount [-drive <letter>].',13,10,'$'
 no_drives_message db 'No uCDD drive is available.',13,10,'$'
 full_message db 'All uCDD drives are in use.',13,10,'$'
