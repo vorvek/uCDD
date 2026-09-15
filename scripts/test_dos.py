@@ -163,7 +163,8 @@ def main():
                   b'See LICENSE for the complete license terms.\r\n')
         ucdd_help = (b'Use UCDD -install [-units <1 to 4>].\r\n'
                      b'Use UCDD -mount <image> [-drive <letter>].\r\n'
-                     b'Use UCDD -unmount [-drive <letter>].\r\n'
+                     b'Use UCDD -unmount [<image>] [-drive <letter>].\r\n'
+                     b'Use an MDM file for up to 10 discs. Select a disc with Ctrl+Alt+1 to 0.\r\n'
                      b'Use UCDD /? to show this information.\r\n' + notice)
         setup_help = (b'Use UCDDSET to select the physical sound card settings.\r\n'
                       b'Use the arrow keys to select and change a setting.\r\n'
@@ -332,7 +333,7 @@ def main():
     print(log[-6000:])
     if result.returncode or not re.search(r'stop: TestExit \{ code: 0 \}', log):
         raise SystemExit('The DOS test failed. See the test log.')
-    if not args.baseline and resident_bytes != (9264 if args.single_unit else 10608):
+    if not args.baseline and resident_bytes != (10576 if args.single_unit else 11920):
         raise SystemExit('The resident memory size changed. Check the resident layout.')
     print('The DOS test passed.')
 

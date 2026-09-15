@@ -56,6 +56,7 @@ def main():
     parser.add_argument('--dynarec', action='store_true')
     parser.add_argument('--runs', type=int, choices=(1, 2), default=2)
     parser.add_argument('--mscdex', type=Path)
+    parser.add_argument('--mdm', action='store_true')
     args = parser.parse_args()
     if args.dynarec and not args.own_host:
         parser.error('--dynarec requires --own-host')
@@ -90,6 +91,8 @@ def main():
         files['MSCDEX.EXE'] = args.mscdex.read_bytes()
     raw, cue, resource, excerpt = quake_image(args.quake_bin)
     files['QUAKE.BIN'], files['QUAKE.CUE'] = raw, cue
+    if args.mdm:
+        files['QUAKE.MDM'] = b'QUAKE.CUE\r\nQUAKE.CUE\r\n'
     files['BAD.ISO'] = b'This is not a disc image.'
     files['QUAKE.EXE'] = (args.quake_dir / 'QUAKE.EXE').read_bytes()
     files['UCDD.CFG'] = b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes((7, 1, 5, 0))
@@ -120,6 +123,9 @@ def main():
                    ('UCDD -unmount', True), (state, True)]
         if game+1 < args.runs:
             checks.append(('UCDD -mount C:\\QUAKE.CUE', True))
+    if args.mdm:
+        checks = [(command.replace('C:\\QUAKE.CUE', 'C:\\QUAKE.MDM'), success)
+                  for command, success in checks]
     commands = ['@ECHO OFF', 'SET BLASTER=A220 I5 D1 H5 T6']
     for command, success in checks:
         commands.append(command)
@@ -152,11 +158,14 @@ def main():
         run = run.with_name(run.name + '-fragmented')
     if args.ems:
         run = run.with_name(run.name + '-ems')
+    if args.mdm:
+        run = run.with_name(run.name + '-mdm')
     run.mkdir(exist_ok=True)
     image, wav = run / 'quake.img', run / 'quake.wav'
     image.write_bytes(disk.image)
     backend = 'dynarec' if args.dynarec else 'interpreter'
     evidence = dict(passed=False, cpu='586', backend=backend, load_high=args.load_high,
+                    mdm=args.mdm,
                     fragmented_umb=args.fragment_umb,
                     redirector='MSCDEX' if args.mscdex else 'SHSUCDX',
                     program_sha256={n: sha256(ROOT/'build'/n) for n in ('UCDD.EXE', 'UCDDSET.EXE')},

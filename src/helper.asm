@@ -104,6 +104,20 @@ command_entry:
     cmp byte [operation], 0
     jne usage
     mov byte [operation], 2
+    mov bx, si
+.unmount_space:
+    cmp byte [bx], ' '
+    jne .unmount_path
+    inc bx
+    jmp .unmount_space
+.unmount_path:
+    cmp byte [bx], 0
+    je .parse
+    cmp byte [bx], '-'
+    je .parse
+    call token
+    jc usage
+    mov [image_path], bx
     jmp .parse
 .drive:
     cmp byte [wanted_drive], 0ffh
@@ -144,6 +158,16 @@ command_entry:
     jne usage
     cmp byte [operation], 0
     je usage
+    cmp byte [operation], 2
+    jne .enumerate
+    cmp word [image_path], 0
+    je .enumerate
+    mov si, [image_path]
+    mov di, named_path
+    mov ax, 6000h
+    int 21h
+    jc bad_image
+.enumerate:
     xor bx, bx
     mov ax, 1500h
     int 2fh
@@ -168,6 +192,34 @@ command_entry:
     pop si
     jc .next
     mov byte [found_ucdd], 1
+    cmp byte [operation], 2
+    jne .name_ok
+    cmp word [image_path], 0
+    je .name_ok
+    push si
+    push bx
+    mov dx, full_path
+    mov ax, 8
+    call far [control_entry]
+    test ax, ax
+    jz .compare_name
+    mov ax, 3
+    call far [control_entry]
+    test ax, ax
+    jnz .name_miss
+.compare_name:
+    mov bx, full_path
+    mov di, named_path
+    call option_equal
+    jne .name_miss
+    pop bx
+    pop si
+    jmp .name_ok
+.name_miss:
+    pop bx
+    pop si
+    jmp .next
+.name_ok:
     mov al, [drive_list+si]
     cmp byte [wanted_drive], 0ffh
     je .automatic
@@ -245,6 +297,8 @@ command_entry:
     jc bad_source
     test dx, 1000h
     jnz bad_source
+    call is_mdm
+    je .mdm
     call prepare_image
     jc bad_image
     mov al, [full_path]
@@ -279,6 +333,26 @@ command_entry:
     mov dx, full_path
     mov ax, 1
     call far [control_entry]
+    test ax, 8000h
+    jnz driver_error
+    jmp .refresh
+.mdm:
+    call prepare_mdm
+    jc bad_mdm
+    mov si, [selected_index]
+    call device_at_index
+    jc invalid_drive
+    push ds
+    mov ds, [mdm_segment]
+    xor dx, dx
+    mov ax, 7
+    call far [cs:control_entry]
+    pop ds
+    push ax
+    mov es, [mdm_segment]
+    mov ah, 49h
+    int 21h
+    pop ax
     test ax, 8000h
     jnz driver_error
     jmp .refresh
@@ -466,11 +540,16 @@ bad_image:
     mov dx, image_error_message
     jmp error
 driver_error:
+    cmp ax, 8007h
+    je bad_mdm
     cmp ax, 8004h
     je bad_image
     cmp ax, 8003h
     je bad_image
     mov dx, operation_error_message
+    jmp error
+bad_mdm:
+    mov dx, mdm_error_message
     jmp error
 refresh_error:
     mov dx, refresh_error_message
@@ -516,7 +595,8 @@ usage_message db 'Use UCDD -install [-units <1 to 4>]'
 %endif
     db '.',13,10
     db 'Use UCDD -mount <image> [-drive <letter>].',13,10
-    db 'Use UCDD -unmount [-drive <letter>].',13,10
+    db 'Use UCDD -unmount [<image>] [-drive <letter>].',13,10
+    db 'Use an MDM file for up to 10 discs. Select a disc with Ctrl+Alt+1 to 0.',13,10
     db 'Use UCDD /? to show this information.',13,10,'$'
 no_drives_message db 'No uCDD drive is available.',13,10,'$'
 full_message db 'All uCDD drives are in use.',13,10,'$'
@@ -524,6 +604,8 @@ empty_message db 'No image is mounted on the selected drive.',13,10,'$'
 drive_error_message db 'The selected drive is not a uCDD drive.',13,10,'$'
 source_error_message db 'Use an image on a local hard disk.',13,10,'$'
 image_error_message db 'The image cannot be opened or is not valid.',13,10,'$'
+mdm_error_message db 'The disc list cannot be mounted. Check its images and XMS memory.',13,10
+    db 'Only one MDM file can be mounted at a time.',13,10,'$'
 operation_error_message db 'The drive is locked or in use. Try again.',13,10,'$'
 refresh_error_message db 'The image changed. The drive cache update failed.',13,10,'$'
 mounted_message db 'The image is mounted.',13,10,'$'
@@ -545,4 +627,5 @@ device_list times 26*5 db 0
 drive_list times 26 db 0
 
 %include "cue.asm"
+%include "mdm_helper.asm"
 program_end:

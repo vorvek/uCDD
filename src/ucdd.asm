@@ -4,6 +4,7 @@
 bits 16
 cpu 386
 org 0
+%define MDM_SUPPORT 1
 
 %ifdef RESIDENT_AUDIO
 %ifndef NO_EMS_QUEUE

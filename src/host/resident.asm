@@ -25,6 +25,7 @@ org 0
 %define VIRTUAL_IRQ 1
 %define WSS_INPUT 1
 %define RESIDENT_HOST 1
+%define MDM_SUPPORT 1
 host_gateway_start:
     jmp resident_host_init
     db 'uCDH'

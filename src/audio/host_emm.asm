@@ -10,6 +10,9 @@ host_emm_ports_full:
     dw 00eh, emm_port_callback
     dw 020h, emm_port_callback
     dw 021h, emm_port_callback
+%ifdef MDM_SUPPORT
+    dw 060h, emm_port_callback
+%endif
     dw 083h, emm_port_callback
     dw 08bh, emm_port_callback
     dw 0c4h, emm_port_callback

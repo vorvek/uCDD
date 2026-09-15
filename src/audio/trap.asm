@@ -211,6 +211,28 @@ port_callback:
     inc dword [port_calls]
     test cl, 18h
     jnz .unsupported
+%ifdef MDM_SUPPORT
+    cmp dx, 60h
+    jne .not_keyboard
+    test cl, 4
+    jnz .keyboard_write
+    mov dx, 64h
+    call physical_read
+    mov bl, al
+    mov dx, 60h
+    call physical_read
+    and bl, 21h
+    cmp bl, 1
+    jne .result
+    cmp byte [mdm_key_active], 0
+    jne .result
+    call mdm_scan
+    jmp .result
+.keyboard_write:
+    call physical_write
+    jmp .done
+.not_keyboard:
+%endif
 %ifdef WSS_INPUT
     cmp dx, 530h
     jb .normal_port

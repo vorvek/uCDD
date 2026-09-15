@@ -75,6 +75,7 @@ interrupt:
     mov [active_request], eax
     sti
     cld
+    call mdm_switch
     lfs bp, [active_request]
     cmp bp, 0fff3h
     ja .return_only_status
@@ -488,8 +489,9 @@ request_not_ready:
     ret
 
 ; AX: 0 query, 1 mount, 2 eject, 3 describe, 4 attach, 5 detach. BL: unit.
+; AX: 7 mount MDM, 8 copy its name (128 bytes). See MDM_INPUT_SIZE.
 ; DS:DX points to image info (1/3) or the audio callback (4/5).
-; AX returns 0/1 for empty/loaded, or 8001h..8006h for an error.
+; AX returns 0/1 for empty/loaded, or 8001h..8007h for an error.
 control:
     pushf
     pushad
@@ -527,6 +529,8 @@ control:
     je .attach
     cmp word [control_op], 5
     je .detach
+    cmp word [control_op], 8
+    je .mdm_name
 %ifdef RESIDENT_AUDIO
     cmp word [control_op], 6
     je .audio_report
@@ -551,6 +555,8 @@ control:
     jne .done
     cmp word [control_op], 2
     je .eject
+    cmp word [control_op], 7
+    je .mdm_mount
     cmp word [control_op], 1
     jne .done
     cmp word [path_pointer], 10000h-INFO_SIZE
@@ -558,6 +564,14 @@ control:
     call dos_enter
     call mount_image
     call dos_leave
+    jmp .done
+.mdm_mount:
+    call dos_enter
+    call mdm_mount
+    call dos_leave
+    jmp .done
+.mdm_name:
+    call mdm_name
     jmp .done
 .eject:
     call dos_enter
@@ -568,8 +582,11 @@ control:
     jmp .done
 .query:
     xor ax, ax
+    cmp si, [mdm_unit]
+    je .loaded
     cmp word [si+HANDLE], 0ffffh
     je .state
+.loaded:
     inc ax
 .state:
     mov [control_result], ax
@@ -857,6 +874,11 @@ mount_image:
     jc .reject
     cmp eax, [candidate_sectors]
     ja .reject
+    cmp word [control_op], 7
+    jne .commit
+    mov word [control_result], 0
+    ret
+.commit:
     mov si, [unit_pointer]
     mov word [control_result], 8005h
     call eject_unit
@@ -908,6 +930,14 @@ mount_image:
     ret
 
 eject_unit:
+    cmp si, [mdm_unit]
+    jne .single
+    call mdm_release
+    pushf
+    call .empty
+    popf
+    ret
+.single:
     mov bx, [si+HANDLE]
     cmp bx, 0ffffh
     je .empty
@@ -915,6 +945,12 @@ eject_unit:
     int 21h
     jc .return
 .empty:
+    call clear_unit
+    ret
+.return:
+    ret
+
+clear_unit:
 %ifdef RESIDENT_AUDIO
     call cd_clear_state
     mov word [cd_handle], 0ffffh
@@ -924,7 +960,6 @@ eject_unit:
     mov dword [si+SECTORS], 0
     mov byte [si+CHANGED], 0ffh
     clc
-.return:
     ret
 
 ; The file handles belong to the resident PSP. Save DOS state for nested reads.
@@ -990,6 +1025,8 @@ dos_leave:
 critical_error:
     mov al, 3
     iret
+
+%include "mdm.asm"
 
 %ifdef RESIDENT_AUDIO
 %include "audio/resident.asm"

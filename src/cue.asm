@@ -14,6 +14,10 @@ prepare_image:
     or eax, 20202000h
     cmp eax, '.cue'
     je .cue
+    cmp eax, '.bin'
+    jne .iso
+    mov word [full_path+INFO_STRIDE], 2352
+    mov word [full_path+INFO_PAYLOAD], 16
 .iso:
     clc
     ret

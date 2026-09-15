@@ -34,8 +34,8 @@ On physical IRQ 5, uCDD keeps the game vector separate through DOS and DPMI vect
 | --- | --- |
 | Processor | 386 or later for the instruction set. The interpreted 486 profile passes the generated mixed-stream workload through every output format. Current Quake and Tomb Raider tests use a Pentium profile. Real hardware is required to establish a minimum processor. |
 | DOS | DOS 5 or later interfaces. FreeDOS 1.4 is tested. |
-| CD driver memory | 9,264 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
-| Resident audio, one unit | In the standard high-memory test, the 26,784-byte driver/mixer allocation, 6,656-byte real-mode host gateway, 2,048-byte private host stack, 2,128-byte mix buffer, and 6,144-byte work buffer load high. The aligned 4 KiB DMA ring uses an 8 KiB conventional allocation. The six payload allocations total 51,952 bytes. Their MCB headers bring the DOS cost to 52,048 bytes, of which 8,208 bytes are conventional. The redirector and memory manager use additional memory. |
+| CD driver memory | 10,576 resident bytes with one unit under FreeDOS. The complete driver can load into upper memory in the tested Jemm configuration. SHSUCDX and the memory manager use additional memory. |
+| Resident audio, one unit | In the standard high-memory test, the 28,208-byte driver/mixer allocation, 8,176-byte real-mode host gateway, 2,048-byte private host stack, 2,128-byte mix buffer, and 6,144-byte work buffer load high. The aligned 4 KiB DMA ring uses an 8 KiB conventional allocation. The six payload allocations total 54,896 bytes. Their MCB headers bring the DOS cost to 54,992 bytes, of which 8,208 bytes are conventional. The redirector and memory manager use additional memory. |
 | SB / SB1.5 / SB2 conventional memory | A 512-byte mono DMA ring uses a 1 KiB conventional allocation. The resident code blocks load high. |
 | SB Pro conventional memory | Its aligned 1 KiB DMA ring uses a 2 KiB conventional allocation. The same driver and host blocks load high in the test. |
 | Extended memory | The default configuration uses a 512 KiB XMS audio queue and about 63 KiB of locked XMS for the protected host and its page tables. Protected clients use additional memory. `-ems` replaces only the 512 KiB queue with 32 EMS pages. The internal host still requires XMS. The Quake test machine has 16 MiB. |
@@ -46,7 +46,7 @@ On physical IRQ 5, uCDD keeps the game vector separate through DOS and DPMI vect
 
 Audio conversion, port trapping, and game execution share the CPU. Disk seeks and refill delays also matter. Real-hardware tests are required to establish supported processor speeds and buffer sizes. The interpreted emulator test does not establish real-386 performance.
 
-The installer keeps the protected host and page tables in XMS. Below 1 MiB, it keeps the real-mode driver and mixer, a small host gateway, a private host stack, two CD work buffers, and the physical DMA allocation. It tries the UMBs in this order: driver and mixer, private host stack and gateway, mix buffer, and work buffer. The DMA allocation always stays in conventional memory. If no UMB is available, the payload uses 51,120 conventional bytes in the interpreted 386 SB16 test. Six MCB headers bring that cost to 51,216 bytes. With 29 KiB and 12 KiB UMB holes in the test, the driver, host stack, gateway, and mix buffer load high. The work buffer, DMA allocation, and 256-byte owner stub use 14,592 conventional bytes, or 14,640 bytes with their three MCB headers. These sizes depend on the addresses and sizes of the free blocks. The host gateway also needs page alignment; a small UMB can force the host stack and gateway into conventional memory.
+The installer keeps the protected host and page tables in XMS. Below 1 MiB, it keeps the real-mode driver and mixer, a small host gateway, a private host stack, two CD work buffers, and the physical DMA allocation. It tries the UMBs in this order: driver and mixer, private host stack and gateway, mix buffer, and work buffer. The DMA allocation always stays in conventional memory. If no UMB is available, the payload uses 54,064 conventional bytes in the interpreted 386 SB16 test. Six MCB headers bring that cost to 54,160 bytes. With 29 KiB and 12 KiB UMB holes in the test, the driver, host stack, gateway, and mix buffer load high. The work buffer, DMA allocation, and 256-byte owner stub use 14,592 conventional bytes, or 14,640 bytes with their three MCB headers. These sizes depend on the addresses and sizes of the free blocks. The host gateway also needs page alignment; a small UMB can force the host stack and gateway into conventional memory.
 
 The default audio queue uses the standard XMS allocation, move, and free calls. Microsoft HIMEM.SYS passes the current XMS audio test when EMM386 supplies VCPI and port trapping. HIMEM alone does not supply port trapping or upper-memory blocks for `LH`. The data driver does not require XMS or port trapping.
 
@@ -85,7 +85,7 @@ This example creates one virtual unit and assigns F:. The driver supports one to
 
 Each unit can be empty or hold one disc image. Unmounting ejects the image but keeps the unit and its drive letter. Mount and unmount commands run in a temporary copy of `UCDD.EXE` and communicate with the installed driver.
 
-The one-unit driver used 9,264 resident bytes in the FreeDOS test. With upper memory available, `LH C:\UCDD\UCDD.EXE -install` loaded the complete driver above conventional memory and passed the same tests. Installation and mount-command code are discarded after installation. This measurement excludes the audio service. SHSUCDX uses additional memory.
+The one-unit driver used 10,576 resident bytes in the FreeDOS test. With upper memory available, `LH C:\UCDD\UCDD.EXE -install` loaded the complete driver above conventional memory and passed the same tests. Installation and command-line parsing code are discarded after installation. This measurement excludes the audio service. SHSUCDX uses additional memory.
 
 ## Mount and unmount
 
@@ -108,6 +108,35 @@ Automatic selection uses ascending drive-letter order and considers only uCDD dr
 An explicit letter must identify a uCDD drive. Both `G` and `G:` are accepted. Close all files on a drive before changing its image. A locked drive cannot be changed. The earlier external audio launcher also locks its image while it runs. The resident build permits image changes and stops the old CD source when its image is ejected. A rejected replacement leaves the current image mounted.
 
 Commands return exit code 0 on success and 1 on failure. Use DOS paths and 8.3 file names. Images on CD drives, floppy drives, and network drives are not supported. ISO images must use 2048-byte data sectors. CUE sheets must name one BINARY file, with sequential tracks and INDEX 01 for each track. INDEX 00 is supported. Multi-file sheets, MODE2 sectors, compressed audio, FLAGS, and synthetic PREGAP commands are not supported. Image files must be smaller than 2 GiB.
+
+### Multiple discs
+
+Create a plain-text file with the extension `.MDM`. Put one image path on each line:
+
+```text
+DISC1.ISO
+DISC2.CUE
+DISC3.BIN
+```
+
+Use these commands:
+
+```dos
+ucdd.exe -mount C:\IMAGES\GAME.MDM
+ucdd.exe -unmount C:\IMAGES\GAME.MDM
+```
+
+The first disc is mounted automatically. Press **Ctrl+Alt+1** through **Ctrl+Alt+9** to select discs 1 through 9. Press **Ctrl+Alt+0** to select disc 10. Use these keys at the game's disc-change prompt. Left and right Ctrl/Alt keys are supported. A held number key selects its disc once. A number with no disc assigned has no effect. The keys also reach the game.
+
+Only one MDM file can be mounted at a time. It uses one virtual unit. The usual `-drive` selection and `-unmount` command also apply. Mounting a single image over that unit releases the list. A locked drive delays a requested disc change until it is unlocked; the last requested disc is then selected.
+
+The first ten non-empty lines supply the discs. Further lines are ignored. Blank lines and spaces at the start or end of a line are ignored. Paths can be absolute or relative to the MDM file's directory. A CUE sheet's BIN path is relative to the CUE sheet. Nested MDM files are not supported. A bare BIN uses MODE1/2352 data sectors and has no audio track table; use a CUE sheet for CD audio.
+
+uCDD checks and opens all listed images before replacing the current image. If a listed image is missing or invalid, the current image remains mounted. Keep the image files in place while the list is mounted. DOS must have enough file handles for all listed images.
+
+MDM support requires an XMS manager, including in the data-only build. Each mounted list uses 15 KiB of XMS for the list name, prepared drive records, and a switch backup. This storage is separate from the XMS or EMS audio queue. The parser and preparation buffer are transient. A disc switch reuses the installed unit's storage and does not open files or allocate DOS memory. MDM support adds 1,312 resident bytes to the data driver, with no extra resident allocation when a list is mounted.
+
+The data-only build observes the keyboard interrupt chain. Resident audio also observes keyboard reads through its port-trapping host. A program that bypasses both paths can prevent hotkey detection. Broad game compatibility and physical-PC tests remain necessary.
 
 ## Resident audio experiment
 

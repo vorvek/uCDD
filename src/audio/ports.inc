@@ -15,6 +15,9 @@
     trap_range 2,2
     trap_range 0ah,3
     trap_range 0eh,1
+%ifdef MDM_SUPPORT
+    trap_range 60h,1
+%endif
 %ifdef VIRTUAL_IRQ
     trap_range 20h,2
 %endif

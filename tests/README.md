@@ -38,7 +38,22 @@ python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.ex
 python scripts/test_dos.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --single-unit --load-high
 ```
 
-The single-unit run uses the driver's default unit count. It checks mounting, replacement, full-drive handling, repeated commands, and direct CD packets. The upper-memory run adds Jemm, runs `LH C:\UCDD.EXE -install`, and checks that the resident segment is above conventional memory. Both runs require the driver's DOS memory block to remain at 9,264 bytes; the two-unit run requires 10,608 bytes. Download Jemm with the audio test runner before the upper-memory test.
+The single-unit run uses the driver's default unit count. It checks mounting, replacement, full-drive handling, repeated commands, and direct CD packets. The upper-memory run adds Jemm, runs `LH C:\UCDD.EXE -install`, and checks that the resident segment is above conventional memory. Both runs require the driver's DOS memory block to remain at 10,576 bytes; the two-unit run requires 11,920 bytes. Download Jemm with the audio test runner before the upper-memory test.
+
+## Multiple discs
+
+```text
+python scripts/test_mdm.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --load-high
+python scripts/test_mdm.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --audio --load-high
+python scripts/test_mdm.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --audio --load-high --ems
+python scripts/test_mdm.py --emulator D:\dev\IzarraVM\target\release\izarravm.exe --no-xms
+```
+
+These tests cover all ten slots, ignored extra lines, ISO/CUE/BIN lists, relative paths, missing images, invalid lines, nested-list rejection, one active list across two units, named unmount, replacement, left/right modifiers, Pause sequences, key repeats, and locked-drive deferral. The memory probe compares free XMS space, free XMS handles, and the largest DOS block before and after failed mounts and repeated complete list lifecycles. The EMS run checks a list with the audio queue in EMS. Results and binary hashes are saved under `.local/mdm/`.
+
+The IzarraVM runs use the 386 interpreter. That fixture does not implement keyboard-controller command D2h, so its test client calls the installed scan-code handler through addresses from the matching NASM listing. It then exercises the normal timer, CD requests, and redirector. It does not establish physical keyboard delivery. Building `tests/mdm_keys.asm` without the test address definitions uses controller D2h to exercise real keyboard IRQs on a compatible emulator such as 86Box. The production programs have no test injection entry.
+
+The resident Quake runner also accepts `--mdm`. It mounts a two-entry list for the existing data-copy, complete CD waveform, game-sound, and negative-control checks. This checks audio from an MDM-mounted disc; hotkey delivery is covered separately.
 
 ## Integrated speaker test
 
