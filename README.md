@@ -35,7 +35,7 @@ LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
-`HIMEM` with `EMM386` and `MSCDEX` are also supported.
+`JEMMEX` or `HIMEM` with `EMM386` (or `JEMM`, or `386MAX`) is required. `MSCDEX` is also supported.
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 
