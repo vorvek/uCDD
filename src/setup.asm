@@ -552,8 +552,8 @@ hex_digits db '0123456789ABCDEF'
 arrow db '>',0
 output_16 db 'Output: 44.1 kHz, 16-bit stereo.',0
 output_pro db 'Output: 8-bit stereo. Nominal rate: 22.05 kHz.',0
-initial_message db 'Check these settings against the sound card configuration.',0
-changed_message db 'The settings have changed. F10 saves them to UCDD.CFG.',0
+initial_message db '',0
+changed_message db 'Press F10 to save the new settings to UCDD.CFG.',0
 invalid_message db 'UCDD.CFG is not valid. Check all settings before you save.',0
 save_message db 'The settings cannot be saved.',0
 listen_message db 'Listen for a tone from each speaker.',0
