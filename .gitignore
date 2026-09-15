@@ -1,6 +1,0 @@
-/build/
-/.local/
-/tests/
-/scripts/
-__pycache__/
-*.pyc
