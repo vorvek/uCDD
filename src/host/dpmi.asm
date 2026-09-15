@@ -1,7 +1,13 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 16
+%ifdef RESIDENT_HOST
+HOST_SCRATCH
+%define DPMI_TRACE_COUNT 16
+%else
+HOST_REAL
+%define DPMI_TRACE_COUNT 32
+%endif
 dpmi_install:
     mov ax, 1687h
     int 2fh
@@ -11,6 +17,14 @@ dpmi_install:
     xor bx, bx
     call monitor_init
     jc .bad
+%ifdef RESIDENT_HOST
+    mov ax, 352fh
+    int 21h
+    mov [dpmi_old_mux], bx
+    mov [dpmi_old_mux+2], es
+    clc
+    ret
+%endif
     mov ax, 352fh
     int 21h
     mov [dpmi_old_mux], bx
@@ -30,6 +44,7 @@ dpmi_remove:
     int 21h
     pop ds
     ret
+HOST_REAL
 dpmi_mux:
     cmp ax, 1687h
     jne .chain
@@ -86,46 +101,19 @@ dpmi_entry:
     mov [dpmi_client_flags], ax
     lea ax, [bp+46]
     mov [dpmi_client_sp], ax
-    xor eax, eax
-    mov di, dpmi_ldt
-    mov cx, DPMI_LDT_COUNT*8/4
-    rep stosd
-    mov di, dpmi_used
-    mov cx, DPMI_LDT_COUNT/4
-    rep stosd
-    mov di, mon_vectors
-    mov cx, 256*6/4
-    rep stosd
-    mov di, dpmi_exceptions
-    mov cx, 32*6/4
-    rep stosd
-    mov byte [dpmi_exception_active], 0
-    mov di, dpmi_callbacks
-    mov cx, 16*20/4
-    rep stosd
+    mov ax, [ss:bp+44]
+    mov [dpmi_client_cs], ax
+    mov ax, [ss:bp+6]
+    mov [dpmi_client_ds], ax
+    mov ax, ss
+    mov [dpmi_client_ss], ax
     mov byte [dpmi_callback_active], 0
     mov dword [dpmi_pending_irqs], 0
     call dpmi_ivt_snapshot
-    call dpmi_pic_reset
-    mov dword [dpmi_used+1], 01010101h
-    mov di, dpmi_ldt+8
-    mov ax, [ss:bp+44]
-    mov bl, 0fah
-    call dpmi_initial_descriptor
-    mov ax, [ss:bp+6]
-    mov bl, 0f2h
-    call dpmi_initial_descriptor
-    mov ax, ss
-    call dpmi_initial_descriptor
-    mov byte [dpmi_ldt+2*8+6], 40h
-    mov byte [dpmi_ldt+3*8+6], 40h
     mov ah, 51h
     int 21h
     mov ax, bx
     mov [dpmi_psp], ax
-    mov bl, 0f2h
-    call dpmi_initial_descriptor
-    mov word [dpmi_ldt+4*8], 0ffh
     push es
     mov es, [dpmi_psp]
     mov ax, [es:2ch]
@@ -133,22 +121,27 @@ dpmi_entry:
     test ax, ax
     jz .no_environment
     mov word [es:2ch], 2fh
-    mov byte [dpmi_used+5], 1
-    call dpmi_initial_descriptor
 .no_environment:
     pop es
+    mov byte [dpmi_exit_code], 1
+    call dpmi_bridge_real_allocate
+    jc .exit
     mov byte [dpmi_active], 1
-    mov byte [dpmi_vif], 1
-    mov byte [dpmi_step_active], 0
-    mov byte [dpmi_first_exception], 0ffh
     mov byte [dpmi_exit_code], 1
     cli
+%ifdef RESIDENT_HOST
+    mov ax, [host_stack_segment]
+    mov ss, ax
+    mov sp, HOST_STACK_BYTES
+%else
     mov ax, cs
     mov ss, ax
     mov sp, dpmi_entry_stack_top
+%endif
     sti
     call monitor_run
     mov byte [dpmi_active], 0
+    call dpmi_bridge_real_free
     test ax, ax
     jz .exit
     mov byte [dpmi_exit_code], 1
@@ -179,18 +172,7 @@ dpmi_entry:
 dpmi_traps_suspended db 0
 %endif
 
-dpmi_initial_descriptor:
-    movzx eax, ax
-    shl eax, 4
-    mov word [di], 0ffffh
-    mov [di+2], ax
-    shr eax, 16
-    mov [di+4], al
-    mov [di+5], bl
-    add di, 8
-    ret
-
-bits 32
+HOST_PROTECTED
 ; A return to a 16-bit stack must preserve the client's high ESP word.
 mon_iret:
     pushad
@@ -265,6 +247,62 @@ mon_iret:
     pop eax
     iretd
 
+dpmi_client_init:
+    xor eax, eax
+    lea edi, [ebp+dpmi_ldt]
+    mov ecx, DPMI_LDT_COUNT*8/4
+    rep stosd
+    lea edi, [ebp+dpmi_used]
+    mov ecx, DPMI_LDT_COUNT/4
+    rep stosd
+    lea edi, [ebp+mon_vectors]
+    mov ecx, 256*6/4
+    rep stosd
+    lea edi, [ebp+dpmi_exceptions]
+    mov ecx, 32*6/4
+    rep stosd
+    mov byte [ebp+dpmi_exception_active], 0
+    lea edi, [ebp+dpmi_callbacks]
+    mov ecx, 16*20/4
+    rep stosd
+    mov byte [ebp+dpmi_vif], 1
+    mov byte [ebp+dpmi_step_active], 0
+    mov byte [ebp+dpmi_first_exception], 0ffh
+    call dpmi_ivt_snapshot_protected
+    call dpmi_pic_reset
+    mov dword [ebp+dpmi_used+1], 01010101h
+    lea edi, [ebp+dpmi_ldt+8]
+    movzx eax, word [ebp+dpmi_client_cs]
+    mov bl, 0fah
+    call dpmi_initial_descriptor
+    movzx eax, word [ebp+dpmi_client_ds]
+    mov bl, 0f2h
+    call dpmi_initial_descriptor
+    movzx eax, word [ebp+dpmi_client_ss]
+    call dpmi_initial_descriptor
+    mov byte [ebp+dpmi_ldt+2*8+6], 40h
+    mov byte [ebp+dpmi_ldt+3*8+6], 40h
+    movzx eax, word [ebp+dpmi_psp]
+    call dpmi_initial_descriptor
+    mov word [ebp+dpmi_ldt+4*8], 0ffh
+    movzx eax, word [ebp+dpmi_environment]
+    test eax, eax
+    jz .environment_ready
+    mov byte [ebp+dpmi_used+5], 1
+    call dpmi_initial_descriptor
+.environment_ready:
+    jmp dpmi_enter_client
+
+dpmi_initial_descriptor:
+    shl eax, 4
+    mov word [edi], 0ffffh
+    mov [edi+2], ax
+    shr eax, 16
+    mov [edi+4], al
+    mov [edi+5], bl
+    add edi, 8
+    ret
+
 dpmi_enter_client:
     lea esi, [ebp+mon_return]
     lea edi, [ebp+dpmi_exit_frame]
@@ -275,6 +313,7 @@ dpmi_enter_client:
     jc dpmi_locked_abort
     call dpmi_memory_init
     jc dpmi_locked_abort
+    call dpmi_bridge_install
     push dword 1fh
     movzx eax, word [ebp+dpmi_client_sp]
     push eax
@@ -328,7 +367,7 @@ dpmi_dispatch:
     pop edx
     pop eax
     inc dl
-    and dl, 31
+    and dl, DPMI_TRACE_COUNT-1
     mov [ebp+dpmi_trace_pos], dl
     cmp eax, 0ch
     jbe dpmi_descriptors
@@ -418,7 +457,7 @@ dpmi_dispatch:
     call .interrupt_state_value
     jmp mon_dpmi.success
 .interrupt_state_value:
-    movzx eax, byte [ebp+dpmi_vif]
+    mov al, [ebp+dpmi_vif]
     mov [ebx+36], ax
     ret
 .version:
@@ -533,6 +572,7 @@ dpmi_finish:
     rep movsd
     lea eax, [ebp+mon_kernel_stack_top]
     mov [ebp+mon_tss+4], eax
+    mov esp, eax
     lea eax, [ebp+mon_enter]
     mov [ebp+mon_switch+16], eax
     call dpmi_memory_cleanup
@@ -548,12 +588,13 @@ dpmi_finish:
 %include "host/vectors.asm"
 %include "host/switch.asm"
 %include "host/callback.asm"
+%include "host/bridge.asm"
 %include "host/interrupts.asm"
 %include "host/locked.asm"
 %include "host/pic.asm"
 %include "host/cleanup.asm"
 
-bits 16
+HOST_REAL
 dpmi_old_mux dd 0
 dpmi_audio_irq db 0ffh
 dpmi_pending_irqs dd 0
@@ -567,21 +608,28 @@ dpmi_unsupported dw 0
 dpmi_last_error dw 0
 dpmi_error_call dw 0
 dpmi_error_cx dw 0
+dpmi_client_regs times 32 db 0
+dpmi_client_ip dd 0
+dpmi_client_sp dw 0
+dpmi_client_flags dw 0
+dpmi_client_cs dw 0
+dpmi_client_ds dw 0
+dpmi_client_ss dw 0
+
+HOST_PROTECTED
 dpmi_error_frame times 60 db 0
 dpmi_unsupported_frame times 60 db 0
 dpmi_trace_pos db 0
-dpmi_trace times 32 dw 0
-dpmi_trace_args times 32*24 db 0
+dpmi_trace times DPMI_TRACE_COUNT dw 0
+dpmi_trace_args times DPMI_TRACE_COUNT*24 db 0
 dpmi_trace_end:
 dpmi_fault_ip dd 0
 dpmi_fault_regs times 16 dd 0
 dpmi_fault_bytes times 8 db 0
 dpmi_fault_stack times 64 db 0
-dpmi_client_regs times 32 db 0
-dpmi_client_ip dd 0
-dpmi_client_sp dw 0
-dpmi_client_flags dw 0
 dpmi_ldt times DPMI_LDT_COUNT*8 db 0
 dpmi_used times DPMI_LDT_COUNT db 0
+%ifndef RESIDENT_HOST
     times 2048 db 0
 dpmi_entry_stack_top:
+%endif

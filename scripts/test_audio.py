@@ -29,7 +29,7 @@ JEMM_URL = 'https://github.com/Baron-von-Riedesel/Jemm/releases/download/v5.86/J
 JEMM_SHA256 = '94838a1836f94d95dcf84d250f7968dfca2eb6b5cfa7ac664d6e01f22f0d296e'
 
 
-def build_capture(izarra_source):
+def build_capture(izarra_source, dynarec=False):
     crate = RUN / 'capture'
     crate.mkdir(parents=True, exist_ok=True)
     manifest = ['[package]', 'name = "ucdd-audio-capture"', 'version = "0.1.0"',
@@ -38,7 +38,8 @@ def build_capture(izarra_source):
                 '[dependencies]']
     for name in ('izarravm-core', 'izarravm-machine', 'izarravm-firmware'):
         path = (izarra_source.resolve() / 'crates' / name).as_posix()
-        manifest.append(f'{name} = {{ path = {json.dumps(path)}, default-features = false }}')
+        features = ', features = ["jit"]' if dynarec and name == 'izarravm-machine' else ''
+        manifest.append(f'{name} = {{ path = {json.dumps(path)}, default-features = false{features} }}')
     (crate / 'Cargo.toml').write_text('\n'.join(manifest) + '\n')
     subprocess.run(['cargo', 'build', '--release', '--manifest-path', str(crate / 'Cargo.toml')],
                    check=True)

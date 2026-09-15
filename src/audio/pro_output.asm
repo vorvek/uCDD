@@ -79,6 +79,7 @@ pro_start:
     call dsp_write
     xor al, al
     call dsp_write
+    jc .stop_failed
     mov cx, 65535
 .prime:
     cmp byte [pro_priming], 0
@@ -104,6 +105,7 @@ pro_start:
     call dsp_write
     mov al, 90h
     call dsp_write
+    jc .stop_failed
     clc
     ret
 .mono:
@@ -118,8 +120,11 @@ pro_start:
     mov al, 0d1h
     call dsp_write
     call sb_mono_next
+    jc .stop_failed
     clc
     ret
+.stop_failed:
+    call pro_stop
 .fail:
     stc
     ret

@@ -1,17 +1,15 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 16
+HOST_PROTECTED
 dpmi_pic_reset:
-    mov word [dpmi_pic_service], 0
-    mov word [dpmi_pic_read_mode], 0a0ah
+    mov word [ebp+dpmi_pic_service], 0
+    mov word [ebp+dpmi_pic_read_mode], 0a0ah
     in al, 21h
-    mov [dpmi_pic_mask], al
+    mov [ebp+dpmi_pic_mask], al
     in al, 0a1h
-    mov [dpmi_pic_mask+1], al
+    mov [ebp+dpmi_pic_mask+1], al
     ret
-
-bits 32
 ; EBX=physical IRQ. Keep the physical controller available to the mixer.
 dpmi_pic_queue:
     push eax

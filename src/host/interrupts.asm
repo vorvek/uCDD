@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 ; EBX points to the normalized exception frame.
 dpmi_step_check:
     pushad

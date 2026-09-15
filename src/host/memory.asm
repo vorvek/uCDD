@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 dpmi_memory_init:
 %ifdef DPMI_MEMORY_FAIL
     stc
@@ -281,7 +281,11 @@ dpmi_memory_release:
     add edi, 4096
     loop .page
 .empty:
-    mov dword [esi], 0
+    xor eax, eax
+    mov [esi], eax
+    mov [esi+4], eax
+    mov [esi+8], eax
+    mov [esi+12], eax
     mov ebx, 1
 .table:
     mov edx, [0fffff000h+ebx*4]
@@ -306,6 +310,7 @@ dpmi_memory_release:
     ret
 
 dpmi_memory_cleanup:
+    call dpmi_bridge_remove
     call dpmi_ivt_cleanup
     call dpmi_locked_free
     pushad
@@ -488,8 +493,11 @@ dpmi_physical_unmap:
     mov esi, dpmi_blocks
     mov ecx, DPMI_BLOCK_COUNT
 .find:
+    cmp dword [esi], 0
+    je .next
     cmp eax, [esi]
     je .found
+.next:
     add esi, 16
     loop .find
     jmp dpmi_bad_value

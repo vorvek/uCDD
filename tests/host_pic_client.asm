@@ -34,8 +34,8 @@ fail16:
     int 21h
 bits 32
 client:
-%ifdef LOCKED_NESTING
     mov [client_ds], ds
+%ifdef LOCKED_NESTING
     call setup_callback
 %endif
     mov ax, 0400h
@@ -56,6 +56,9 @@ client:
     mov ax, 0205h
     int 31h
     jc fail
+%ifdef BRIDGE_REAL
+    call bridge_test
+%else
     mov ecx, 1500000
 .wait:
     loop .wait
@@ -72,6 +75,7 @@ client:
     je fail
     cmp byte [bad_isr], 0
     jne fail
+%endif
     mov ax, 0900h
     int 31h
     movzx ebx, byte [timer_vector]
@@ -108,6 +112,18 @@ timer:
 %endif
 %ifdef LOCKED_NESTING
     jmp locked_timer
+%endif
+%ifdef BRIDGE_REAL
+%ifdef BRIDGE_NESTED
+    jmp bridge_timer
+%endif
+    push ds
+    mov ds, [cs:client_ds]
+    inc dword [timer_count]
+    pushfd
+    call far [previous]
+    pop ds
+    iretd
 %endif
     push eax
     inc dword [timer_count]
@@ -233,13 +249,121 @@ real_callback:
     call far [cs:callback_address]
     retf
 bits 32
-client_ds dw 0
 nested_started db 0
 nested_done db 0
 callback_address dd 0
 callback_regs times 50 db 0
 real_regs times 50 db 0
 %endif
+%ifdef BRIDGE_REAL
+bridge_test:
+    mov bx, ds
+    mov ax, 0006h
+    int 31h
+    jc fail
+    shl ecx, 16
+    mov cx, dx
+    shr ecx, 4
+    mov [bridge_regs+44], cx
+    mov [bridge_regs+36], cx
+    mov word [bridge_regs+42], bridge_wait
+    mov word [bridge_regs+32], 202h
+    push ds
+    pop es
+%ifdef BRIDGE_NESTED
+    push esi
+    mov esi, bridge_regs
+    mov edi, bridge_nested_regs
+    mov ecx, 50
+    rep movsb
+    pop esi
+%endif
+    mov edi, bridge_regs
+    xor cx, cx
+    mov ax, 0301h
+    int 31h
+    jc fail
+    cmp dword [bridge_regs+28], 0
+    jne fail
+    cmp dword [timer_count], 0
+    jne fail
+    mov ax, 0901h
+    int 31h
+    cmp dword [timer_count], 0
+    je fail
+    mov dword [timer_count], 0
+    mov word [bridge_regs+32], 202h
+    mov edi, bridge_regs
+    xor cx, cx
+    mov ax, 0301h
+    int 31h
+    jc fail
+    cmp dword [bridge_regs+28], 0
+    je fail
+%ifdef BRIDGE_NESTED
+    cmp byte [bridge_nested_done], 1
+    jne fail
+    cmp byte [bad_isr], 0
+    jne fail
+%endif
+    ret
+%ifdef BRIDGE_NESTED
+bridge_timer:
+    pushad
+    push ds
+    push es
+    mov ds, [cs:client_ds]
+    inc dword [timer_count]
+    pushfd
+    call far [previous]
+    cmp byte [bridge_real_active], 1
+    jne .done
+    cmp byte [bridge_nested_started], 0
+    jne .done
+    mov byte [bridge_nested_started], 1
+    sub esp, 512
+    mov dword [ss:esp], 0b12d9e55h
+    sti
+    push ds
+    pop es
+    mov edi, bridge_nested_regs
+    xor cx, cx
+    mov ax, 0301h
+    int 31h
+    jc .bad
+    cmp dword [ss:esp], 0b12d9e55h
+    je .restore
+.bad:
+    mov byte [bad_isr], 1
+.restore:
+    add esp, 512
+    mov byte [bridge_nested_done], 1
+.done:
+    pop es
+    pop ds
+    popad
+    iretd
+bridge_nested_regs times 50 db 0
+bridge_nested_started db 0
+bridge_nested_done db 0
+%endif
+bits 16
+bridge_wait:
+    mov byte [cs:bridge_real_active], 1
+    sti
+    mov ecx, 500000
+.wait:
+    dec ecx
+    jnz .wait
+    cli
+    mov byte [cs:bridge_real_active], 0
+    mov eax, [cs:timer_count]
+    retf
+bits 32
+bridge_regs times 50 db 0
+bridge_real_active db 0
+%endif
+client_ds dw 0
 host dd 0
 entry dd client
     dw 0

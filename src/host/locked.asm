@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 dpmi_locked_init:
     pushad
     xor ebx, ebx
@@ -13,20 +13,21 @@ dpmi_locked_init:
     call dpmi_page_allocate
     jc .bad
     mov [ebp+dpmi_locked_pages+ebx*4], edx
-    mov eax, [0ffc00ff8h+ebx*4]
+    mov edi, [ebp+dpmi_locked_linear+ebx*4]
+    shr edi, 10
+    add edi, 0ffc00000h
+    mov eax, [edi]
     mov [ebp+dpmi_locked_ptes+ebx*4], eax
     or edx, 7
-    mov [0ffc00ff8h+ebx*4], edx
+    mov [edi], edx
     call dpmi_flush
-    mov edi, ebx
-    shl edi, 12
-    add edi, 3fe000h
+    mov edi, [ebp+dpmi_locked_linear+ebx*4]
     xor eax, eax
     mov ecx, 1024
     cld
     rep stosd
     inc ebx
-    cmp ebx, 2
+    cmp ebx, 4
     jb .page
     mov dword [ebp+dpmi_ldt+6*8], 0f0000fffh
     mov dword [ebp+dpmi_ldt+6*8+4], 0040f23fh
@@ -52,13 +53,15 @@ dpmi_locked_free:
     test edx, edx
     jz .next
     mov eax, [ebp+dpmi_locked_ptes+ebx*4]
-    mov [0ffc00ff8h+ebx*4], eax
+    mov edi, [ebp+dpmi_locked_linear+ebx*4]
+    shr edi, 10
+    mov [0ffc00000h+edi], eax
     call dpmi_flush
     call dpmi_page_free
     mov dword [ebp+dpmi_locked_pages+ebx*4], 0
 .next:
     inc ebx
-    cmp ebx, 2
+    cmp ebx, 4
     jb .page
     popad
     ret
@@ -184,8 +187,9 @@ dpmi_locked_abort:
     mov byte [ebp+dpmi_exit_code], 1
     jmp dpmi_finish
 
-dpmi_locked_pages times 2 dd 0
-dpmi_locked_ptes times 2 dd 0
+dpmi_locked_linear dd 3fe000h,3ff000h,3fa000h,3fb000h
+dpmi_locked_pages times 4 dd 0
+dpmi_locked_ptes times 4 dd 0
 dpmi_locked_cursor dd 4096
 dpmi_locked_depth dd 0
 dpmi_exception_sp dd 0

@@ -191,6 +191,13 @@ client:
     jc fail
     mov byte [stage], 5
     xor bx, bx
+    mov ax, 2
+    int 31h
+    jc fail
+    mov fs, ax
+    mov eax, [fs:0]
+    mov [low_vector], eax
+    xor bx, bx
     mov cx, 4096
     mov ax, 0501h
     int 31h
@@ -232,6 +239,22 @@ client:
     mov ax, 0801h
     int 31h
     jnc fail
+    xor bx, bx
+    xor cx, cx
+    mov ax, 0801h
+    int 31h
+    jnc fail
+    cmp ax, 8021h
+    jne fail
+    mov cx, 0fffh
+    mov ax, 0801h
+    int 31h
+    jnc fail
+    cmp ax, 8021h
+    jne fail
+    mov eax, [fs:0]
+    cmp eax, [low_vector]
+    jne fail
     mov byte [stage], 6
     mov ebp, 256
     mov edi, handles
@@ -499,6 +522,7 @@ buffer_selector dw 0
 buffer_linear dd 0
 memory_handle dd 0
 mapping dd 0
+low_vector dd 0
 buffer times 48 db 0
 handles times 256 dd 0
 callback_regs times 50 db 0

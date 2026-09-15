@@ -4,6 +4,11 @@
 bits 16
 cpu 386
 org 100h
+%ifdef CALLBACK_IRQ
+%define CALLBACK_VECTOR 9
+%else
+%define CALLBACK_VECTOR 65h
+%endif
     mov sp, program_end+512
     mov bx, (program_end-$$+100h+512+15)/16
     mov ah, 4ah
@@ -48,6 +53,7 @@ fail16:
 bits 32
 client:
     call flags_test
+    call vif_state_test
     mov ax, 0003h
     int 31h
     jc fail
@@ -173,6 +179,25 @@ client:
 fail:
     mov ax, 4c01h
     int 21h
+vif_state_test:
+    mov ax, 0900h
+    int 31h
+    jc fail
+    cmp ax, 0901h
+    jne fail
+    int 31h
+    jc fail
+    cmp ax, 0900h
+    jne fail
+    int 31h
+    jc fail
+    cmp ax, 0901h
+    jne fail
+    int 31h
+    jc fail
+    cmp ax, 0900h
+    jne fail
+    ret
 callback_test:
     push ds
     pop es
@@ -187,7 +212,7 @@ callback_test:
     jc fail
     mov [callback_address], dx
     mov [callback_address+2], cx
-    mov bx, 65h
+    mov bx, CALLBACK_VECTOR
     mov ax, 0200h
     int 31h
     jc fail
@@ -228,7 +253,7 @@ callback_test:
     jnc fail
     cmp ax, 8024h
     jne fail
-    mov bx, 65h
+    mov bx, CALLBACK_VECTOR
     mov ax, 0200h
     int 31h
     jc fail

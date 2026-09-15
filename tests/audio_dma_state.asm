@@ -29,6 +29,9 @@ org 100h
 %endmacro
 
 start:
+%ifdef SHARED_DMA_TEST
+    call shared_dma_checks
+%endif
     write_port 0ch, 0
     write_port 2, 0
     write_port 2, 0
@@ -275,11 +278,85 @@ read:
     call port_callback
     ret
 physical_write:
+%ifdef SHARED_DMA_TEST
+    push bx
+    mov bx, [write_count]
+    mov [write_ports+bx], dx
+    mov [write_values+bx], al
+    add word [write_count], 2
+    pop bx
+%endif
     cmp dx, 0d8h
     jne .done
     mov byte [physical_flip], 0
 .done:
     ret
+%ifdef SHARED_DMA_TEST
+shared_dma_checks:
+    write_port 0ah, 6
+    cmp byte [fault], 0
+    jne failed
+    cmp word [write_count], 2
+    jne failed
+    cmp word [write_ports], 0ah
+    jne failed
+    cmp byte [write_values], 6
+    jne failed
+    write_port 0bh, 46h
+    cmp word [write_ports+2], 0bh
+    jne failed
+    cmp byte [write_values+2], 46h
+    jne failed
+    write_port 0d4h, 6
+    cmp word [write_ports+4], 0d4h
+    jne failed
+    write_port 0d6h, 46h
+    cmp word [write_ports+6], 0d6h
+    jne failed
+    write_port 0ch, 0
+    cmp word [write_ports+8], 0ch
+    jne failed
+    write_port 0d8h, 0
+    cmp word [write_ports+10], 0d8h
+    jne failed
+    mov bx, [write_count]
+    write_port 0ah, 5
+    write_port 0bh, 49h
+    cmp [write_count], bx
+    jne failed
+    mov word [write_count], 0
+    write_port 0eh, 0ffh
+    cmp word [write_count], 6
+    jne failed
+    cmp word [write_ports], 0ah
+    jne failed
+    cmp byte [write_values], 0
+    jne failed
+    cmp byte [write_values+2], 2
+    jne failed
+    cmp byte [write_values+4], 3
+    jne failed
+    cmp byte [dma8+DMA_MASK], 0
+    jne failed
+    write_port 0dch, 0
+    cmp word [write_count], 12
+    jne failed
+    cmp word [write_ports+6], 0d4h
+    jne failed
+    cmp byte [write_values+6], 0
+    jne failed
+    cmp byte [write_values+8], 2
+    jne failed
+    cmp byte [write_values+10], 3
+    jne failed
+    cmp byte [dma16+DMA_MASK], 0
+    jne failed
+    mov word [write_count], 0
+    ret
+write_count dw 0
+write_ports times 2048 db 0
+write_values times 2048 db 0
+%endif
 physical_read:
     mov al, (RING_WORDS-1-512) & 0ffh
     cmp byte [physical_flip], 0

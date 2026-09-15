@@ -1,10 +1,10 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 dpmi_state_addresses:
     mov word [ebx+36], 0
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     mov [ebx+24], ax
     mov word [ebx+32], dpmi_state_real
@@ -13,7 +13,7 @@ dpmi_state_addresses:
     mov [ebx+8], eax
     jmp mon_dpmi.success
 dpmi_raw_addresses:
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     mov [ebx+24], ax
     mov word [ebx+32], dpmi_raw_enter
@@ -53,7 +53,7 @@ dpmi_raw:
     mov [ebp+dpmi_raw_target+2], ax
     lea edi, [ebp+mon_return]
     mov dword [edi], dpmi_raw_real
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     mov [edi+4], eax
     mov eax, [esp+48]
@@ -168,7 +168,7 @@ dpmi_raw_data:
     stc
     ret
 
-bits 16
+HOST_REAL
 dpmi_state_real:
     retf
 dpmi_raw_real:
@@ -191,12 +191,13 @@ dpmi_raw_enter:
     pop ds
     mov ax, cs
     mov ss, ax
-    mov sp, dpmi_entry_stack_top
+    mov sp, dpmi_callback_real_top
     and byte [mon_gdt+24+5], 0fdh
     mov edi, [mon_base]
     lea eax, [edi+dpmi_raw_pm]
     mov [mon_switch+16], eax
-    lea esi, [edi+mon_switch]
+    mov esi, [mon_real_base]
+    add esi, mon_switch
     mov ax, 0de0ch
     int 67h
     ud2
@@ -211,4 +212,4 @@ dpmi_raw_flags dw 0
 dpmi_raw_bp dd 0
 dpmi_raw_target dd 0
 dpmi_exit_frame times 36 db 0
-bits 32
+HOST_PROTECTED

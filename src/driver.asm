@@ -21,6 +21,9 @@ busy db 0
 old_ss dw 0
 old_sp dw 0
 resident_psp dw 0
+%ifdef RESIDENT_AUDIO
+memory_mode db 0
+%endif
 caller_psp dw 0
 sda_pointer dd 0
 sda_size dw 0
@@ -574,9 +577,9 @@ control:
 %ifdef RESIDENT_AUDIO
 .audio_report:
     les di, [path_pointer]
-    cmp di, 10000h-12
+    cmp di, 10000h-26
     ja .done
-    mov ax, 1
+    mov ax, 4
     stosw
     mov ax, cs
     stosw
@@ -591,6 +594,24 @@ control:
     or al, [pm_bridge_fault]
     or al, [pm_cleanup_fault]
     xor ah, ah
+    stosw
+    mov ax, [resident_psp]
+    stosw
+    mov ax, [cd_half_allocation]
+    stosw
+    mov ax, [cd_half_segment]
+    stosw
+    mov ax, [cd_work_allocation]
+    stosw
+    mov ax, [cd_work_segment]
+    stosw
+    movzx ax, byte [memory_mode]
+    stosw
+%ifdef OWN_HOST
+    mov ax, [own_host_stack]
+%else
+    xor ax, ax
+%endif
     stosw
     mov word [control_result], 0
     jmp .done
@@ -972,6 +993,7 @@ critical_error:
 
 %ifdef RESIDENT_AUDIO
 %include "audio/resident.asm"
+audio_error_text dw audio_unit_message
 %endif
 
 pvd times 192 db 0
@@ -986,6 +1008,11 @@ install:
     mov ah, 62h
     int 21h
     mov [resident_psp], bx
+    mov es, bx
+    mov bx, 16+((program_end-$$+15)/16)+64
+    mov ah, 4ah
+    int 21h
+    jc install_dos_error
     mov ah, 30h
     int 21h
     cmp al, 5
@@ -1049,11 +1076,66 @@ install:
 %ifdef RESIDENT_AUDIO
     push es
     push bx
-    call audio_install
+    call audio_prepare
+    jc .audio_error
+%ifdef OWN_HOST
+    call resident_relocate
+    jc .audio_error
+    test ax, ax
+    jnz .relocated
+%endif
+    call audio_activate
+    jc .audio_error
     pop bx
     pop es
-    jc install_audio_error
     mov byte [audio_linked], 1
+    jmp .audio_link
+.audio_error:
+    pop bx
+    pop es
+    jmp install_audio_error
+%ifdef OWN_HOST
+.relocated:
+    pop bx
+    pop es
+    mov dx, ax
+    mov fs, ax
+    mov eax, [es:bx]
+    mov [fs:header], eax
+    mov [fs:header+30], dx
+    pushf
+    cli
+    mov word [es:bx], header
+    mov [es:bx+2], dx
+    mov byte [fs:audio_linked], 1
+    popf
+    push fs
+    pop es
+    mov ax, [es:resident_psp]
+    mov es, ax
+    mov ax, [es:2ch]
+    test ax, ax
+    jz .relocated_message
+    mov word [es:2ch], 0
+    mov es, ax
+    mov ah, 49h
+    int 21h
+.relocated_message:
+    push cs
+    pop ds
+    mov dx, installed_message
+    mov ah, 9
+    int 21h
+    mov ax, [resident_psp]
+    cli
+    mov ss, ax
+    mov sp, 100h
+    sti
+    mov dx, 16
+    mov ax, 3100h
+    int 21h
+%endif
+.audio_link:
 %endif
     mov eax, [es:bx]
     mov [header], eax
@@ -1107,24 +1189,6 @@ installed_message db 'The uCDD driver is installed.',13,10,'$'
 dos_message db 'This DOS version is not supported.',13,10,'$'
 duplicate_message db 'The uCDD driver is already installed.',13,10,'$'
 %ifdef RESIDENT_AUDIO
-install_audio_error:
-    mov dx, [audio_error_text]
-    cmp byte [audio_detach_failed], 0
-    je install_fail
-    mov ah, 9
-    int 21h
-    mov dx, trap_resident_message
-    mov ah, 9
-    int 21h
-    movzx dx, byte [unit_count]
-    imul dx, UNIT_SIZE
-    add dx, [units_base]
-    add dx, 15
-    shr dx, 4
-    add dx, 16
-    mov ax, 3101h
-    int 21h
-    jmp install_fail
 trap_resident_message db 'uCDD keeps its port-trap code in memory.',13,10,'$'
 audio_unit_message db 'CD audio currently requires one uCDD drive.',13,10,'$'
 dpmi_host_message db 'A compatible DPMI host is not available.',13,10,'$'
@@ -1134,10 +1198,169 @@ port_trap_rejected_message db 'The memory manager rejected the port-trap request
     db 'Check for another sound virtualizer.',13,10,'$'
 memory_control_message db 'DOS does not provide the required memory controls.',13,10,'$'
 xms_memory_message db 'uCDD cannot allocate XMS memory for the CD audio queue.',13,10,'$'
-dos_memory_message db 'uCDD cannot allocate DOS memory for the sound buffer.',13,10,'$'
+%ifdef EMS_QUEUE
+ems_memory_message db 'uCDD cannot allocate EMS memory for the CD audio queue.',13,10,'$'
+%endif
+cd_half_memory_message db 'uCDD cannot allocate DOS memory for the CD mix buffer.',13,10,'$'
+cd_work_memory_message db 'uCDD cannot allocate DOS memory for the CD work buffer.',13,10,'$'
+dma_memory_message db 'uCDD cannot allocate DOS memory for the DMA buffer.',13,10,'$'
 sound_card_message db 'The selected sound card did not start.',13,10
     db 'Check the settings with UCDDSET.',13,10,'$'
 internal_host_message db 'The internal DPMI host did not start.',13,10,'$'
-audio_error_text dw audio_unit_message
-%include "audio/resident_init.asm"
+install_audio_error:
+    mov dx, [audio_error_text]
+    cmp byte [audio_detach_failed], 0
+    je install_fail
+    mov ah, 9
+    int 21h
+    mov dx, trap_resident_message
+    mov ah, 9
+    int 21h
+%ifdef OWN_HOST
+    cmp word [relocated_entry+2], 0
+    je .in_place
+    mov ax, [resident_psp]
+    cli
+    mov ss, ax
+    mov sp, 100h
+    sti
+    mov dx, 16
+    jmp .stay
+.in_place:
+%endif
+    movzx dx, byte [unit_count]
+    imul dx, UNIT_SIZE
+    add dx, [units_base]
+    add dx, 15
+    shr dx, 4
+    add dx, 16
+.stay:
+    mov ax, 3101h
+    int 21h
+    jmp install_fail
+%include "audio/configure.asm"
+%include "config_path.asm"
+audio_prepare:
+    mov word [audio_error_text], audio_unit_message
+    cmp byte [unit_count], 1
+    jne .bad
+    call audio_configure
+    jc .bad
+    cmp byte [sound_card], 3
+    jne .pro_rate
+    mov dword [output_rate], 44444
+    mov dword [cd_step], (44100*65536)/44444
+    mov dword [cd_step_remainder], (44100*65536) % 44444
+    jmp .format_ready
+.pro_rate:
+    cmp byte [sound_card], 1
+    jne .format_ready
+    mov dword [output_rate], 43478
+    mov dword [cd_step], (44100*65536)/43478
+    mov dword [cd_step_remainder], (44100*65536) % 43478
+.format_ready:
+    clc
+    ret
+.bad:
+    stc
+    ret
+%ifdef OWN_HOST
+
+resident_relocate:
+    mov ax, cs
+    cmp ax, 0a000h
+    jae .in_place
+    movzx bx, byte [unit_count]
+    imul bx, UNIT_SIZE
+    add bx, [units_base]
+    add bx, 15
+    shr bx, 4
+    mov [resident_paragraphs], bx
+    push bx
+    call resident_allocate_high
+    pop dx
+    jc .in_place
+    mov [relocated_entry+2], ax
+    mov es, ax
+    mov cx, dx
+    shl cx, 3
+    xor si, si
+    xor di, di
+    rep movsw
+    mov [es:resident_paragraphs], dx
+    mov ds, ax
+    call far [cs:relocated_entry]
+    jc .activate_bad
+    push cs
+    pop ds
+    mov ax, [relocated_entry+2]
+    clc
+    ret
+.activate_bad:
+    mov dx, [audio_error_text]
+    mov cl, [audio_detach_failed]
+    push cs
+    pop ds
+    mov [audio_error_text], dx
+    mov [audio_detach_failed], cl
+    test cl, cl
+    jnz .retained
+    mov es, [relocated_entry+2]
+    mov ah, 49h
+    int 21h
+.retained:
+    stc
+    ret
+.in_place:
+    push cs
+    pop ds
+    xor ax, ax
+    clc
+    ret
+
+resident_allocate_high:
+    mov word [resident_allocation], 0
+    mov ax, 5800h
+    int 21h
+    jc .bad
+    mov [resident_strategy], ax
+    mov ax, 5802h
+    int 21h
+    jc .bad
+    mov [resident_umb], al
+    mov ax, 5803h
+    mov bx, 1
+    int 21h
+    jc .bad
+    mov ax, 5801h
+    mov bx, 40h
+    int 21h
+    jc .restore_umb
+    mov bx, [resident_paragraphs]
+    mov ah, 48h
+    int 21h
+    jc .restore
+    mov [resident_allocation], ax
+.restore:
+    mov bx, [resident_strategy]
+    mov ax, 5801h
+    int 21h
+.restore_umb:
+    movzx bx, byte [resident_umb]
+    mov ax, 5803h
+    int 21h
+    mov ax, [resident_allocation]
+    test ax, ax
+    jz .bad
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+relocated_entry dw audio_activate_far,0
+resident_allocation dw 0
+resident_strategy dw 0
+resident_umb db 0
+%endif
 %endif

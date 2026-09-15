@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 ; AX=selector, EDX=offset, ECX=length, EDI=read/write/execute (0/1/2).
 ; Returns EAX=linear address or error. Other registers stay intact.
 dpmi_buffer:

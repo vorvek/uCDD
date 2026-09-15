@@ -40,7 +40,7 @@ own_host_install:
     mov bx, 1
     int 21h
     mov ax, 5801h
-    mov bx, 80h
+    xor bx, bx
     int 21h
     mov bx, (OWN_HOST_SIZE+15)/16
     mov ah, 48h
@@ -96,10 +96,15 @@ own_host_install:
     call far [own_host_entry]
     pop bp
     jc .free_bad
+    mov es, [own_host_entry+2]
+    mov ah, 49h
+    int 21h
+    mov word [own_host_entry+2], 0
     clc
     ret
 .free_bad:
     mov dword [own_host_active], 0
+    mov word [own_host_stack], 0
     mov es, [own_host_entry+2]
     mov ah, 49h
     int 21h

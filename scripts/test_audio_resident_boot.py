@@ -43,6 +43,7 @@ def main():
     files['UCDD.CFG'] = good[:6] + struct.pack('<H', 0x240) + good[8:]
     commands = ['@ECHO OFF',
                 'INITFAIL', 'IF ERRORLEVEL 1 GOTO FAIL', 'COPY GOOD.CFG UCDD.CFG >NUL',
+                'UCDD -install -ems', 'IF NOT ERRORLEVEL 1 GOTO FAIL',
                 'UCDD -install', 'IF ERRORLEVEL 1 GOTO FAIL', 'SHSUCDX /D:UCDD0001 /L:F',
                 'IF ERRORLEVEL 246 GOTO FAIL', 'RESSTATE', 'IF ERRORLEVEL 1 GOTO FAIL',
                 'SETKEYS', 'UCDDSET', 'IF ERRORLEVEL 1 GOTO FAIL',

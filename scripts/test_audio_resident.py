@@ -23,7 +23,7 @@ from test_dos import FREEDOS_SHA256
 from test_audio import JEMM_SHA256, build_capture
 
 
-def prepare_resident_tests(izarra_source):
+def prepare_resident_tests(izarra_source, dynarec=False):
     for name, expected in (('FD14-LiteUSB.zip', FREEDOS_SHA256), ('JemmB_v586.zip', JEMM_SHA256)):
         if sha256(CACHE/name) != expected:
             raise ValueError(f'The archive hash is incorrect: {name}')
@@ -41,7 +41,7 @@ def prepare_resident_tests(izarra_source):
     disk.clear()
     for name, data in files.items():
         disk.add(name, data)
-    return build_capture(izarra_source), disk, files
+    return build_capture(izarra_source, dynarec), disk, files
 
 
 def main():
@@ -50,12 +50,21 @@ def main():
     parser.add_argument('--quake-dir', type=Path, required=True)
     parser.add_argument('--quake-bin', type=Path, required=True)
     parser.add_argument('--load-high', action='store_true')
+    parser.add_argument('--fragment-umb', action='store_true')
+    parser.add_argument('--ems', action='store_true')
     parser.add_argument('--own-host', action='store_true')
+    parser.add_argument('--dynarec', action='store_true')
     parser.add_argument('--runs', type=int, choices=(1, 2), default=2)
     parser.add_argument('--mscdex', type=Path)
     args = parser.parse_args()
+    if args.dynarec and not args.own_host:
+        parser.error('--dynarec requires --own-host')
+    if args.fragment_umb and not (args.own_host and args.load_high):
+        parser.error('--fragment-umb requires --own-host and --load-high')
+    if args.ems and not args.own_host:
+        parser.error('--ems requires --own-host')
     if args.own_host:
-        capture, base, files = prepare_resident_tests(args.izarra_source)
+        capture, base, files = prepare_resident_tests(args.izarra_source, args.dynarec)
         assemble_resident_host()
     else:
         capture = prepare_tests(args.izarra_source)
@@ -69,6 +78,9 @@ def main():
     assemble('tests/file_crc.asm', 'FILECRC.COM')
     for name in ('UCDD.EXE', 'UCDDSET.EXE', 'RESSTATE.COM', 'MARK.COM', 'FILECRC.COM'):
         files[name] = (ROOT / 'build' / name).read_bytes()
+    if args.fragment_umb:
+        assemble('tests/umb_keep.asm', 'UMBKEEP.COM', ('UMB_FREE_KIB=29', 'UMB_EXTRA_KIB=12'))
+        files['UMBKEEP.COM'] = (ROOT/'build/UMBKEEP.COM').read_bytes()
     archive_path = CACHE / 'shcd3-7.zip'
     if sha256(archive_path) != SHSUCD_SHA256:
         raise ValueError('The SHSUCDX archive hash is incorrect.')
@@ -82,13 +94,15 @@ def main():
     files['QUAKE.EXE'] = (args.quake_dir / 'QUAKE.EXE').read_bytes()
     files['UCDD.CFG'] = b'uCDD\x01\x00' + struct.pack('<H', 0x220) + bytes((7, 1, 5, 0))
     config = files['FDCONFIG.SYS'].replace(b'FILES=40', b'LASTDRIVE=Z\r\nFILES=40')
+    if args.ems:
+        config = config.replace(b'JEMMEX.EXE NOEMS', b'JEMMEX.EXE FRAME=E000')
     if args.load_high:
         config = config.replace(b'DOS=LOW', b'DOS=HIGH,UMB')
     files['FDCONFIG.SYS'] = config
     state = 'RESSTATE H' if args.load_high else 'RESSTATE'
     redirector = 'MSCDEX /D:UCDD0001 /L:F' if args.mscdex else 'SHSUCDX /D:UCDD0001 /L:F'
     checks = [('HDPMI32I -r', None),
-              (('LH ' if args.load_high else '') + 'UCDD -install', True),
+              (('LH ' if args.load_high else '') + 'UCDD -install'+(' -ems' if args.ems else ''), True),
               ('UCDD -install', False), (redirector, None),
               (state, True), ('UCDD -unmount', False), ('UCDD -mount C:\\QUAKE.CUE', True),
               ('UCDD -mount C:\\QUAKE.CUE', False), ('UCDD -mount C:\\BAD.ISO -drive F', False),
@@ -96,6 +110,8 @@ def main():
               (f'FILECRC C:\\RESCOPY.1 {zlib.crc32(resource):08X}', True)]
     if args.own_host:
         checks.pop(0)
+    if args.fragment_umb:
+        checks.insert(0, ('UMBKEEP', True))
     for game in range(args.runs):
         checks += [(f'MARK {game*2+1}', True),
                    ('QUAKE.EXE -noserial -noipx -noudp -condebug', True),
@@ -130,32 +146,78 @@ def main():
         run = run.with_name(run.name + '-own-host')
     if args.mscdex:
         run = run.with_name(run.name + '-mscdex')
+    if args.dynarec:
+        run = run.with_name(run.name + '-dynarec')
+    if args.fragment_umb:
+        run = run.with_name(run.name + '-fragmented')
+    if args.ems:
+        run = run.with_name(run.name + '-ems')
     run.mkdir(exist_ok=True)
     image, wav = run / 'quake.img', run / 'quake.wav'
     image.write_bytes(disk.image)
-    evidence = dict(passed=False, cpu='586', backend='interpreter', load_high=args.load_high,
+    backend = 'dynarec' if args.dynarec else 'interpreter'
+    evidence = dict(passed=False, cpu='586', backend=backend, load_high=args.load_high,
+                    fragmented_umb=args.fragment_umb,
                     redirector='MSCDEX' if args.mscdex else 'SHSUCDX',
                     program_sha256={n: sha256(ROOT/'build'/n) for n in ('UCDD.EXE', 'UCDDSET.EXE')},
                     disk_files=sorted(files), disk_sha256=sha256(image), capture_executable_sha256=sha256(capture))
     report = run / 'results.json'
     report.write_text(json.dumps(evidence, indent=2) + '\n')
+    steps = '450000' if args.dynarec else '1200000'
+    timeout = 180 if args.dynarec else 480
     result = subprocess.run([str(capture), str(image), str(wav)], capture_output=True, text=True,
-            timeout=480, env=dict(os.environ, UCDD_TEST_CPU='586', UCDD_TEST_STEPS='1200000',
+            encoding='utf-8', errors='replace',
+            timeout=timeout, env=dict(os.environ, UCDD_TEST_CPU='586', UCDD_TEST_STEPS=steps,
+                                 UCDD_TEST_BACKEND=backend,
                                  UCDD_TEST_DISK_EXPORT='1', UCDD_TEST_MEMORY_DUMP=str(run/'memory.bin')))
-    (run / 'quake.log').write_text(result.stdout + result.stderr)
-    print(result.stdout + result.stderr)
+    log = result.stdout + result.stderr
+    (run / 'quake.log').write_text(log, encoding='utf-8')
+    print(log.encode('ascii', 'backslashreplace').decode())
     result.check_returncode()
     exported = Fat16(wav.with_suffix('.disk.img').read_bytes())
     if exported.read('RESCOPY.1') != resource:
         raise ValueError('The installer copy differs from the image.')
     state_data = exported.read('RESSTAT.DAT')
-    version, segment, paragraphs, allocation, output, fault = struct.unpack('<6H', state_data[:12])
+    (version, segment, paragraphs, allocation, output, fault, owner,
+     half_allocation, half_segment, work_allocation, work_segment,
+     memory_mode, host_stack) = struct.unpack('<13H', state_data[:26])
+    if version != 4:
+        raise ValueError('The resident report version is incorrect.')
+    if memory_mode != int(args.ems):
+        raise ValueError('The queue memory mode is incorrect.')
+    blocks = {owner, allocation, half_allocation, work_allocation}
+    if segment != owner+16:
+        blocks.add(segment)
     evidence.update(resident_bytes=paragraphs*16, resident_segment=segment,
-                    dma_allocation_segment=allocation, dma_output_segment=output)
+                    resident_owner=owner, dma_allocation_segment=allocation,
+                    dma_output_segment=output, half_allocation_segment=half_allocation,
+                    half_segment=half_segment, work_allocation_segment=work_allocation,
+                    work_segment=work_segment, memory='ems' if memory_mode else 'xms')
     if args.own_host:
-        host_segment, host_paragraphs = struct.unpack('<2H', state_data[12:])
+        (host_segment, host_paragraphs, dma_paragraphs, half_paragraphs,
+         work_paragraphs, stack_paragraphs) = struct.unpack('<6H', state_data[26:38])
+        blocks.update((host_segment, host_stack))
+        if (dma_paragraphs*16, half_paragraphs*16, work_paragraphs*16,
+                stack_paragraphs*16) != (8192, 2128, 6144, 2048):
+            raise ValueError('A resident DOS allocation size is incorrect.')
+        block_bytes = {owner: paragraphs*16, allocation: dma_paragraphs*16,
+                       half_allocation: half_paragraphs*16,
+                       work_allocation: work_paragraphs*16,
+                       host_segment: host_paragraphs*16, host_stack: stack_paragraphs*16}
+        if segment != owner+16:
+            block_bytes[owner] = 256
+            block_bytes[segment] = paragraphs*16
+        conventional_blocks = {block for block in blocks if block < 0xa000}
+        conventional_bytes = sum(block_bytes[block] for block in conventional_blocks)
+        total_bytes = sum(block_bytes.values())
         evidence.update(host_segment=host_segment, host_resident_bytes=host_paragraphs*16,
-                        total_resident_bytes=(paragraphs+host_paragraphs)*16+8192)
+                        host_stack_segment=host_stack, host_stack_bytes=stack_paragraphs*16,
+                        total_resident_bytes=total_bytes,
+                        total_mcb_bytes=len(blocks)*16,
+                        total_memory_cost=total_bytes+len(blocks)*16,
+                        conventional_resident_bytes=conventional_bytes,
+                        conventional_mcb_bytes=len(conventional_blocks)*16,
+                        conventional_memory_cost=conventional_bytes+len(conventional_blocks)*16)
     marks = {m['id']: round(m['frame']*49716/44100) for m in json.loads(wav.with_suffix('.marks.json').read_text())}
     with wave.open(str(wav)) as source:
         params = source.getparams()

@@ -87,6 +87,8 @@ def main():
     parser.add_argument('--output', choices=('sb16', 'sbpro', 'wss', 'sb'), action='append')
     parser.add_argument('--cpu', choices=('386', '486', '586'), default='386')
     parser.add_argument('--irq', type=int, choices=(5, 7), default=7)
+    parser.add_argument('--dma8', type=int, choices=(1, 3), default=1)
+    parser.add_argument('--dma16', type=int, choices=(5, 6, 7), default=5)
     parser.add_argument('--mscdex', type=Path,
                         help='Use a private MSCDEX executable instead of SHSUCDX.')
     parser.add_argument('--himem', type=Path,
@@ -150,7 +152,7 @@ def main():
         if output == 'wss' and args.irq == 5:
             continue
         card = ('sb16', 'sbpro', 'wss', 'sb').index(output)
-        files['UCDD.CFG'] = b'uCDD\x01'+bytes([card])+struct.pack('<H', 0x530 if card == 2 else 0x220)+bytes((args.irq, 1, 5, 0))
+        files['UCDD.CFG'] = b'uCDD\x01'+bytes([card])+struct.pack('<H', 0x530 if card == 2 else 0x220)+bytes((args.irq, args.dma8, args.dma16, 0))
         for client in ('SBIRQ', 'SBRM'):
             redirector = ('MSCDEX /D:UCDD0001 /L:F' if args.mscdex else
                           'SHSUCDX /D:UCDD0001 /L:F')
@@ -180,11 +182,13 @@ def main():
                 run = run.with_name(run.name+'-386max')
             if args.irq == 5:
                 run = run.with_name(run.name+'-irq5')
+            if (args.dma8, args.dma16) != (1, 5):
+                run = run.with_name(run.name+f'-dma{args.dma8}-{args.dma16}')
             run.mkdir(parents=True, exist_ok=True)
             image, wav = run/'test.img', run/'test.wav'
             image.write_bytes(disk.image)
             evidence = dict(passed=False, cpu=args.cpu, backend='interpreter', output=output,
-                            client=client, irq=args.irq,
+                            client=client, irq=args.irq, dma8=args.dma8, dma16=args.dma16,
                             driver_sha256=hashlib.sha256(files['UCDD.EXE']).hexdigest())
             (run/'results.json').write_text(json.dumps(evidence, indent=2)+'\n')
             result = subprocess.run([str(capture), str(image), str(wav)], capture_output=True,

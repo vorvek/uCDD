@@ -5,6 +5,12 @@ bits 16
 cpu 386
 org 0
 
+%ifdef RESIDENT_AUDIO
+%ifndef NO_EMS_QUEUE
+%define EMS_QUEUE 1
+%endif
+%endif
+
 %include "disc.inc"
 %include "driver.asm"
 %include "helper.asm"

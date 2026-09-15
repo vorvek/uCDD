@@ -32,7 +32,11 @@ cd_timer:
     mov byte [busy], 1
     mov [cd_call_ss], ss
     mov [cd_call_sp], sp
+%ifdef EXTERNAL_CD_BUFFERS
+    mov ax, [cd_work_segment]
+%else
     mov ax, cs
+%endif
     mov ss, ax
     mov sp, cd_stack_top
     mov byte [cd_background_reads], 8

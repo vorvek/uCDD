@@ -11,6 +11,10 @@
 qpi dd 0
 output_segment dw 0
 output_allocation dw 0
+cd_half_allocation dw 0
+cd_half_segment dw 0
+cd_work_allocation dw 0
+cd_work_segment dw 0
 fault db 0
     db 'UERR'
 fault_port dw 0
@@ -61,14 +65,9 @@ audio_bind:
     push es
     mov ax, [si+HANDLE]
     mov [cd_handle], ax
-    mov di, cd_info
+    mov di, cd_info+INFO_STRIDE
     push ds
     pop es
-    push si
-    add si, IMAGE_PATH
-    mov cx, 128
-    rep movsb
-    pop si
     push si
     add si, STRIDE
     mov cx, 4
@@ -116,6 +115,8 @@ audio_cleanup:
     jnc .host_removed
     mov byte [audio_detach_failed], 1
 .host_removed:
+    cmp byte [audio_detach_failed], 0
+    jne .memory
     cmp word [output_allocation], 0
     je .xms
     mov es, [output_allocation]
@@ -124,6 +125,20 @@ audio_cleanup:
     mov word [output_allocation], 0
 .xms:
     call cd_close
+    cmp word [cd_half_allocation], 0
+    je .work_memory
+    mov es, [cd_half_allocation]
+    mov ah, 49h
+    int 21h
+    mov word [cd_half_allocation], 0
+.work_memory:
+    cmp word [cd_work_allocation], 0
+    je .memory
+    mov es, [cd_work_allocation]
+    mov ah, 49h
+    int 21h
+    mov word [cd_work_allocation], 0
+.memory:
     call cd_memory_restore
     cmp byte [audio_detach_failed], 0
     je .ok
@@ -153,3 +168,5 @@ audio_abort:
     retf
 
 audio_detach_failed db 0
+
+%include "audio/resident_init.asm"

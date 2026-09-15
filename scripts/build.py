@@ -57,13 +57,13 @@ def main():
     assemble('tests/exit.asm', 'FAIL.COM', ('EXIT_CODE=1',))
 
 
-def assemble_resident_host():
+def assemble_resident_host(defines=()):
     assemble('src/host/resident.asm', 'UCDDHOST.BIN', listing=True)
     host = (BUILD / 'UCDDHOST.BIN').read_bytes()
     if len(host) > 65535:
         raise ValueError('The host exceeds one segment.')
-    defines = ('RESIDENT_AUDIO=1', 'OWN_HOST=1', f'OWN_HOST_SIZE={len(host)}')
-    assemble('src/ucdd.asm', 'UCDD.EXE', (*defines, 'OWN_HOST_OFFSET=65536'), exe=True)
+    resident_defines = ('RESIDENT_AUDIO=1', 'OWN_HOST=1', f'OWN_HOST_SIZE={len(host)}', *defines)
+    assemble('src/ucdd.asm', 'UCDD.EXE', (*resident_defines, 'OWN_HOST_OFFSET=65536'), exe=True, listing=True)
     program = (BUILD / 'UCDD.EXE').read_bytes()
     if len(program) > 65536:
         raise ValueError('The driver overlaps its host overlay.')

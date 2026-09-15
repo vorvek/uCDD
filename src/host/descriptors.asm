@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 ; AX=client selector, ESI=descriptor on success. EBX/EBP stay intact.
 dpmi_descriptor:
     movzx eax, ax

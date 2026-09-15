@@ -1,43 +1,42 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 16
+HOST_REAL
 dpmi_ivt_snapshot:
     pushad
-    push ds
     push es
     mov ah, 52h
     int 21h
     mov ax, [es:bx-2]
     mov [cs:dpmi_first_mcb], ax
-    push cs
-    pop es
-    xor ax, ax
-    mov ds, ax
-    xor si, si
-    mov di, dpmi_initial_ivt
-    mov cx, 256
-    cld
-    rep movsd
 %ifdef RESIDENT_HOST
     mov eax, [cs:resident_game_vector]
     mov si, ax
     and si, 15
     shr eax, 4
-    mov ds, ax
-    mov eax, [si]
+    mov es, ax
+    mov eax, [es:si]
     mov [cs:resident_initial_game_vector], eax
 %endif
     pop es
-    pop ds
     popad
     ret
 
-bits 32
+HOST_PROTECTED
+dpmi_ivt_snapshot_protected:
+    pushad
+    xor esi, esi
+    lea edi, [ebp+dpmi_initial_ivt]
+    mov ecx, 256
+    rep movsd
+    popad
+    ret
+
 ; Restore only vectors into client resources that are about to be released.
 dpmi_ivt_cleanup:
     pushad
-    lea eax, [ebp+dpmi_callback_stubs]
+    mov eax, [ebp+mon_real_base]
+    add eax, dpmi_callback_stubs
     mov ecx, 16*6
     call dpmi_ivt_restore_range
     movzx edi, word [ebp+dpmi_first_mcb]
@@ -110,10 +109,13 @@ dpmi_ivt_restore_range:
     pushad
     mov ebx, eax
     add ecx, eax
-    xor esi, esi
+    xor edi, edi
 .vector:
+    mov eax, edi
+    shr eax, 2
+    call dpmi_bridge_real_vector
     mov eax, [esi]
-    cmp eax, [ebp+dpmi_initial_ivt+esi]
+    cmp eax, [ebp+dpmi_initial_ivt+edi]
     je .next
     mov edx, eax
     shr edx, 16
@@ -124,11 +126,11 @@ dpmi_ivt_restore_range:
     jb .next
     cmp eax, ecx
     jae .next
-    mov eax, [ebp+dpmi_initial_ivt+esi]
+    mov eax, [ebp+dpmi_initial_ivt+edi]
     mov [esi], eax
 .next:
-    add esi, 4
-    cmp esi, 256*4
+    add edi, 4
+    cmp edi, 256*4
     jb .vector
 %ifdef RESIDENT_HOST
     cmp byte [ebp+dpmi_audio_irq], 5
@@ -152,7 +154,9 @@ dpmi_ivt_restore_range:
     ret
 
 dpmi_initial_ivt times 256 dd 0
+HOST_REAL
 dpmi_first_mcb dw 0
 %ifdef RESIDENT_HOST
 resident_initial_game_vector dd 0
 %endif
+HOST_PROTECTED

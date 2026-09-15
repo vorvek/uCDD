@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 dpmi_get_real_vector:
     movzx eax, byte [ebx+24]
 %ifdef RESIDENT_HOST
@@ -14,7 +14,8 @@ dpmi_get_real_vector:
     jmp .result
 .physical:
 %endif
-    mov edx, [eax*4]
+    call dpmi_bridge_real_vector
+    mov edx, [esi]
 .result:
     mov [ebx+28], dx
     shr edx, 16
@@ -35,7 +36,8 @@ dpmi_set_real_vector:
     jmp mon_dpmi.success
 .physical:
 %endif
-    mov [eax*4], edx
+    call dpmi_bridge_real_vector
+    mov [esi], edx
     jmp mon_dpmi.success
 dpmi_get_exception:
     movzx eax, byte [ebx+24]
@@ -69,6 +71,11 @@ dpmi_write_vector:
     mov [edi+ecx], eax
     mov ax, [ebx+32]
     mov [edi+ecx+4], ax
+    lea esi, [ebp+mon_vectors]
+    cmp edi, esi
+    jne .done
+    call dpmi_bridge_update
+.done:
     jmp mon_dpmi.success
 
 ; AX=selector, EDX=offset. Keep ECX, EDX, EBX, EDI, and EBP.
@@ -271,6 +278,7 @@ dpmi_reflect:
     pop ebp
     sub ebp, .base
     mov ebx, esp
+    call dpmi_locked_capture
     cmp byte [ebp+dpmi_active], 1
     jne .bad_gate
     cmp word [ebx+44], 3bh

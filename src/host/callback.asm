@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-bits 32
+HOST_PROTECTED
 dpmi_callback_allocate:
     mov ax, [ebx]
     mov edx, [ebx+8]
@@ -61,7 +61,7 @@ dpmi_callback_allocate:
     imul eax, 6
     add eax, dpmi_callback_stubs
     mov [ebx+28], ax
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     mov [ebx+32], ax
     jmp mon_dpmi.success
@@ -73,7 +73,7 @@ dpmi_callback_allocate:
     add esp, 4
     jmp dpmi_bad_selector
 dpmi_callback_free:
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     cmp ax, [ebx+32]
     jne .bad
@@ -101,7 +101,7 @@ dpmi_callback_free:
     jz .bad
     pushad
     movzx eax, word [ebx+28]
-    add eax, ebp
+    add eax, [ebp+mon_real_base]
     mov ecx, 6
     call dpmi_ivt_restore_range
     popad
@@ -129,6 +129,16 @@ dpmi_callback_pm:
     mov ss, ax
     mov ebp, edi
     lea esp, [ebp+dpmi_callback_kernel_top]
+    mov eax, [ebp+mon_tss+4]
+    mov [ebp+dpmi_callback_context+102], eax
+    mov eax, [ebp+mon_rm_stack]
+    mov [ebp+dpmi_callback_context+106], eax
+    mov eax, [ebp+mon_rm_irq_target]
+    mov [ebp+dpmi_callback_context+110], eax
+    mov al, [ebp+mon_int_opcode+1]
+    mov [ebp+dpmi_callback_context+114], al
+    mov al, [ebp+dpmi_reflect_vector]
+    mov [ebp+dpmi_callback_context+115], al
     mov [ebp+mon_tss+4], esp
     lea esi, [ebp+mon_return]
     lea edi, [ebp+dpmi_callback_context]
@@ -150,7 +160,7 @@ dpmi_callback_pm:
     stosw
     mov word [ebp+dpmi_vif], 0100h
     mov dword [ebp+mon_return+12], dpmi_callback_real_top
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     mov [ebp+mon_return+16], eax
     movzx eax, word [ebp+dpmi_callback_index]
@@ -267,11 +277,19 @@ dpmi_callback_done:
     mov [ebp+mon_switch+16], eax
     lodsw
     mov [ebp+dpmi_vif], ax
-    lea eax, [ebp+mon_kernel_stack_top]
+    mov eax, [ebp+dpmi_callback_context+102]
     mov [ebp+mon_tss+4], eax
+    mov eax, [ebp+dpmi_callback_context+106]
+    mov [ebp+mon_rm_stack], eax
+    mov eax, [ebp+dpmi_callback_context+110]
+    mov [ebp+mon_rm_irq_target], eax
+    mov al, [ebp+dpmi_callback_context+114]
+    mov [ebp+mon_int_opcode+1], al
+    mov al, [ebp+dpmi_callback_context+115]
+    mov [ebp+dpmi_reflect_vector], al
     lea edi, [ebp+dpmi_callback_return_frame]
     mov dword [edi], dpmi_callback_real_return
-    mov eax, ebp
+    mov eax, [ebp+mon_real_base]
     shr eax, 4
     mov [edi+4], eax
     mov dword [edi+8], 23002h
@@ -301,6 +319,8 @@ dpmi_callback_done:
     mov word [esp-2], 0
     sub esp, 2
 .return_stack_ready:
+    sub esp, ebp
+    add esp, [ebp+mon_real_base]
     clts
     mov ax, 0de0ch
     call far [ebp+mon_server]
@@ -318,7 +338,7 @@ dpmi_callback_abort_entry:
     lea esp, [ebp+mon_kernel_stack_top]
     jmp dpmi_callback_abort
 
-bits 16
+HOST_REAL
 dpmi_callback_stubs:
 %assign slot 0
 %rep 16
@@ -357,7 +377,8 @@ dpmi_callback_enter:
     mov [dpmi_callback_resume], eax
     lea eax, [edi+dpmi_callback_pm]
     mov [mon_switch+16], eax
-    lea esi, [edi+mon_switch]
+    mov esi, [mon_real_base]
+    add esi, mon_switch
     mov ax, 0de0ch
     int 67h
     ud2
@@ -370,7 +391,8 @@ dpmi_callback_enter:
     mov edi, [mon_base]
     lea eax, [edi+dpmi_callback_abort_entry]
     mov [mon_switch+16], eax
-    lea esi, [edi+mon_switch]
+    mov esi, [mon_real_base]
+    add esi, mon_switch
     mov ax, 0de0ch
     int 67h
     ud2
@@ -387,17 +409,17 @@ dpmi_callback_real_return:
     mov eax, [cs:dpmi_callback_regs+28]
     iret
 
-dpmi_callbacks times 16*20 db 0
 dpmi_callback_active db 0
 dpmi_callback_index dw 0
 dpmi_callback_regs times 50 db 0
-dpmi_callback_context times 102 db 0
 dpmi_callback_resume dd 0
-    times 32 db 0
 dpmi_callback_return_frame times 36 db 0
+    times 32 db 0
     times 512 db 0
 dpmi_callback_real_top:
+HOST_PROTECTED
     times 2048 db 0
 dpmi_callback_kernel_top:
 dpmi_callback_user_top:
-bits 32
+dpmi_callbacks times 16*20 db 0
+dpmi_callback_context times 116 db 0

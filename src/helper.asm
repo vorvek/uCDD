@@ -29,6 +29,12 @@ command_entry:
     jne usage
     cmp byte [wanted_drive], 0ffh
     jne usage
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 0
+    jne usage
+%endif
+%endif
     call token
     jnc usage
     jmp command_help
@@ -50,6 +56,13 @@ command_entry:
     mov di, units_option
     call option_equal
     je .units
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    mov di, ems_option
+    call option_equal
+    je .ems
+%endif
+%endif
     jmp usage
 .install:
     cmp byte [operation], 0
@@ -70,6 +83,15 @@ command_entry:
     inc al
     mov [requested_units], al
     jmp .parse
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+.ems:
+    cmp byte [memory_mode], 0
+    jne usage
+    mov byte [memory_mode], 1
+    jmp .parse
+%endif
+%endif
 .mount:
     cmp byte [operation], 0
     jne usage
@@ -112,6 +134,12 @@ command_entry:
     mov [unit_count], al
     jmp install
 .image_command:
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 0
+    jne usage
+%endif
+%endif
     cmp byte [requested_units], 0
     jne usage
     cmp byte [operation], 0
@@ -467,6 +495,11 @@ unmount_option db '-UNMOUNT',0
 drive_option db '-DRIVE',0
 install_option db '-INSTALL',0
 units_option db '-UNITS',0
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+ems_option db '-EMS',0
+%endif
+%endif
 packet:
     db 20,0,3
     dw 0
@@ -475,7 +508,13 @@ packet:
     dd 0
     dw 2
 change_buffer db 9,0
-usage_message db 'Use UCDD -install [-units <1 to 4>].',13,10
+usage_message db 'Use UCDD -install [-units <1 to 4>]'
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    db ' [-ems]'
+%endif
+%endif
+    db '.',13,10
     db 'Use UCDD -mount <image> [-drive <letter>].',13,10
     db 'Use UCDD -unmount [-drive <letter>].',13,10
     db 'Use UCDD /? to show this information.',13,10,'$'
@@ -506,3 +545,4 @@ device_list times 26*5 db 0
 drive_list times 26 db 0
 
 %include "cue.asm"
+program_end:

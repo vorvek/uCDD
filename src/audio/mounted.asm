@@ -4,6 +4,15 @@
 %include "disc.inc"
 %define CD_QUEUE_BYTES 524288
 %define CD_READ_BYTES 4096
+%ifdef RESIDENT_AUDIO
+%define EXTERNAL_CD_BUFFERS 1
+%define CD_HALF_BYTES (PERIOD_BYTES+PERIOD_BYTES/32+4)
+%define cd_half 0
+%define cd_stage 0
+%define cd_stack_top (CD_READ_BYTES+2048)
+%define CD_HALF_PARAS ((CD_HALF_BYTES+15)/16)
+%define CD_WORK_PARAS ((cd_stack_top+15)/16)
+%endif
 
 ; ISA DMA needs conventional RAM even when the parent is loaded high.
 cd_memory_low:
@@ -62,6 +71,12 @@ cd_open:
     int 21h
     mov byte [cd_vectors_set], 1
 %endif
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 1
+    je .ems
+%endif
+%endif
     mov ax, 4300h
     int 2fh
     cmp al, 80h
@@ -78,8 +93,35 @@ cd_open:
     mov [cd_xms_handle], dx
     mov [cd_write_dest], dx
     mov [cd_read_source], dx
+    jmp .queue_ready
+%ifdef EMS_QUEUE
+.ems:
+    mov ah, 40h
+    int 67h
+    test ah, ah
+    jnz .bad
+    mov ah, 41h
+    int 67h
+    test ah, ah
+    jnz .bad
+    mov [cd_ems_frame], bx
+    mov ah, 43h
+    mov bx, CD_QUEUE_BYTES/16384
+    int 67h
+    test ah, ah
+    jnz .bad
+    mov [cd_ems_handle], dx
+%endif
+.queue_ready:
+%ifdef EXTERNAL_CD_BUFFERS
+    mov ax, [cd_work_segment]
+    mov [cd_write_address+2], ax
+    mov ax, [cd_half_segment]
+    mov [cd_read_address+2], ax
+%else
     mov [cd_write_address+2], cs
     mov [cd_read_address+2], cs
+%endif
     mov ah, 34h
     int 21h
     mov [cd_indos], bx
@@ -87,7 +129,7 @@ cd_open:
 %ifdef RESIDENT_AUDIO
     clc
     ret
-%endif
+%else
     push ds
     pop es
     xor bx, bx
@@ -147,6 +189,7 @@ cd_open:
     mov byte [cd_attached], 1
     clc
     ret
+%endif
 .bad:
     mov byte [cd_error], 1
     stc
@@ -165,7 +208,11 @@ cd_request:
     pop ds
     mov [cd_call_ss], ss
     mov [cd_call_sp], sp
+%ifdef EXTERNAL_CD_BUFFERS
+    mov ax, [cd_work_segment]
+%else
     mov ax, cs
+%endif
     mov ss, ax
     mov sp, cd_stack_top
     sti
@@ -393,11 +440,16 @@ cd_request:
 .track_found:
     test byte [si+TRACK_CONTROL], 40h
     jnz .done
-    ; Audio may end at the next track boundary, but not cross a data track.
+.range_track:
     cmp cx, 1
     je .range_ok
     cmp edx, [si+TRACK_SIZE+TRACK_START]
-    ja .done
+    jbe .range_ok
+    add si, TRACK_SIZE
+    dec cx
+    test byte [si+TRACK_CONTROL], 40h
+    jnz .done
+    jmp .range_track
 .range_ok:
     mov byte [cd_started], 0
     mov byte [cd_paused], 0
@@ -540,7 +592,7 @@ cd_head:
 cd_foreground:
     cmp dword [cd_remaining], 0
     je .done
-%ifdef RESIDENT_AUDIO
+%ifdef EXTERNAL_CD_BUFFERS
     call dos_enter
 %else
     les bx, [cd_indos]
@@ -614,9 +666,17 @@ cd_pump:
 .handle_ready:
 %endif
     mov bx, [cd_handle]
+%ifdef EXTERNAL_CD_BUFFERS
+    push ds
+    mov dx, [cd_work_segment]
+    mov ds, dx
+%endif
     mov dx, cd_stage
     mov ah, 3fh
     int 21h
+%ifdef EXTERNAL_CD_BUFFERS
+    pop ds
+%endif
     jc .bad
     cmp ax, [cd_read_size]
     jne .bad
@@ -626,8 +686,12 @@ cd_pump:
 %endif
     sub [cd_remaining], eax
     inc dword [cd_reads]
+%ifdef RESIDENT_AUDIO
+    mov es, [cd_work_segment]
+%else
     push ds
     pop es
+%endif
     mov di, cd_stage
     add di, ax
     mov cx, CD_READ_BYTES
@@ -637,9 +701,7 @@ cd_pump:
     mov eax, [cd_produced]
     and eax, CD_QUEUE_BYTES-1
     mov [cd_write_offset], eax
-    mov si, cd_write_move
-    mov ah, 0bh
-    call far [cd_xms]
+    call cd_queue_write
     cmp ax, 1
     jne .bad
     add dword [cd_produced], CD_READ_BYTES
@@ -656,6 +718,7 @@ cd_pump:
     ret
 
 %ifdef RESIDENT_AUDIO
+%define CD_QUEUE_HELPERS 1
 %include "audio/cd_resample.asm"
 %endif
 cd_begin_half:
@@ -676,9 +739,7 @@ cd_begin_half:
     mov [cd_read_offset], eax
     pushad
     push es
-    mov si, cd_read_move
-    mov ah, 0bh
-    call far [cd_xms]
+    call cd_queue_read
     cmp ax, 1
     pop es
     popad
@@ -692,6 +753,137 @@ cd_begin_half:
 .empty:
     mov byte [cd_error], 2
     ret
+
+cd_queue_write:
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 1
+    je cd_ems_write
+%endif
+%endif
+    mov si, cd_write_move
+    mov ah, 0bh
+    call far [cd_xms]
+    ret
+
+cd_queue_read:
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 1
+    je cd_ems_read
+%endif
+%endif
+    mov si, cd_read_move
+    mov ah, 0bh
+    call far [cd_xms]
+    ret
+
+%ifdef EMS_QUEUE
+cd_ems_write:
+    pushf
+    cli
+    mov eax, [cd_write_offset]
+    mov [cd_ems_offset], eax
+    mov ax, [cd_write_move]
+    mov [cd_ems_remaining], ax
+    mov ax, [cd_write_address]
+    mov [cd_ems_buffer], ax
+    mov byte [cd_ems_direction], 0
+    jmp cd_ems_transfer
+
+cd_ems_read:
+    pushf
+    cli
+    mov eax, [cd_read_offset]
+    mov [cd_ems_offset], eax
+    mov ax, [cd_read_move]
+    mov [cd_ems_remaining], ax
+    mov ax, [cd_read_address]
+    mov [cd_ems_buffer], ax
+    mov byte [cd_ems_direction], 1
+
+cd_ems_transfer:
+    pushad
+    push ds
+    push es
+    push fs
+    push cs
+    pop fs
+    mov byte [fs:cd_ems_error], 0
+    mov byte [fs:cd_ems_saved], 0
+    mov dx, [fs:cd_ems_handle]
+    mov ah, 47h
+    int 67h
+    test ah, ah
+    jnz .failed
+    mov byte [fs:cd_ems_saved], 1
+.page:
+    mov eax, [fs:cd_ems_offset]
+    mov ebx, eax
+    shr ebx, 14
+    mov dx, [fs:cd_ems_handle]
+    mov ah, 44h
+    xor al, al
+    int 67h
+    test ah, ah
+    jnz .failed
+    mov eax, [fs:cd_ems_offset]
+    and ax, 3fffh
+    mov bp, 4000h
+    sub bp, ax
+    cmp bp, [fs:cd_ems_remaining]
+    jbe .size_ready
+    mov bp, [fs:cd_ems_remaining]
+.size_ready:
+    mov cx, bp
+    cld
+    cmp byte [fs:cd_ems_direction], 0
+    jne .read
+    mov di, ax
+    mov si, [fs:cd_ems_buffer]
+    mov ds, [fs:cd_work_segment]
+    mov es, [fs:cd_ems_frame]
+    rep movsb
+    jmp .advanced
+.read:
+    mov si, ax
+    mov di, [fs:cd_ems_buffer]
+    mov ds, [fs:cd_ems_frame]
+    mov es, [fs:cd_half_segment]
+    rep movsb
+.advanced:
+    movzx eax, bp
+    add [fs:cd_ems_offset], eax
+    add [fs:cd_ems_buffer], bp
+    sub [fs:cd_ems_remaining], bp
+    jnz .page
+    jmp .restore
+.failed:
+    mov byte [fs:cd_ems_error], 1
+.restore:
+    cmp byte [fs:cd_ems_saved], 0
+    je .restored
+    mov dx, [fs:cd_ems_handle]
+    mov ah, 48h
+    int 67h
+    test ah, ah
+    jz .restored
+    mov byte [fs:cd_ems_error], 1
+.restored:
+    pop fs
+    pop es
+    pop ds
+    popad
+    cmp byte [cs:cd_ems_error], 0
+    jne .bad
+    mov ax, 1
+    popf
+    ret
+.bad:
+    xor ax, ax
+    popf
+    ret
+%endif
 
 cd_close:
     mov byte [cd_started], 0
@@ -712,6 +904,20 @@ cd_close:
     mov word [cd_handle], 0ffffh
 %endif
 .xms:
+%ifdef RESIDENT_AUDIO
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 1
+    jne .free_xms
+    mov dx, [cd_ems_handle]
+    test dx, dx
+    jz .done
+    mov ah, 45h
+    int 67h
+    mov word [cd_ems_handle], 0
+    jmp .done
+.free_xms:
+%endif
+%endif
     mov dx, [cd_xms_handle]
     test dx, dx
     jz .done
@@ -719,6 +925,7 @@ cd_close:
     call far [cd_xms]
     mov word [cd_xms_handle], 0
 .done:
+%ifndef RESIDENT_AUDIO
     cmp byte [cd_vectors_set], 0
     je .return
     push ds
@@ -732,9 +939,11 @@ cd_close:
     int 21h
     pop ds
     mov byte [cd_vectors_set], 0
+%endif
 .return:
     ret
 
+%ifndef RESIDENT_AUDIO
 cd_break:
     mov byte [cs:cd_error], 1
     iret
@@ -746,22 +955,40 @@ cd_critical:
 cd_old_break dd 0
 cd_old_critical dd 0
 cd_vectors_set db 0
+%endif
 cd_xms dd 0
 cd_parent_segment dw 0
 cd_allocation_strategy dw 0
 cd_umb_link db 0
 cd_memory_saved db 0
 cd_xms_handle dw 0
-cd_control dd 0
+%ifdef EMS_QUEUE
+cd_ems_handle dw 0
+cd_ems_frame dw 0
+cd_ems_offset dd 0
+cd_ems_remaining dw 0
+cd_ems_buffer dw 0
+cd_ems_direction db 0
+cd_ems_saved db 0
+cd_ems_error db 0
+%endif
 cd_indos dd 0
 cd_call_ss dw 0
 cd_call_sp dw 0
 cd_result dw 0
+%ifndef RESIDENT_AUDIO
+cd_control dd 0
 cd_unit db 0
 cd_attached db 0
 cd_drives dw 0
 cd_devices times 26*5 db 0
+%endif
+%ifdef RESIDENT_AUDIO
+cd_info equ $-INFO_STRIDE
+    times INFO_SIZE-INFO_STRIDE db 0
+%else
 cd_info times INFO_SIZE db 0
+%endif
 cd_handle dw 0ffffh
 cd_offset dd 0
 cd_length dd 0
@@ -795,10 +1022,9 @@ cd_read_offset dd 0
     dw 0
 cd_read_address dw cd_half,0
 %ifdef RESIDENT_AUDIO
-cd_half times PERIOD_BYTES+PERIOD_BYTES/32+4 db 0
 %else
 cd_half times PERIOD_BYTES db 0
-%endif
 cd_stage times CD_READ_BYTES db 0
     times 2048 db 0
 cd_stack_top:
+%endif

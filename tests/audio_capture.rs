@@ -8,7 +8,12 @@ use izarravm_machine::{ExecutionBackend, Machine, MachineProfile, StopReason};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().collect();
-    izarravm_machine::set_process_execution_backend(ExecutionBackend::Interpreter);
+    let backend = match std::env::var("UCDD_TEST_BACKEND").as_deref().unwrap_or("interpreter") {
+        "interpreter" => ExecutionBackend::Interpreter,
+        "dynarec" => ExecutionBackend::Automatic,
+        _ => return Err("The test backend is not valid.".into()),
+    };
+    izarravm_machine::set_process_execution_backend(backend);
     let memory_mib = std::env::var("UCDD_TEST_MEMORY_MIB").ok()
         .map(|value| value.parse()).transpose()?.unwrap_or(16);
     let mut profile = MachineProfile::gsw_386(memory_mib, VideoCard::Vega);

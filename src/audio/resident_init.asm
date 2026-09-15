@@ -1,25 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-audio_install:
-    mov word [audio_error_text], audio_unit_message
-    cmp byte [unit_count], 1
-    jne .bad
-    call audio_configure
-    jc .bad
-    cmp byte [sound_card], 3
-    jne .pro_rate
-    mov dword [output_rate], 44444
-    mov dword [cd_step], (44100*65536)/44444
-    mov dword [cd_step_remainder], (44100*65536) % 44444
-    jmp .format_ready
-.pro_rate:
-    cmp byte [sound_card], 1
-    jne .format_ready
-    mov dword [output_rate], 43478
-    mov dword [cd_step], (44100*65536)/43478
-    mov dword [cd_step_remainder], (44100*65536) % 43478
-.format_ready:
+audio_activate:
 %ifndef OWN_HOST
     mov word [audio_error_text], dpmi_host_message
     mov ax, 1687h
@@ -37,7 +19,19 @@ audio_install:
     mov word [audio_error_text], memory_control_message
     call cd_memory_low
     jc .cleanup
+    mov word [audio_error_text], cd_half_memory_message
+    call cd_half_allocate
+    jc .cleanup
+    mov word [audio_error_text], cd_work_memory_message
+    call cd_work_allocate
+    jc .cleanup
     mov word [audio_error_text], xms_memory_message
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 0
+    je .queue_message_ready
+    mov word [audio_error_text], ems_memory_message
+.queue_message_ready:
+%endif
     call cd_open
     jc .cleanup
     call virtual_irq_init
@@ -50,7 +44,7 @@ audio_install:
     jz .allocate_dma
     shr bx, 2
 .allocate_dma:
-    mov word [audio_error_text], dos_memory_message
+    mov word [audio_error_text], dma_memory_message
     mov ah, 48h
     int 21h
     jc .cleanup
@@ -86,6 +80,8 @@ audio_install:
     mov word [audio_error_text], internal_host_message
     call own_host_install
     jc .cleanup
+    call cd_half_promote
+    call cd_work_promote
     cmp byte [sb_irq], 5
     jne .dos_vector_ready
     mov eax, [old_irq]
@@ -122,6 +118,102 @@ audio_install:
     stc
     ret
 
+audio_activate_far:
+    call audio_activate
+    retf
+
+cd_half_allocate:
+    mov bx, CD_HALF_PARAS
+    mov ah, 48h
+    int 21h
+    jc .bad
+    mov [cd_half_allocation], ax
+    mov [cd_half_segment], ax
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+cd_work_allocate:
+    mov bx, CD_WORK_PARAS
+    mov ah, 48h
+    int 21h
+    jc .bad
+    mov [cd_work_allocation], ax
+    mov [cd_work_segment], ax
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+cd_half_promote:
+    mov bx, CD_HALF_PARAS
+    mov si, cd_half_allocation
+    mov di, cd_half_segment
+    mov bp, cd_read_address+2
+    jmp cd_buffer_promote
+
+cd_work_promote:
+    mov bx, CD_WORK_PARAS
+    mov si, cd_work_allocation
+    mov di, cd_work_segment
+    mov bp, cd_write_address+2
+
+cd_buffer_promote:
+    push bx
+    mov ax, 5800h
+    int 21h
+    jc .discard
+    mov [cd_buffer_strategy], ax
+    mov ax, 5802h
+    int 21h
+    jc .discard
+    mov [cd_buffer_umb], al
+    mov ax, 5803h
+    mov bx, 1
+    int 21h
+    jc .discard
+    mov ax, 5801h
+    mov bx, 40h
+    int 21h
+    jc .restore_umb_discard
+    pop bx
+    mov ah, 48h
+    int 21h
+    pushf
+    push ax
+    mov bx, [cd_buffer_strategy]
+    mov ax, 5801h
+    int 21h
+    movzx bx, byte [cd_buffer_umb]
+    mov ax, 5803h
+    int 21h
+    pop ax
+    popf
+    jc .done
+    mov es, [si]
+    push ax
+    mov ah, 49h
+    int 21h
+    pop ax
+    mov [si], ax
+    mov [di], ax
+    mov [ds:bp], ax
+.done:
+    ret
+.restore_umb_discard:
+    movzx bx, byte [cd_buffer_umb]
+    mov ax, 5803h
+    int 21h
+.discard:
+    pop bx
+    ret
+
+cd_buffer_strategy dw 0
+cd_buffer_umb db 0
+
 %include "audio/host_jemm_init.asm"
 %include "audio/host_emm_init.asm"
 host_install:
@@ -133,5 +225,3 @@ host_install:
 %ifdef OWN_HOST
 %include "audio/resident_host_init.asm"
 %endif
-%include "audio/configure.asm"
-%include "config_path.asm"

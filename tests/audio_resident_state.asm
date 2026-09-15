@@ -24,7 +24,7 @@ org 100h
     call far [entry]
     test ax, ax
     jnz fail
-    cmp word [report], 1
+    cmp word [report], 4
     jne fail
     cmp word [report+10], 0
     jne fail
@@ -43,7 +43,7 @@ org 100h
     test ax, ax
     jnz fail
     mov ax, es
-    mov [report+12], ax
+    mov [report+26], ax
     cmp byte [80h], 0
     je .host_mcb
     cmp ax, 0a000h
@@ -51,12 +51,20 @@ org 100h
 .host_mcb:
     dec ax
     mov es, ax
-    mov ax, [report+2]
-    sub ax, 16
+    mov ax, [report+12]
     cmp [es:1], ax
     jne fail
     mov ax, [es:3]
-    mov [report+14], ax
+    mov [report+28], ax
+    mov di, report+30
+    mov ax, [report+6]
+    call mcb_size
+    mov ax, [report+14]
+    call mcb_size
+    mov ax, [report+18]
+    call mcb_size
+    mov ax, [report+24]
+    call mcb_size
 %endif
     mov ax, [report+8]
     add ax, 256
@@ -84,12 +92,25 @@ fail:
     mov ax, 4c01h
     int 21h
 
+%ifdef OWN_HOST
+mcb_size:
+    dec ax
+    mov es, ax
+    mov ax, [report+12]
+    cmp [es:1], ax
+    jne fail
+    mov ax, [es:3]
+    mov [di], ax
+    add di, 2
+    ret
+%endif
+
 device times 5 db 0
 entry dd 0
 %ifdef OWN_HOST
-report_size equ 16
+report_size equ 38
 %else
-report_size equ 12
+report_size equ 26
 %endif
 report times report_size db 0
 filename db 'RESSTAT.DAT',0

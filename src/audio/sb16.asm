@@ -53,6 +53,8 @@ physical_write:
 %endif
     ret
 dsp_write:
+    cmp byte [dsp_failed], 0
+    jne .failed
     push ax
     push cx
     mov cx, 65535
@@ -68,12 +70,28 @@ dsp_write:
 %else
     mov byte [fault], 1
 %endif
+    mov byte [dsp_failed], 1
+    mov dx, 0d4h
+    cmp byte [sound_card], 0
+    je .mask
+    mov dx, 0ah
+.mask:
+    mov al, [dma_channel]
+    or al, 4
+    call physical_write
+    pop cx
+    pop ax
+.failed:
+    stc
+    ret
 .ready:
     pop cx
     pop ax
     call physical_write
+    clc
     ret
 physical_reset:
+    mov byte [dsp_failed], 0
     mov dx, [sb_base]
     add dx, 6
     mov al, 1
@@ -226,6 +244,7 @@ sb_start:
     mov dx, 0d4h
     call physical_write
     sti
+    mov byte [sb_running], 1
     mov al, 41h
     call dsp_write
     mov al, 0ach
@@ -240,9 +259,11 @@ sb_start:
     call dsp_write
     mov al, (PERIOD_FRAMES*2-1) >> 8
     call dsp_write
-    mov byte [sb_running], 1
+    jc .start_failed
     clc
     ret
+.start_failed:
+    call sb_stop
 .fail:
     stc
     ret
@@ -448,6 +469,7 @@ saved_pic db 0
 saved_irq db 0
 saved_dma db 0
 sb_running db 0
+dsp_failed db 0
 mixer_registers db 30h,31h,32h,33h
 mixer_saved times 4 db 0
 

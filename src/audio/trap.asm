@@ -295,12 +295,13 @@ port_callback:
     jmp .done
 .flip_reset:
     mov byte [si+DMA_FLIP], 0
+    call dma_shared_write
     jmp .done
 .mask:
     mov ah, al
     and ah, 3
     cmp ah, 1
-    jne .unsupported
+    jne .unowned_dma
     and al, 4
     mov [si+DMA_MASK], al
 %ifdef WSS_INPUT
@@ -311,6 +312,10 @@ port_callback:
 %endif
     jmp .done
 .mode:
+    mov ah, al
+    and ah, 3
+    cmp ah, 1
+    jne .unowned_dma
     cmp al, 49h
     je .set_mode
     cmp al, 59h
@@ -319,9 +324,17 @@ port_callback:
     mov [si+DMA_MODE], al
     jmp .done
 .clear_mask:
-    test al, al
-    jnz .unsupported
     mov byte [si+DMA_MASK], 0
+    mov dx, 0ah
+    xor al, al
+    call dma_unowned_write
+    mov al, 2
+    call dma_unowned_write
+    mov al, 3
+    call dma_unowned_write
+    jmp .done
+.unowned_dma:
+    call dma_unowned_write
     jmp .done
 .page:
     mov [si+DMA_PAGE], al
@@ -992,6 +1005,43 @@ port_callback:
     clc
     retf
 
+dma_unowned_write:
+%ifdef RESIDENT_AUDIO
+    cmp byte [sb_running], 0
+    je dma_shared_write
+    mov ah, al
+    and ah, 3
+    cmp byte [sound_card], 0
+    je .high_output
+    cmp si, dma8
+    jne dma_shared_write
+    cmp ah, [sb_dma8]
+    je .done
+    jmp dma_shared_write
+.high_output:
+    cmp si, dma16
+    jne dma_shared_write
+    add ah, 4
+    cmp ah, [sb_dma16]
+    jne dma_shared_write
+.done:
+    ret
+%else
+    jmp dma_shared_write
+%endif
+
+dma_shared_write:
+    push dx
+    cmp si, dma16
+    jne .write
+    sub dx, 0ah
+    shl dx, 1
+    add dx, 0d4h
+.write:
+    call physical_write
+    pop dx
+    ret
+
 dma_port:
     mov si, dma8
     cmp dx, 8bh
@@ -1040,7 +1090,7 @@ emm_dma_snapshot:
     push dx
     cmp si, dma16
     je .high
-    movzx bx, byte [sb_dma8]
+    mov bx, 1
     mov dx, 0ch
     xor al, al
     call physical_write
@@ -1048,8 +1098,7 @@ emm_dma_snapshot:
     shl dx, 1
     jmp .ports_ready
 .high:
-    movzx bx, byte [sb_dma16]
-    sub bx, 4
+    mov bx, 1
     mov dx, 0d8h
     xor al, al
     call physical_write
@@ -1072,17 +1121,11 @@ emm_dma_snapshot:
     mov [si+DMA_COUNT+1], al
     cmp si, dma16
     je .high_page
-    mov bx, dma8_pages
-    movzx dx, byte [sb_dma8]
-    add bx, dx
+    mov dx, 83h
     jmp .page_ready
 .high_page:
-    mov bx, dma16_pages-5
-    movzx dx, byte [sb_dma16]
-    add bx, dx
+    mov dx, 8bh
 .page_ready:
-    mov dl, [bx]
-    xor dh, dh
     call physical_read
     mov [si+DMA_PAGE], al
     mov byte [si+DMA_MASK], 0
@@ -1092,8 +1135,6 @@ emm_dma_snapshot:
     pop ax
     ret
 
-dma8_pages db 87h,83h,81h,82h
-dma16_pages db 8bh,89h,8ah
 %endif
 
 trap_ports:

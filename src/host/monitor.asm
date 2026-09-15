@@ -1,6 +1,18 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%ifndef SPLIT_HOST
+%macro HOST_REAL 0
+    bits 16
+%endmacro
+%macro HOST_PROTECTED 0
+    bits 32
+%endmacro
+%macro HOST_SCRATCH 0
+    bits 16
+%endmacro
+%endif
+
 %ifdef HOST_DPMI
 %define DPMI_LDT_COUNT 512
 %define MON_VECTOR_COUNT 256
@@ -20,7 +32,11 @@
 %endif
 %endmacro
 
-bits 16
+%ifdef RESIDENT_HOST
+HOST_SCRATCH
+%else
+HOST_REAL
+%endif
 ; DS=CS. Init: AX=client offset, BX=I/O callback offset. Run: AX=status.
 monitor_init:
     pushad
@@ -55,10 +71,15 @@ monitor_init:
     int 67h
     test ah, ah
     jnz .bad
+%ifndef RESIDENT_HOST
     xor eax, eax
     mov ax, cs
     shl eax, 4
     mov [mon_base], eax
+    mov [mon_real_base], eax
+%else
+    mov eax, [mon_base]
+%endif
     add [mon_client], eax
     add [mon_callback], eax
     lea edx, [eax+mon_gdt]
@@ -84,12 +105,21 @@ monitor_init:
 %endif
     lea edx, [eax+mon_kernel_stack_top]
     mov [mon_tss+4], edx
-    lea edx, [eax+mon_gdtr]
+    mov edx, [mon_real_base]
+    add edx, mon_gdtr
     mov [mon_switch+4], edx
-    lea edx, [eax+mon_idtr]
+    mov edx, [mon_real_base]
+    add edx, mon_idtr
     mov [mon_switch+8], edx
     lea edx, [eax+mon_enter]
     mov [mon_switch+16], edx
+%ifdef RESIDENT_HOST
+    xor eax, eax
+    mov ax, cs
+    shl eax, 4
+%else
+    mov eax, [mon_base]
+%endif
     lea eax, [eax+mon_pages+4095]
     and eax, 0fffff000h
     mov [mon_page_linear], eax
@@ -226,6 +256,11 @@ monitor_init:
     add eax, dpmi_locked_done
     mov bl, 0eeh
     call mon_gate
+    mov di, mon_idt+0f5h*8
+    mov eax, [mon_base]
+    add eax, dpmi_bridge_done
+    mov bl, 0eeh
+    call mon_gate
 %endif
     xor bp, bp
 .irq:
@@ -317,6 +352,7 @@ monitor_irq_callback:
     pop eax
     ret
 
+HOST_REAL
 monitor_run:
     cmp byte [mon_ready], 1
     jne .unavailable
@@ -341,8 +377,8 @@ monitor_run:
     mov dword [mon_eip], 0
     mov byte [mon_virtual_active], 0
     and byte [mon_gdt+24+5], 0fdh
-    mov esi, [mon_base]
-    mov edi, esi
+    mov edi, [mon_base]
+    mov esi, [mon_real_base]
     add esi, mon_switch
     mov ax, 0de0ch
     int 67h
@@ -360,7 +396,7 @@ monitor_run:
     mov ax, 0ffffh
     ret
 
-bits 32
+HOST_PROTECTED
 mon_enter:
     mov ax, 10h
     mov ds, ax
@@ -373,7 +409,7 @@ mon_enter:
     mov word [ebp+mon_status], 0
 %ifdef HOST_DPMI
     cmp byte [ebp+dpmi_active], 0
-    jne dpmi_enter_client
+    jne dpmi_client_init
 %endif
     mov ax, 2bh
     mov ds, ax
@@ -641,6 +677,19 @@ mon_dpmi:
 mon_real_int:
     mov byte [ebp+mon_rm_kind], 0
     mov [ebp+mon_int_opcode+1], al
+%ifdef HOST_DPMI
+    push esi
+    call dpmi_bridge_real_vector
+    cmp esi, 1024
+    jb .ordinary
+    push eax
+    mov eax, [esi]
+    mov [ebp+mon_rm_irq_target], eax
+    pop eax
+    mov byte [ebp+mon_rm_kind], 3
+.ordinary:
+    pop esi
+%endif
     jmp mon_real_transfer
 mon_real_far:
     mov [ebp+mon_rm_kind], al
@@ -650,6 +699,18 @@ mon_real_transfer:
     push dword [ebp+mon_rm_stack]
 %ifdef HOST_DPMI
     push word [ebp+dpmi_vif]
+    push dword [ebp+dpmi_bridge_stack]
+    cmp dword [ebp+dpmi_bridge_context], 0
+    je .stack_ready
+    cmp esp, 3fa000h
+    jb .stack_ready
+    cmp esp, 3fc000h
+    ja .stack_ready
+    push eax
+    lea eax, [esp-28]
+    mov [ebp+dpmi_bridge_stack], eax
+    pop eax
+.stack_ready:
 %endif
     pushad
     mov [ebp+mon_resume_sp], esp
@@ -681,6 +742,7 @@ mon_resume:
     mov [ebp+mon_switch+16], eax
     popad
 %ifdef HOST_DPMI
+    pop dword [ebp+dpmi_bridge_stack]
     pop word [ebp+dpmi_vif]
 %endif
     pop dword [ebp+mon_rm_stack]
@@ -978,6 +1040,8 @@ mon_leave:
     mov word [esp-2], 0
     sub esp, 2
 .return_stack_ready:
+    sub esp, ebp
+    add esp, [ebp+mon_real_base]
     clts
     mov ax, 0de0ch
     call far [ebp+mon_server]
@@ -985,7 +1049,7 @@ mon_leave:
 mon_virtual_return:
     ud2
 
-bits 16
+HOST_REAL
 mon_real_callback:
     mov [cs:mon_rm_stack], sp
     mov [cs:mon_rm_stack+2], ss
@@ -1013,6 +1077,10 @@ mon_int_opcode:
     int 0
     jmp mon_callback_done
 mon_far_callback:
+%ifdef HOST_DPMI
+    cmp byte [cs:mon_rm_kind], 3
+    je .host_irq
+%endif
     cmp byte [cs:mon_rm_kind], 2
     je .iret
     push word [cs:mon_rm_regs+32]
@@ -1024,6 +1092,13 @@ mon_far_callback:
     popf
     pushf
     call far [cs:mon_rm_regs+42]
+    jmp mon_callback_done
+%ifdef HOST_DPMI
+.host_irq:
+    push word [cs:mon_rm_regs+32]
+    cli
+    call far [cs:mon_rm_irq_target]
+%endif
 mon_callback_done:
     pushf
     pop word [cs:mon_rm_regs+32]
@@ -1049,12 +1124,14 @@ mon_callback_done:
     pop ds
     and byte [mon_gdt+24+5], 0fdh
     mov edi, [mon_base]
-    lea esi, [edi+mon_switch]
+    mov esi, [mon_real_base]
+    add esi, mon_switch
     mov ax, 0de0ch
     int 67h
 
 align 4
 mon_base dd 0
+mon_real_base dd 0
 mon_page_linear dd 0
 mon_client dd 0
 mon_callback dd 0
@@ -1076,12 +1153,17 @@ mon_virtual_active db 0
 mon_virtual_eip dd 0
 mon_virtual_flags dd 0
 mon_vcpi_flags_slot db 0
+HOST_PROTECTED
 mon_vectors times 256*6 db 0
+HOST_REAL
 mon_resume_sp dd 0
 mon_rm_target dd 0
 mon_rm_stack dd 0
 mon_rm_kind db 0
 mon_rm_regs times 50 db 0
+%ifdef HOST_DPMI
+mon_rm_irq_target dd 0
+%endif
 mon_server dd 0
     dw MON_SERVER_SELECTOR
 mon_switch dd 0,0,0
@@ -1134,6 +1216,7 @@ mon_irq_stubs:
     dw mon_irq_%+irq
 %assign irq irq+1
 %endrep
+HOST_PROTECTED
 mon_idt times 256*8 db 0
 mon_tss:
     dd 0,0
@@ -1143,7 +1226,9 @@ mon_tss:
 mon_bitmap times 8192 db 0
     db 0ffh
 mon_tss_end:
+HOST_SCRATCH
 mon_pages times 12287 db 0
+HOST_PROTECTED
     times 2048 db 0
 mon_kernel_stack_top:
 %ifndef HOST_DPMI
@@ -1152,4 +1237,7 @@ mon_kernel_stack_top:
 mon_client_stack_top:
 %ifdef HOST_DPMI
 %include "host/dpmi.asm"
+%endif
+%ifndef RESIDENT_HOST
+HOST_REAL
 %endif

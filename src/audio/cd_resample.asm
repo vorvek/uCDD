@@ -37,8 +37,12 @@ cd_begin_resampled:
     cmp ecx, eax
     jb .empty
     mov ebp, eax
+%ifdef EXTERNAL_CD_BUFFERS
+    mov es, [cd_half_segment]
+%else
     push ds
     pop es
+%endif
     push ax
     mov cx, di
     mov di, cd_half
@@ -55,9 +59,13 @@ cd_begin_resampled:
 .first:
     mov [cd_read_move], eax
     mov word [cd_read_address], cd_half
+%ifdef CD_QUEUE_HELPERS
+    call cd_queue_read
+%else
     mov si, cd_read_move
     mov ah, 0bh
     call far [cd_xms]
+%endif
     cmp ax, 1
     jne .empty
     mov eax, [cd_read_move]
@@ -66,14 +74,22 @@ cd_begin_resampled:
     add [cd_read_address], ax
     mov [cd_read_move], ebp
     mov dword [cd_read_offset], 0
+%ifdef CD_QUEUE_HELPERS
+    call cd_queue_read
+%else
     mov si, cd_read_move
     mov ah, 0bh
     call far [cd_xms]
+%endif
     cmp ax, 1
     jne .empty
 .ready:
+%ifdef EXTERNAL_CD_BUFFERS
+    mov gs, [cd_half_segment]
+%else
     push ds
     pop gs
+%endif
     mov word [cd_position], cd_half
     mov byte [cd_valid], 1
 .restore:

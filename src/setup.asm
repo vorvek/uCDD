@@ -530,7 +530,7 @@ suggest_blaster:
 
 psp dw 0
 resident_entry dd 0
-resident_report times 12 db 0
+resident_report times 26 db 0
 selected db 0
 result db 0
 status dw initial_message
