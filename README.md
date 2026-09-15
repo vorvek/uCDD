@@ -28,16 +28,8 @@ A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also 
 
 Copy `UCDD.EXE` and `UCDDSET.EXE` into one directory. Run `UCDDSET` before the first audio install. If there's no `UCDD.CFG` file, `UCDD -install` will start `UCDDSET` itself.
 
+AUTOEXEC.BAT:
 ```dos
-REM CONFIG.SYS
-DEVICE=C:\DOS\JEMMEX.EXE NOEMS
-DOS=HIGH,UMB
-FILES=64
-LASTDRIVE=Z
-```
-
-```dos
-REM AUTOEXEC.BAT
 SET BLASTER=A220 I7 D1 H5 T6
 LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
