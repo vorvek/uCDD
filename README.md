@@ -18,6 +18,8 @@ The game sees a Sound Blaster 16 at `A220 I5 D1 H5`. `UCDDSET.EXE` stores the re
 
 A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also needs XMS and a memory manager that can trap I/O ports. [JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) is the usual choice.
 
+Note: CD-Audio Performance on anything below a Pentium processor may be lacklustre. Uncompressed audio requires around 800KB/s of constant read speed.
+
 Copy `UCDD.EXE` and `UCDDSET.EXE` into one directory. Run `UCDDSET` before the first audio install: arrow keys change a field, F2 saves and plays a speaker test, F10 saves and exits, Esc exits without saving. If `UCDD.CFG` is missing, `UCDD -install` starts `UCDDSET` itself.
 
 ```dos
@@ -99,5 +101,3 @@ That writes `build/UCDD.EXE` and `build/UCDDSET.EXE`. Omit `--resident-audio` fo
 ## License
 
 Copyright (C) 2026 vorvek. μCDD is licensed under [GNU GPL version 3 only](LICENSE). No warranty; see the license for its terms.
-
-μCDD packages do not include DOS, a memory manager, a CD redirector, or game files. Install those separately.
