@@ -1,8 +1,6 @@
 # μCDD
 
-**Eternal betaware**
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/vorvek42886)
+**Eternal betaware** [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/vorvek42886)
 
 μCDD is a virtual CD-ROM driver for DOS. It mounts disc images from a local hard disk and emulates CD-Audio on the same sound card the game already uses.
 
