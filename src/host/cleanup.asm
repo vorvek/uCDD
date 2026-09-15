@@ -133,7 +133,8 @@ dpmi_ivt_restore_range:
     cmp edi, 256*4
     jb .vector
 %ifdef RESIDENT_HOST
-    cmp byte [ebp+dpmi_audio_irq], 5
+    mov al, [ebp+dpmi_guest_irq]
+    cmp [ebp+dpmi_audio_irq], al
     jne .done
     mov esi, [ebp+resident_game_vector]
     mov eax, [esi]

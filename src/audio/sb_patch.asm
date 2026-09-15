@@ -57,8 +57,11 @@ sb_real_irq:
     jz .done
     xor ax, ax
     mov es, ax
-    mov eax, [es:0dh*4]
-    cmp byte [sb_irq], 5
+    movzx bx, byte [guest_vector]
+    shl bx, 2
+    mov eax, [es:bx]
+    mov bl, [guest_irq]
+    cmp [sb_irq], bl
     jne .vector
     mov eax, [sb_game_vector]
 .vector:
@@ -70,7 +73,7 @@ sb_real_vector dd 0
 sb_real_pending db 0
 
 sb_dos_vector:
-    cmp al, 0dh
+    cmp al, [cs:guest_vector]
     jne .chain
     cmp ah, 35h
     je .get
@@ -86,5 +89,7 @@ sb_dos_vector:
     jmp far [cs:sb_old_dos]
 
 sb_game_vector dd 0
+sb_host_guest_irq dw guest_irq
+sb_host_ports dw trap_ports
 sb_old_dos dd 0
 %endif

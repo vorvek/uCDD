@@ -1276,11 +1276,14 @@ install_audio_error:
     int 21h
     jmp install_fail
 %include "audio/configure.asm"
+%include "audio/guest_config.asm"
 %include "config_path.asm"
 audio_prepare:
     mov word [audio_error_text], audio_unit_message
     cmp byte [unit_count], 1
     jne .bad
+    call guest_configure
+    jc .bad
     call audio_configure
     jc .bad
     cmp byte [sound_card], 3

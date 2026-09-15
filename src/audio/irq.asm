@@ -3,7 +3,7 @@
 
 %include "audio/sb_state.inc"
 
-; One virtual, edge-triggered master-PIC input at IRQ 5.
+; One virtual, edge-triggered master-PIC input.
 virtual_irq_init:
     mov dx, 21h
     call physical_read
@@ -13,7 +13,7 @@ virtual_irq_init:
     mov al, 1
     shl al, cl
     mov [physical_irq_bit], al
-    or al, 20h
+    or al, [guest_irq_bit]
     not al
     mov [pic_visible_bits], al
     ret
@@ -116,7 +116,8 @@ virtual_irq_tick:
     jne .done
     mov al, [game_irq_bit]
     mov [virtual_dsp_irq], al
-    mov byte [virtual_pic_request], 20h
+    mov al, [guest_irq_bit]
+    mov [virtual_pic_request], al
 .done:
     ret
 
@@ -128,17 +129,19 @@ virtual_irq_take:
     push cs
     pop ds
     xor bx, bx
-    test byte [virtual_pic_mask], 20h
+    mov al, [guest_irq_bit]
+    test [virtual_pic_mask], al
     jnz .done
     cmp byte [virtual_pic_service], 0
     jne .done
     cmp byte [virtual_pic_request], 0
     je .done
     call physical_pic_isr
-    test al, 3fh
+    test al, [guest_irq_priority]
     jnz .done
     mov byte [virtual_pic_request], 0
-    mov byte [virtual_pic_service], 20h
+    mov al, [guest_irq_bit]
+    mov [virtual_pic_service], al
     inc bx
 .done:
     mov ax, bx
@@ -193,7 +196,7 @@ virtual_pic_write:
     je .select
     cmp al, 20h
     je .eoi
-    cmp al, 65h
+    cmp al, [guest_eoi]
     je .virtual_eoi
     mov ah, al
     and ah, 0f8h
@@ -214,7 +217,7 @@ virtual_pic_write:
     call physical_pic_isr
     cmp byte [virtual_pic_service], 0
     je .hardware_service
-    test al, 1fh
+    test al, [guest_irq_higher]
     jnz .physical_eoi
     jmp .virtual_eoi
 .hardware_service:
@@ -228,9 +231,11 @@ virtual_pic_write:
     jmp .physical
 .mask:
     mov [virtual_pic_mask], al
-    and al, 0dfh
+    mov ah, [guest_irq_bit]
+    not ah
+    and al, ah
     mov ah, [physical_pic_initial]
-    and ah, 20h
+    and ah, [guest_irq_bit]
     or al, ah
     mov ah, [physical_irq_bit]
     not ah

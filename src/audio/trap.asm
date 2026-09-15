@@ -240,7 +240,18 @@ port_callback:
     jbe .wss_port
 .normal_port:
 %endif
+    cmp dx, 200h
+    jb .dma_port
+    mov bx, dx
+    sub bx, [guest_base]
+    cmp bx, 0fh
+    ja .not_sb_port
+    lea dx, [bx+220h]
+.not_sb_port:
+    jmp .dispatch
+.dma_port:
     call dma_port
+.dispatch:
     test cl, 4
     jz .read
 %ifdef VIRTUAL_IRQ
@@ -313,6 +324,10 @@ port_callback:
     jmp .done
 .mixer_data:
     movzx bx, byte [virtual_mixer_index]
+    cmp bl, 80h
+    je .done
+    cmp bl, 81h
+    je .done
     mov [virtual_mixer+bx], al
     jmp .done
 .flip_reset:
@@ -322,7 +337,13 @@ port_callback:
 .mask:
     mov ah, al
     and ah, 3
-    cmp ah, 1
+    mov bx, [guest_dma8]
+    cmp si, dma8
+    je .mask_channel
+    mov bx, [guest_dma16]
+    sub bl, 4
+.mask_channel:
+    cmp ah, bl
     jne .unowned_dma
     and al, 4
     mov [si+DMA_MASK], al
@@ -336,8 +357,16 @@ port_callback:
 .mode:
     mov ah, al
     and ah, 3
-    cmp ah, 1
+    mov bx, [guest_dma8]
+    cmp si, dma8
+    je .mode_channel
+    mov bx, [guest_dma16]
+    sub bl, 4
+.mode_channel:
+    cmp ah, bl
     jne .unowned_dma
+    and al, 0fch
+    or al, 1
     cmp al, 49h
     je .set_mode
     cmp al, 59h
@@ -348,12 +377,21 @@ port_callback:
 .clear_mask:
     mov byte [si+DMA_MASK], 0
     mov dx, 0ah
+    mov bx, [guest_dma8]
+    cmp si, dma8
+    je .clear_channels
+    mov bx, [guest_dma16]
+    sub bl, 4
+.clear_channels:
     xor al, al
+.clear_channel:
+    cmp al, bl
+    je .next_channel
     call dma_unowned_write
-    mov al, 2
-    call dma_unowned_write
-    mov al, 3
-    call dma_unowned_write
+.next_channel:
+    inc al
+    cmp al, 4
+    jb .clear_channel
     jmp .done
 .unowned_dma:
     call dma_unowned_write
@@ -452,7 +490,8 @@ port_callback:
 .force_irq:
 %ifdef VIRTUAL_IRQ
     mov byte [virtual_dsp_irq], 1
-    mov byte [virtual_pic_request], 20h
+    mov al, [guest_irq_bit]
+    mov [virtual_pic_request], al
 %endif
     jmp .done
 .resume8:
@@ -1066,11 +1105,17 @@ dma_shared_write:
 
 dma_port:
     mov si, dma8
-    cmp dx, 8bh
+    cmp dx, [guest_dma_ports+4]
+    je .low_page
+    cmp dx, [guest_dma_ports]
+    je .low_address
+    cmp dx, [guest_dma_ports+2]
+    je .low_count
+    cmp dx, [guest_dma_ports+10]
     je .page
-    cmp dx, 0c4h
+    cmp dx, [guest_dma_ports+6]
     je .address
-    cmp dx, 0c6h
+    cmp dx, [guest_dma_ports+8]
     je .count
     cmp dx, 0d4h
     jb .done
@@ -1081,6 +1126,15 @@ dma_port:
     sub dx, 0c0h
     shr dx, 1
     jmp .high
+.low_page:
+    mov dx, 83h
+    ret
+.low_address:
+    mov dx, 2
+    ret
+.low_count:
+    mov dx, 3
+    ret
 .page:
     mov dx, 83h
     jmp .high
@@ -1112,7 +1166,7 @@ emm_dma_snapshot:
     push dx
     cmp si, dma16
     je .high
-    mov bx, 1
+    mov bx, [guest_dma8]
     mov dx, 0ch
     xor al, al
     call physical_write
@@ -1120,7 +1174,8 @@ emm_dma_snapshot:
     shl dx, 1
     jmp .ports_ready
 .high:
-    mov bx, 1
+    mov bx, [guest_dma16]
+    sub bx, 4
     mov dx, 0d8h
     xor al, al
     call physical_write
@@ -1143,10 +1198,10 @@ emm_dma_snapshot:
     mov [si+DMA_COUNT+1], al
     cmp si, dma16
     je .high_page
-    mov dx, 83h
+    mov dx, [guest_dma_ports+4]
     jmp .page_ready
 .high_page:
-    mov dx, 8bh
+    mov dx, [guest_dma_ports+10]
 .page_ready:
     call physical_read
     mov [si+DMA_PAGE], al

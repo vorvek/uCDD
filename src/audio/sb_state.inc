@@ -2,6 +2,16 @@
 ; SPDX-License-Identifier: GPL-3.0-only
 %ifndef SB_STATE
 %define SB_STATE 1
+guest_base dw 220h
+guest_irq dw 5
+guest_dma8 dw 1
+guest_dma16 dw 5
+guest_vector db 0dh
+guest_irq_bit db 20h
+guest_irq_priority db 3fh
+guest_irq_higher db 1fh
+guest_eoi db 65h
+guest_dma_ports dw 2,3,83h,0c4h,0c6h,8bh
 sb_single db 0
 sb_finished db 0
 sb_paused db 0

@@ -66,7 +66,11 @@ irq_bridge:
     jc .error
     cmp word [irq_regs+28], 1
     jne .done
+%ifdef RESIDENT_AUDIO
+    mov bl, [guest_vector]
+%else
     mov bl, 0dh
+%endif
     mov ax, 0204h
     int 31h
     jc .error

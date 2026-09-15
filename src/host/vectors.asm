@@ -5,9 +5,10 @@ HOST_PROTECTED
 dpmi_get_real_vector:
     movzx eax, byte [ebx+24]
 %ifdef RESIDENT_HOST
-    cmp al, 0dh
+    cmp al, [ebp+dpmi_guest_vector]
     jne .physical
-    cmp byte [ebp+dpmi_audio_irq], 5
+    mov ah, [ebp+dpmi_guest_irq]
+    cmp [ebp+dpmi_audio_irq], ah
     jne .physical
     mov esi, [ebp+resident_game_vector]
     mov edx, [esi]
@@ -27,9 +28,10 @@ dpmi_set_real_vector:
     shl edx, 16
     mov dx, [ebx+28]
 %ifdef RESIDENT_HOST
-    cmp al, 0dh
+    cmp al, [ebp+dpmi_guest_vector]
     jne .physical
-    cmp byte [ebp+dpmi_audio_irq], 5
+    mov ah, [ebp+dpmi_guest_irq]
+    cmp [ebp+dpmi_audio_irq], ah
     jne .physical
     mov esi, [ebp+resident_game_vector]
     mov [esi], edx

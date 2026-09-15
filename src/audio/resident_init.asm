@@ -82,7 +82,8 @@ audio_activate:
     jc .cleanup
     call cd_half_promote
     call cd_work_promote
-    cmp byte [sb_irq], 5
+    mov al, [guest_irq]
+    cmp [sb_irq], al
     jne .dos_vector_ready
     mov eax, [old_irq]
     mov [sb_game_vector], eax

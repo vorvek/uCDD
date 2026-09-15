@@ -597,6 +597,8 @@ dpmi_finish:
 HOST_REAL
 dpmi_old_mux dd 0
 dpmi_audio_irq db 0ffh
+dpmi_guest_irq db 5
+dpmi_guest_vector db 0dh
 dpmi_pending_irqs dd 0
 dpmi_active db 0
 dpmi_psp dw 0

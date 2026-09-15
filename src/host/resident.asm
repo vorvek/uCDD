@@ -35,6 +35,25 @@ resident_host_init:
     push es
     pushad
     mov [cs:dpmi_audio_irq], al
+    push ax
+    push si
+    push di
+    push cx
+    mov si, [ds:bp+4]
+    mov al, [si]
+    mov [cs:dpmi_guest_irq], al
+    add al, 8
+    mov [cs:dpmi_guest_vector], al
+    mov si, [ds:bp+6]
+    push cs
+    pop es
+    mov di, resident_ports
+    mov cx, resident_port_count-2
+    rep movsw
+    pop cx
+    pop di
+    pop si
+    pop ax
     mov [cs:mon_vcpi_flags_slot], ah
     mov [cs:resident_traps], cx
     mov [cs:resident_traps+2], ds
@@ -521,7 +540,8 @@ resident_pending:
     call mon_real_far
     cmp word [edi+28], 1
     jne .none
-    mov eax, 0eh
+    movzx eax, byte [ebp+dpmi_guest_vector]
+    inc eax
     ret
 .none:
     xor eax, eax

@@ -4,15 +4,21 @@
 
 μCDD is a virtual CD-ROM driver for DOS. It mounts disc images from a local hard disk and emulates CD-Audio on the same sound card the game already uses.
 
+## Before you load the driver
+
+- **Set `BLASTER` first.** Run `SET BLASTER=...` before `UCDD -install`, and use those settings in the game. The driver reads the virtual I/O address, IRQ, and DMA channels once, at installation. Changing `BLASTER` later does not change the loaded driver; restart DOS to use different settings.
+- **Set up the physical card with `UCDDSET`.** It saves the card type, I/O address, IRQ, and DMA channels in `UCDD.CFG`. These are separate from the virtual settings in `BLASTER`. The game's settings and the physical card's settings can differ.
+- **Do not load the audio driver for games that use ADPCM sound.** ADPCM is not supported or passed through. Its playback commands would conflict with the PCM output that μCDD uses to mix game sound and CD audio. Boot DOS without `UCDD -install` before playing those games. Unmounting an image does not unload the driver.
+
 ## How it works
 
-`UCDD.EXE` installs as a DOS CD-ROM device named `UCDD0001`. A redirector such as [SHSUCDX](http://adoxa.altervista.org/shsucdx/) assigns it a drive letter. Later `-mount` and `-unmount` commands talk to that resident driver. The installer is discarded after load.
+`UCDD.EXE` installs as a DOS CD-ROM device named `UCDD0001`. A redirector such as [SHSUCDX](http://adoxa.altervista.org/shsucdx/) assigns it a drive letter. The installer is discarded after load. Use `-mount` and `-unmount` to change the image in the resident driver.
 
-CD-Audio is mixed, not played on a second device. μCDD traps the game's sound-card I/O ports and DMA channel. When the game sends PCM, the driver mixes CD samples from the image into the same DMA buffer and outputs the mix on the physical card. A small internal host keeps those traps in place for protected-mode games.
+μCDD traps the game's sound-card I/O and DMA access, converts its PCM sound, and mixes it with CD samples from the image. The physical sound card plays the combined stream. An internal host keeps the traps in place for protected-mode games.
 
-The virtual Sound Blaster is fixed at `A220 I5 D1 H5`. It identifies as an SB16 (DSP 4.05) and accepts original Sound Blaster, Sound Blaster Pro, and SB16 PCM commands, so a game can be set to any of those types. Games can also use a virtual Windows Sound System codec at 530h.
+The virtual Sound Blaster accepts original Sound Blaster, SB Pro, and SB16 PCM commands. It identifies as an SB16 (DSP 4.05); the `T` field does not change this. Games can also use a virtual Windows Sound System codec at 530h, with the same 8-bit DMA channel selected by `D`.
 
-`UCDDSET.EXE` stores the physical card (Sound Blaster / 1.5 / 2, SB Pro, SB16, or Windows Sound System) and its I/O address, IRQ, and DMA in `UCDD.CFG`. The game's card and the physical card do not have to match.
+Supported `BLASTER` settings are `A220`, `A240`, `A260`, or `A280`; `I5` or `I7`; `D1` or `D3`; and `H5`, `H6`, or `H7`. Set `A`, `I`, and `D`. If `H` is absent, the driver uses `H5`. If `BLASTER` is absent, it uses `A220 I5 D1 H5`. Invalid settings stop installation.
 
 ## Usage
 
@@ -32,16 +38,14 @@ LASTDRIVE=Z
 
 ```dos
 REM AUTOEXEC.BAT
+SET BLASTER=A220 I7 D1 H5 T6
 LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
-SET BLASTER=A220 I5 D1 H5 T6
 ```
 
 `HIMEM` with `EMM386` and `MSCDEX` are also supported.
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
-
-Point Sound Blaster games at the virtual card (`BLASTER=A220 I5 D1 H5 T6`), not at the physical settings in `UCDD.CFG`. Windows Sound System games use port 530h. `BLASTER` does not move the virtual ports.
 
 ```dos
 UCDD -mount C:\IMAGES\GAME.CUE

@@ -141,12 +141,15 @@ host_emm_register:
     xor bx, bx
     mov cx, host_emm_high_count
     mov si, host_emm_ports_high
-    mov edx, 05370224h
+    mov edx, 05370000h
+    mov dx, [guest_base]
+    add dx, 4
     cmp word [host_emm_min_port], 2
     ja .install
     mov cx, host_emm_full_count
     mov si, host_emm_ports_full
-    mov edx, 05370002h
+    mov edx, 05370000h
+    mov dx, [guest_dma_ports]
 .install:
     mov di, [units_base]
     add di, UNIT_SIZE

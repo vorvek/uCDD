@@ -19,7 +19,12 @@
     mov [wss_board], al
     mov ah, al
     and al, 3
-    cmp al, 2
+    mov bl, 2
+    cmp byte [guest_dma8], 1
+    je .wss_dma_channel
+    mov bl, 3
+.wss_dma_channel:
+    cmp al, bl
     jne .unsupported
     mov al, ah
     shr al, 3

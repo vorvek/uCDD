@@ -104,8 +104,15 @@ dpmi_pic_reflect:
     ret
 
 dpmi_pic_audio_allowed:
-    test byte [ebp+dpmi_pic_service], 3fh
-    jnz .no
+    push ecx
+    mov cl, [ebp+dpmi_guest_irq]
+    mov ch, 1
+    shl ch, cl
+    mov cl, ch
+    dec ch
+    or cl, ch
+    test [ebp+dpmi_pic_service], cl
+    jnz .blocked
     push eax
     movzx eax, word [ebp+dpmi_pic_mask]
     not eax
@@ -114,12 +121,17 @@ dpmi_pic_audio_allowed:
     jz .cascade
     and eax, 0ffh
 .cascade:
-    test eax, 0ff1fh
+    test eax, 0ff00h
+    jnz .pending
+    test al, ch
+.pending:
     pop eax
-    jnz .no
+    jnz .blocked
+    pop ecx
     clc
     ret
-.no:
+.blocked:
+    pop ecx
     stc
     ret
 
