@@ -10,7 +10,9 @@
 
 CD-Audio is mixed, not played on a second device. μCDD traps the game's Sound Blaster I/O ports and DMA channel. When the game sends PCM, the driver mixes CD samples from the image into the same DMA buffer and outputs the mix on the physical card. A small internal host keeps those traps in place for protected-mode games.
 
-The game sees a Sound Blaster 16 at `A220 I5 D1 H5`. `UCDDSET.EXE` stores the real card's I/O address, IRQ, and DMA in `UCDD.CFG`.
+The game sees a Sound Blaster 16 at your system's BLASTER environment variable (eg `A220 I5 D1 H5`). `UCDDSET.EXE` stores the real card's I/O address, IRQ, and DMA in `UCDD.CFG`.
+
+Microsoft Sound System / Windows Sound System is also supported.
 
 ## Usage
 
@@ -18,7 +20,7 @@ A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also 
 
 **Note:** CD-Audio Performance on anything below a Pentium processor may be lacklustre. Uncompressed audio requires around 800KB/s of constant read speed.
 
-Copy `UCDD.EXE` and `UCDDSET.EXE` into one directory. Run `UCDDSET` before the first audio install: arrow keys change a field, F2 saves and plays a speaker test, F10 saves and exits, Esc exits without saving. If `UCDD.CFG` is missing, `UCDD -install` starts `UCDDSET` itself.
+Copy `UCDD.EXE` and `UCDDSET.EXE` into one directory. Run `UCDDSET` before the first audio install. If there's no `UCDD.CFG` file, `UCDD -install` will start `UCDDSET` itself.
 
 ```dos
 REM CONFIG.SYS
@@ -35,9 +37,11 @@ C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 SET BLASTER=A220 I5 D1 H5 T6
 ```
 
-Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs exist.
+`HIMEM` with `EMM386` and `MSCDEX` are also supported.
 
-Point the game at the virtual `BLASTER` resources, not at the physical card.
+Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
+
+Point the game at the virtual `BLASTER` resources, which can be the same as the physical card, or not.
 
 ```dos
 UCDD -mount C:\IMAGES\GAME.CUE
@@ -67,11 +71,11 @@ UCDD -unmount C:\IMAGES\GAME.MDM
 
 The first disc is mounted. At the game's disc-change prompt, press **Ctrl+Alt+1** through **Ctrl+Alt+9** for discs 1 through 9, or **Ctrl+Alt+0** for disc 10. Left and right Ctrl/Alt both work. The number key still reaches the game. A held number selects its disc once. A number with no disc assigned does nothing.
 
-Only one MDM file can be mounted at a time, on one virtual unit. The usual `-drive` selection applies. Mounting a single image over that unit releases the list.
+Only one MDM file can be mounted at a time, on one virtual unit. The usual `-drive` selection applies. Mounting a single image over that unit releases the list. It can also be unmounted normally.
 
 Paths may be absolute or relative to the MDM file. A CUE sheet's BIN path is relative to the CUE sheet. Nested MDM files are not supported. Blank lines and spaces at the start or end of a line are ignored. Only the first ten non-empty lines count.
 
-All listed images are opened before the mount replaces the current disc. If a listed image is missing or invalid, the current image stays mounted. Keep the image files in place while the list is mounted, and give DOS enough file handles. A locked drive waits, then applies the last requested disc. MDM needs XMS.
+All listed images are opened before the mount replaces the current disc. If a listed image is missing or invalid, the current image stays mounted. Give DOS enough file handles. If the drive is in use, μCDD waits, then applies the last requested disc. MDM files require XMS.
 
 ### Images
 
