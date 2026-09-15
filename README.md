@@ -12,7 +12,7 @@
 
 ## How it works
 
-`UCDD.EXE` installs as a DOS CD-ROM device named `UCDD0001`. A redirector such as [SHSUCDX](http://adoxa.altervista.org/shsucdx/) assigns it a drive letter. The installer is discarded after load. Use `-mount` and `-unmount` to change the image in the resident driver.
+`UCDD.EXE` installs as a DOS CD-ROM device. A redirector such as [SHSUCDX](http://adoxa.altervista.org/shsucdx/) assigns it a drive letter. The installer is discarded after load. Use `-mount` and `-unmount` to change the image in the resident driver.
 
 μCDD traps the game's sound-card I/O and DMA access, converts its PCM sound, and mixes it with CD samples from the image. The physical sound card plays the combined stream. An internal host keeps the traps in place for protected-mode games.
 
