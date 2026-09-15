@@ -8,11 +8,11 @@
 
 `UCDD.EXE` installs as a DOS CD-ROM device named `UCDD0001`. A redirector such as [SHSUCDX](http://adoxa.altervista.org/shsucdx/) assigns it a drive letter. Later `-mount` and `-unmount` commands talk to that resident driver. The installer is discarded after load.
 
-CD-Audio is mixed, not played on a second device. μCDD traps the game's Sound Blaster I/O ports and DMA channel. When the game sends PCM, the driver mixes CD samples from the image into the same DMA buffer and outputs the mix on the physical card. A small internal host keeps those traps in place for protected-mode games.
+CD-Audio is mixed, not played on a second device. μCDD traps the game's sound-card I/O ports and DMA channel. When the game sends PCM, the driver mixes CD samples from the image into the same DMA buffer and outputs the mix on the physical card. A small internal host keeps those traps in place for protected-mode games.
 
-The game sees a Sound Blaster 16 at your system's BLASTER environment variable (eg `A220 I5 D1 H5`). `UCDDSET.EXE` stores the real card's I/O address, IRQ, and DMA in `UCDD.CFG`.
+The virtual Sound Blaster is fixed at `A220 I5 D1 H5`. It identifies as an SB16 (DSP 4.05) and accepts original Sound Blaster, Sound Blaster Pro, and SB16 PCM commands, so a game can be set to any of those types. Games can also use a virtual Windows Sound System codec at 530h.
 
-Microsoft Sound System / Windows Sound System is also supported.
+`UCDDSET.EXE` stores the physical card (Sound Blaster / 1.5 / 2, SB Pro, SB16, or Windows Sound System) and its I/O address, IRQ, and DMA in `UCDD.CFG`. The game's card and the physical card do not have to match.
 
 ## Usage
 
@@ -41,7 +41,7 @@ SET BLASTER=A220 I5 D1 H5 T6
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 
-Point the game at the virtual `BLASTER` resources, which can be the same as the physical card, or not.
+Point Sound Blaster games at the virtual card (`BLASTER=A220 I5 D1 H5 T6`), not at the physical settings in `UCDD.CFG`. Windows Sound System games use port 530h. `BLASTER` does not move the virtual ports.
 
 ```dos
 UCDD -mount C:\IMAGES\GAME.CUE
