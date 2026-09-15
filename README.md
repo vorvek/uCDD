@@ -96,13 +96,7 @@ MODE2 sectors, compressed audio, FLAGS, synthetic PREGAP, and multi-file CUE she
 
 ## Build
 
-NASM and Python 3.10 or later:
-
-```text
-python scripts/build.py --resident-audio
-```
-
-That writes `build/UCDD.EXE` and `build/UCDDSET.EXE`. Omit `--resident-audio` for a data-only driver with no mixer.
+Assembler sources are in `src/`. NASM is required.
 
 ## License
 
