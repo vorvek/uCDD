@@ -627,6 +627,7 @@ mon_dpmi:
 %ifdef HOST_DPMI
     cld
     mov ebx, esp
+    call dpmi_sti_arrival
     call dpmi_locked_capture
     cmp word [ebp+mon_vectors+31h*6+4], 0
     je .host_service
@@ -813,6 +814,29 @@ mon_exception:
 .software:
     jmp dpmi_software_interrupt
 .cpu_exception:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .shadow_arrival
+    cmp dword [esp+40], 1
+    jne .shadow_arrival
+    test byte [esp+52], 3
+    jz .shadow_arrival
+    mov eax, dr6
+    test eax, 0a00fh
+    jnz .shadow_arrival
+    test eax, 4000h
+    jnz .shadow_debug
+    test word [esp+56], 100h
+    jz .shadow_arrival
+.shadow_debug:
+    lea ebx, [esp+8]
+    call dpmi_sti_retire
+    cmp byte [ebp+dpmi_sti_tf], 0
+    jne .ordinary_exception
+    xor edi, edi
+    jmp .advance
+.shadow_arrival:
+    lea ebx, [esp+8]
+    call dpmi_sti_arrival
     cmp dword [esp+40], 1
     jne .ordinary_exception
     cmp byte [ebp+dpmi_step_active], 1
@@ -971,9 +995,9 @@ mon_exception:
     jmp .advance
 .sti:
 %ifdef HOST_DPMI
-    mov byte [ebp+dpmi_vif], 1
-    mov byte [ebp+dpmi_step_active], 0
-    and word [esp+56], 0feffh
+    mov ebx, esp
+    call dpmi_sti_begin
+    xor edi, edi
 %endif
     or word [esp+56], 200h
     jmp .advance

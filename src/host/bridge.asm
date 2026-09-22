@@ -390,6 +390,14 @@ dpmi_bridge_stubs:
 %rep 16
 dpmi_bridge_irq_%+irq:
     pushf
+    cmp byte [cs:dpmi_sti_shadow], 0
+    je .open
+    test word [cs:dpmi_bridge_mask], 1<<irq
+    jz .chain
+    popf
+    push strict word irq
+    jmp dpmi_bridge_defer
+.open:
     call dpmi_bridge_blocked
     jc .chain
     test word [cs:dpmi_bridge_mask], 1<<irq
@@ -403,11 +411,37 @@ dpmi_bridge_irq_%+irq:
 %assign irq irq+1
 %endrep
 
+dpmi_bridge_defer:
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    movzx bx, byte [bp+2]
+    mov al, bl
+    cmp al, 8
+    jb .master
+    sub al, 8
+    add al, 60h
+    out 0a0h, al
+    mov al, 62h
+    jmp .eoi
+.master:
+    add al, 60h
+.eoi:
+    out 20h, al
+    bts word [cs:dpmi_pending_irqs], bx
+    pop bx
+    pop ax
+    pop bp
+    add sp, 2
+    iret
+
 dpmi_bridge_blocked:
     cmp byte [cs:dpmi_vif], 0
     jne .enabled
     cmp dword [cs:dpmi_locked_depth], 0
     je .enabled
+.blocked:
     stc
     ret
 .enabled:

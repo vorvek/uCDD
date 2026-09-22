@@ -537,6 +537,8 @@ HOST_PROTECTED
 host_protected_start:
 resident_refill_schedule:
     pushad
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    jne .done
     cmp byte [ebp+dpmi_active], 1
     jne .done
     cmp byte [ebp+dpmi_vif], 1
@@ -600,6 +602,22 @@ resident_pending:
     mov word [esi], 0ffffh
     bts [ebp+dpmi_pending_irqs], eax
 .sb:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .sb_now
+    cmp byte [ebp+dpmi_sti_sb_held], 0
+    jne .none
+    lea edi, [ebp+mon_rm_regs]
+    mov dword [edi+46], 0
+    mov word [edi+32], 2
+    mov eax, [ebp+resident_take]
+    mov [edi+42], eax
+    mov al, 1
+    call mon_real_far
+    cmp word [edi+28], 1
+    jne .none
+    mov byte [ebp+dpmi_sti_sb_held], 1
+    jmp .none
+.sb_now:
     call dpmi_pic_audio_allowed
     jc .none
     cmp byte [ebp+dpmi_vif], 1
@@ -646,6 +664,10 @@ resident_io:
 %include "host/monitor.asm"
 
 HOST_REAL
+dpmi_sti_shadow db 0
+dpmi_sti_tf db 0
+dpmi_sti_cs dw 0
+dpmi_sti_ip dd 0
 align 16
 host_gateway_end:
 HOST_PROTECTED

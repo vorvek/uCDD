@@ -17,6 +17,13 @@ dpmi_install:
     xor bx, bx
     call monitor_init
     jc .bad
+%ifndef RESIDENT_HOST
+    mov bx, 80h
+    mov ah, 48h
+    int 21h
+    jc .bad
+    mov [dpmi_entry_segment], ax
+%endif
 %ifdef RESIDENT_HOST
     mov ax, 352fh
     int 21h
@@ -39,6 +46,16 @@ dpmi_install:
     ret
 dpmi_remove:
     push ds
+%ifndef RESIDENT_HOST
+    xor ax, ax
+    xchg ax, [dpmi_entry_segment]
+    test ax, ax
+    jz .stack_free
+    mov es, ax
+    mov ah, 49h
+    int 21h
+.stack_free:
+%endif
     lds dx, [dpmi_old_mux]
     mov ax, 252fh
     int 21h
@@ -127,9 +144,9 @@ dpmi_entry:
     mov ss, ax
     mov sp, HOST_STACK_BYTES
 %else
-    mov ax, cs
+    mov ax, [cs:dpmi_entry_segment]
     mov ss, ax
-    mov sp, dpmi_entry_stack_top
+    mov sp, 2048
 %endif
     sti
     call monitor_run
@@ -173,10 +190,60 @@ mon_iret:
     or word [esp+48], 300h
     DPMI_STEP_NORMAL
 .check_irq:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    jne .shadow_arrival_now
+    cmp byte [ebp+dpmi_callback_sti], 0
+    je .shadow_arrival_now
+    mov eax, [esp+40]
+    cmp eax, [ebp+dpmi_callback_sti+4]
+    jne .shadow_arrival_now
+    mov ax, [esp+44]
+    cmp ax, [ebp+dpmi_callback_sti+2]
+    jne .shadow_arrival_now
+    mov eax, [ebp+dpmi_callback_sti]
+    mov [ebp+dpmi_sti_shadow], eax
+    mov eax, [ebp+dpmi_callback_sti+4]
+    mov [ebp+dpmi_sti_ip], eax
+    mov byte [ebp+dpmi_callback_sti], 0
+.shadow_arrival_now:
+    mov ebx, esp
+    call dpmi_sti_arrival
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .shadow_done
+    DPMI_STEP_NORMAL
+    mov ebx, esp
+    call dpmi_sti_arrival
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .shadow_done
+    or word [esp+48], 100h
+    jmp .no_irq
+.shadow_done:
     cmp byte [ebp+dpmi_vif], 1
     jne .no_irq
     test byte [esp+44], 3
     jz .no_irq
+    cmp byte [ebp+dpmi_sti_sb_held], 0
+    je .pic_only
+    call dpmi_pic_audio_allowed
+    jc .pic_only
+    movzx eax, byte [ebp+dpmi_guest_vector]
+    mov edx, eax
+    imul eax, 6
+    lea esi, [ebp+mon_vectors+eax]
+    cmp word [esi+4], 0
+    jne .sb_inject
+    mov byte [ebp+dpmi_sti_sb_held], 0
+    mov eax, edx
+    lea edi, [ebp+mon_rm_regs]
+    mov dword [edi+32], 2
+    mov dword [edi+46], 0
+    call mon_real_int
+    jmp .pic_only
+.sb_inject:
+    mov byte [ebp+dpmi_sti_sb_held], 0
+    mov ebx, esp
+    jmp dpmi_deliver_hardware
+.pic_only:
     call dpmi_pic_next
     jc .no_irq
     movzx edx, byte [ebp+mon_master]
@@ -231,6 +298,9 @@ mon_iret:
     iretd
 
 dpmi_client_init:
+    mov byte [ebp+dpmi_sti_shadow], 0
+    mov byte [ebp+dpmi_callback_sti], 0
+    mov byte [ebp+dpmi_sti_sb_held], 0
 %ifdef RESIDENT_HOST
     call resident_refill_reset
 %endif
@@ -524,6 +594,7 @@ dpmi_dos:
     cld
     mov ebx, esp
     call dpmi_locked_capture
+    call dpmi_sti_arrival
     cmp word [ebp+mon_vectors+21h*6+4], 0
     je .host
     lea esi, [ebp+mon_vectors+21h*6]
@@ -547,6 +618,9 @@ dpmi_dos:
     MON_IRETD
 
 dpmi_finish:
+    mov byte [ebp+dpmi_sti_shadow], 0
+    mov byte [ebp+dpmi_callback_sti], 0
+    mov byte [ebp+dpmi_sti_sb_held], 0
 %ifdef RESIDENT_HOST
     call resident_refill_reset
 %endif
@@ -583,10 +657,14 @@ dpmi_finish:
 
 HOST_REAL
 dpmi_old_mux dd 0
+%ifndef RESIDENT_HOST
+dpmi_entry_segment dw 0
+%endif
 dpmi_audio_irq db 0ffh
 dpmi_guest_irq db 5
 dpmi_guest_vector db 0dh
 dpmi_pending_irqs dd 0
+dpmi_sti_sb_held db 0
 dpmi_active db 0
 dpmi_audio_pm_handler db 0
 %if dpmi_audio_pm_handler-dpmi_active != 1
@@ -622,7 +700,3 @@ dpmi_fault_bytes times 8 db 0
 dpmi_fault_stack times 64 db 0
 dpmi_ldt times DPMI_LDT_COUNT*8 db 0
 dpmi_used times DPMI_LDT_COUNT db 0
-%ifndef RESIDENT_HOST
-    times 2048 db 0
-dpmi_entry_stack_top:
-%endif

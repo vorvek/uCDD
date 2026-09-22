@@ -7,6 +7,15 @@ dpmi_step_check:
     pushad
     mov dword [esp+12], 0
 .next:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .shadow_ready
+    mov eax, [ebx+48]
+    cmp eax, [ebp+dpmi_sti_ip]
+    jne .done
+    mov ax, [ebx+52]
+    cmp ax, [ebp+dpmi_sti_cs]
+    jne .done
+.shadow_ready:
     mov ax, [ebx+52]
     mov ecx, 4
     cmp ax, 23h
@@ -89,6 +98,8 @@ dpmi_step_check:
     mov [ebp+dpmi_step_segment], ax
     jmp .prefix
 .opcode:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    jne .ordinary_opcode
     test dl, 4
     jz .ordinary_opcode
     cmp al, 0a4h
@@ -107,7 +118,7 @@ dpmi_step_check:
     cmp al, 8eh
     je .mov_ss
     cmp al, 0fbh
-    je .enable
+    je .sti_enable
     cmp al, 9ch
     je .push_flags
     cmp al, 0cfh
@@ -125,11 +136,19 @@ dpmi_step_check:
 .pop_word:
     mov dx, [esi]
 .pop_value:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .pop_tf_ready
+    mov eax, edx
+    shr eax, 8
+    and al, 1
+    mov [ebp+dpmi_sti_tf], al
+.pop_tf_ready:
     mov eax, ecx
     call .adjust_stack
     and edx, 0fffc8effh
     test edx, 200h
     jnz .pop_enabled
+    mov word [ebp+dpmi_vif], 0100h
     or edx, 300h
     mov [ebx+56], edx
     pop edi
@@ -138,6 +157,10 @@ dpmi_step_check:
 .pop_enabled:
     mov [ebx+56], edx
     pop edi
+    jmp .enable
+.sti_enable:
+    call dpmi_sti_begin
+    jmp .done
 .enable:
     mov byte [ebp+dpmi_vif], 1
     mov byte [ebp+dpmi_step_active], 0
@@ -153,7 +176,7 @@ dpmi_step_check:
     call .write_stack
     jc .bad_push
     mov eax, [ebx+56]
-    and eax, 0fffffcffh
+    call dpmi_virtual_flags
     cmp ecx, 4
     jne .push_word
     mov [esi], eax
@@ -196,9 +219,17 @@ dpmi_step_check:
     mov [ebx+48], eax
     mov [ebx+52], edx
     mov edx, edi
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .iret_tf_ready
+    shr edi, 8
+    and edi, 1
+    mov eax, edi
+    mov [ebp+dpmi_sti_tf], al
+.iret_tf_ready:
     and edx, 0fffd8effh
     test edx, 200h
     jnz .iret_enabled
+    mov word [ebp+dpmi_vif], 0100h
     or edx, 300h
     mov [ebx+56], edx
     jmp .next
@@ -299,6 +330,10 @@ dpmi_step_check:
 .loaded_ss:
     mov [ebx+64], ax
     add [ebx+48], edi
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .next
+    mov eax, [ebx+48]
+    mov [ebp+dpmi_sti_ip], eax
     jmp .next
 .ss_selector:
     push eax
@@ -696,6 +731,14 @@ dpmi_virtual_flags:
     je .trace
     or eax, 200h
 .trace:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .ordinary_tf
+    and eax, 0fffffeffh
+    cmp byte [ebp+dpmi_sti_tf], 0
+    je .done
+    or eax, 100h
+    ret
+.ordinary_tf:
     cmp byte [ebp+dpmi_step_active], 0
     je .done
     and eax, 0fffffeffh
@@ -726,3 +769,60 @@ dpmi_step_address_size db 0
 dpmi_step_segment dw 0
 dpmi_step_ea_segment dw 0
 dpmi_step_modrm db 0
+
+HOST_PROTECTED
+; EBX is a normalized frame; EDI is the decoded STI length.
+dpmi_sti_begin:
+    cmp byte [ebp+dpmi_vif], 0
+    jne .enabled
+    mov eax, [ebx+56]
+    call dpmi_virtual_flags
+    shr eax, 8
+    and al, 1
+    mov [ebp+dpmi_sti_tf], al
+    mov ax, [ebx+52]
+    mov [ebp+dpmi_sti_cs], ax
+    mov eax, [ebx+48]
+    add eax, edi
+    mov [ebp+dpmi_sti_ip], eax
+    mov byte [ebp+dpmi_sti_shadow], 1
+.enabled:
+    mov byte [ebp+dpmi_vif], 1
+    mov byte [ebp+dpmi_step_active], 0
+    or word [ebx+56], 200h
+    add [ebx+48], edi
+    ret
+
+; EBX is the common five-dword return frame minus40 bytes.
+dpmi_sti_arrival:
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    je .done
+    test byte [ebx+44], 3
+    jz .done
+    mov eax, [ebx+40]
+    cmp eax, [ebp+dpmi_sti_ip]
+    jne dpmi_sti_retire
+    mov ax, [ebx+44]
+    cmp ax, [ebp+dpmi_sti_cs]
+    jne dpmi_sti_retire
+.done:
+    ret
+
+dpmi_sti_retire:
+    mov byte [ebp+dpmi_sti_shadow], 0
+    cmp byte [ebp+dpmi_step_active], 0
+    jne .done
+    and word [ebx+48], 0feffh
+    cmp byte [ebp+dpmi_sti_tf], 0
+    je .done
+    or word [ebx+48], 100h
+.done:
+    ret
+%ifndef RESIDENT_HOST
+HOST_REAL
+dpmi_sti_shadow db 0
+dpmi_sti_tf db 0
+dpmi_sti_cs dw 0
+dpmi_sti_ip dd 0
+HOST_PROTECTED
+%endif

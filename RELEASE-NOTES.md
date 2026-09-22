@@ -1,3 +1,27 @@
+# Beta 0.9.1a
+
+This update corrects interrupt timing in the internal protected-mode host. It retains the audio changes from Beta 0.9.1.
+
+## Changes in 0.9.1a
+
+- Honor the one-instruction interrupt delay after `STI`. Preserve this state across callbacks and defer pending hardware and sound interrupts until delivery is permitted.
+- Allocate a separate entry stack for the standalone development host, and free it when the host exits. This avoids the layout-sensitive stack failures seen while testing the larger host.
+- Document Microsoft EMM386's shared-DMA limitation and the JEMMEX or separate-channel alternatives. This release does not attempt to recover physical DMA programming after a game overwrites it.
+
+## Validation and limits in 0.9.1a
+
+All 11 focused interrupt-delay cases passed in 86Box. All 25 standalone host lifecycle cases passed in IzarraVM in 386 interpreter mode with 128 MB. The standalone core lifecycle case fails in 86Box with both the unchanged 0.9.1 host and this update; the lifecycle result is specific to the IzarraVM harness.
+
+In the checked one-unit load-high fixture, the final driver used 8192 bytes of conventional memory for its DMA buffer plus the 16-byte DOS allocation header. The resident code and scratch buffer were in upper memory. Available upper-memory space affects placement.
+
+The final release binary reached Quake gameplay and the Tomb Raider demo in 86Box with 128 MB. Game PCM and CD playback advanced with no driver fault or CD error. These were bounded runtime checks; the listening confirmations below apply to the preceding development build.
+
+The preceding development build passed bounded Tomb Raider, Quake, and Carmageddon checks in 86Box with 128 MB. Archimedean Dynasty reached a mission with both game PCM and CD music under JEMMEX 5.87pre1 using shared physical and virtual DMA channel 5. The user confirmed normal mission audio. Crackling reported during its loading stage remains unresolved.
+
+Microsoft EMM386 with shared DMA 5 failed the Archimedean Dynasty menu audio check. Physical DMA 7 with virtual DMA 5 sustained menu PCM; gameplay with that configuration was not checked in this review. The experimental DMA recovery code is not included in this release.
+
+These checks do not establish long-session stability, all DOS extender combinations, or real-hardware compatibility. The limits listed for Beta 0.9.1 below still apply.
+
 # Beta 0.9.1
 
 This beta fixes CD access and mixed-audio problems in protected-mode DOS games. CD music and game PCM still use the same physical Sound Blaster output.

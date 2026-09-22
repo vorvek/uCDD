@@ -158,6 +158,11 @@ dpmi_callback_pm:
     stosd
     mov ax, [ebp+dpmi_vif]
     stosw
+    mov eax, [ebp+dpmi_sti_shadow]
+    mov [ebp+dpmi_callback_sti], eax
+    mov eax, [ebp+dpmi_sti_ip]
+    mov [ebp+dpmi_callback_sti+4], eax
+    mov byte [ebp+dpmi_sti_shadow], 0
     mov word [ebp+dpmi_vif], 0100h
     mov dword [ebp+mon_return+12], dpmi_callback_real_top
     mov eax, [ebp+mon_real_base]
@@ -419,8 +424,12 @@ dpmi_callback_return_frame times 36 db 0
     times 512 db 0
 dpmi_callback_real_top:
 HOST_PROTECTED
-    times 2048 db 0
+    ; 1920 keeps the resident host inside one real-mode segment.
+    times 1920 db 0
 dpmi_callback_kernel_top:
 dpmi_callback_user_top:
 dpmi_callbacks times 16*20 db 0
 dpmi_callback_context times 116 db 0
+
+HOST_PROTECTED
+dpmi_callback_sti times 8 db 0

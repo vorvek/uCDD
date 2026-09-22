@@ -41,6 +41,10 @@ C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 
 `HIMEM` with `EMM386` has passed limited tests. `JEMM386` and `386MAX` support is not established. `MSCDEX` can also assign the CD drive letter.
 
+**Microsoft EMM386 and shared DMA:** EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output. Archimedean Dynasty produced clicks followed by silence when both the game and the physical SB16 used 16-bit DMA channel 5.
+
+Use JEMMEX, or select different 16-bit DMA channels for the physical output and the game. For example, physical DMA 7 with virtual DMA 5 avoided the menu audio failure in that test. Configure the physical card first, then enter its actual settings in `UCDDSET`. Set the virtual channel with `BLASTER` (`H5` in this example) before installing uCDD, and use those virtual settings in the game. Both streams still play through the same sound card. JEMMEX 5.87pre1 passed a bounded Archimedean Dynasty mission check with shared DMA 5; this does not establish all memory-manager or hardware combinations.
+
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 
 ```dos
