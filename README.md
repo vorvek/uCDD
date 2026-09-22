@@ -18,15 +18,15 @@
 
 The virtual Sound Blaster accepts original Sound Blaster, SB Pro, and SB16 PCM commands. It identifies as an SB16 (DSP 4.05); the `T` field does not change this. Games can also use a virtual Windows Sound System codec at 530h, with the same 8-bit DMA channel selected by `D`.
 
-Supported `BLASTER` settings are `A220`, `A240`, `A260`, or `A280`; `I5` or `I7`; `D1` or `D3`; and `H5`, `H6`, or `H7`. Set `A`, `I`, and `D`. If `H` is absent, the driver uses `H5`. If `BLASTER` is absent, it uses `A220 I5 D1 H5`. Invalid settings stop installation.
+Supported `BLASTER` settings are `A220`, `A240`, `A260`, or `A280`; `I5` or `I7`; `D1` or `D3`; and `H5`, `H6`, or `H7`. Set `A`, `I`, and `D`. If `H` is absent, the driver uses `H5`. If `BLASTER` is absent, it uses `A220 I5 D1 H5`.
 
 ## Usage
 
 A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also needs XMS, VCPI, and a supported interface for I/O port traps. HIMEM alone does not provide these interfaces.
 
-[JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) 5.86 is the tested baseline. Beta 0.9.1 also supports the changed callback interface in 5.87pre1. Installation and real-mode and protected-mode audio clients passed with both versions in IzarraVM. The published 0.9.0 binary rejects 5.87pre1.
+[JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) 5.86 is the tested baseline. Since Beta 0.9.1, uCDD also supports the changed callback interface in 5.87pre1. Installation and real-mode and protected-mode audio clients passed with both versions in IzarraVM. The published 0.9.0 binary rejects 5.87pre1.
 
-**Protected-mode game support is incomplete.** Beta 0.9.1 fixes protected-mode CD access, interrupt handling, and several mixed-audio faults. Tomb Raider passed a menu/demo audio check with the release driver in 86Box with 128 MB. Carmageddon and Archimedean Dynasty had successful mixed-audio checks during development; they were tested with earlier builds. These checks do not establish long-session stability or support for all DOS extenders. See [the release notes](RELEASE-NOTES.md) for test scope and known limits.
+**Protected-mode game support is incomplete.**
 
 **Note:** CD-Audio Performance on anything below a Pentium processor may be lacklustre. Uncompressed audio requires around 800KB/s of constant read speed.
 
@@ -39,11 +39,11 @@ LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
-`HIMEM` with `EMM386` has passed limited tests. `JEMM386` and `386MAX` support is not established. `MSCDEX` can also assign the CD drive letter.
+`HIMEM` with `EMM386` passes limited tests. `MSCDEX` can also assign the CD drive letter.
 
-**Microsoft EMM386 and shared DMA:** EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output. Archimedean Dynasty produced clicks followed by silence when both the game and the physical SB16 used 16-bit DMA channel 5.
+**Microsoft EMM386 and shared DMA:** EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output.
 
-Use JEMMEX, or select different 16-bit DMA channels for the physical output and the game. For example, physical DMA 7 with virtual DMA 5 avoided the menu audio failure in that test. Configure the physical card first, then enter its actual settings in `UCDDSET`. Set the virtual channel with `BLASTER` (`H5` in this example) before installing uCDD, and use those virtual settings in the game. Both streams still play through the same sound card. JEMMEX 5.87pre1 passed a bounded Archimedean Dynasty mission check with shared DMA 5; this does not establish all memory-manager or hardware combinations.
+Use JEMMEX, or select different 16-bit DMA channels for the physical output and the game. For example, physical DMA 7 with virtual DMA 5 avoids the audio failure. Configure the physical card first, then enter its actual settings in `UCDDSET`. Set the virtual channel with `BLASTER` (`H5` in this example) before installing uCDD, and use those virtual settings in the game. Both streams still play through the same sound card.
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 
