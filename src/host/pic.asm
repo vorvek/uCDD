@@ -33,6 +33,8 @@ dpmi_pic_queue:
 ; EAX=next IRQ, carry set if no eligible request. Other registers stay intact.
 dpmi_pic_next:
     pushad
+    call dpmi_hardware_room
+    jc .none
     cmp word [ebp+dpmi_pending_irqs], 0
     je .none
     mov dx, 20h

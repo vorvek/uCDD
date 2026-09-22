@@ -24,6 +24,25 @@
 %define MON_SERVER_SELECTOR 48
 %endif
 
+; Add exception slots without shifting the saved register fields.
+%macro DPMI_STEP_NORMAL 0
+    sub esp, 8
+    lea esi, [esp+8]
+    mov edi, esp
+    mov ecx, 10
+    cld
+    rep movsd
+    mov ebx, esp
+    call dpmi_step_check
+    mov ecx, 10
+%%restore:
+    mov eax, [esp+ecx*4-4]
+    mov [esp+ecx*4+4], eax
+    loop %%restore
+    add esp, 8
+    mov ebx, esp
+%endmacro
+
 %macro MON_IRETD 0
 %ifdef HOST_DPMI
     jmp mon_iret
@@ -528,6 +547,10 @@ mon_irq:
     mov dword [edi+32], 2
     mov dword [edi+46], 0
     call mon_real_int
+%ifdef HOST_DPMI
+    call dpmi_hardware_room
+    jc .done
+%endif
     cmp dword [ebp+mon_irq_callback], 0
     je .done
     call [ebp+mon_irq_callback]
@@ -537,11 +560,19 @@ mon_irq:
     movzx eax, ax
     cmp eax, 256
     jae .done
+    mov edx, eax
     imul eax, 6
     lea esi, [ebp+mon_vectors+eax]
 %ifdef HOST_DPMI
     cmp word [esi+4], 0
-    je .done
+    jne .virtual_protected
+    mov eax, edx
+    lea edi, [ebp+mon_rm_regs]
+    mov dword [edi+32], 2
+    mov dword [edi+46], 0
+    call mon_real_int
+    jmp .done
+.virtual_protected:
     mov ebx, esp
     mov edi, ebx
     add edi, 44
@@ -788,8 +819,6 @@ mon_exception:
     jne .ordinary_exception
     test byte [esp+52], 3
     jz .ordinary_exception
-    mov ebx, esp
-    call dpmi_step_check
     xor edi, edi
     jmp .advance
 .ordinary_exception:

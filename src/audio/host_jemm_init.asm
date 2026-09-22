@@ -34,7 +34,12 @@ host_jemm_install:
     cmp ax, 2
     jne .close_bad
     cmp word [host_info], 5605h
+    je .version_ready
+    cmp word [host_info], 5705h
     jne .close_bad
+.version_ready:
+    mov ax, [host_info]
+    mov [host_jemm_version], ax
     mov byte [host_info], 8
     mov dx, host_info
     mov cx, 28
@@ -43,6 +48,12 @@ host_jemm_install:
     jc .close_bad
     cmp ax, 28
     jne .close_bad
+    cmp word [host_jemm_version], 5605h
+    jne .callback_ready
+    ; Jemm 5.86 returns the table base, 5.87 returns the callback.
+    add dword [host_info+4], 4
+    inc word [host_info+8]
+.callback_ready:
     mov ah, 3eh
     int 21h
     xor eax, eax
@@ -108,13 +119,11 @@ host_protected_install:
     xchg eax, [edx]
     mov [ebx+host_old_io], eax
     mov edx, [ebx+host_info+4]
-    lea eax, [edx+4]
-    mov [ebx+host_gate_slot], eax
+    mov [ebx+host_gate_slot], edx
     lea eax, [ebx+host_gate]
-    xchg eax, [edx+4]
+    xchg eax, [edx]
     mov [ebx+host_old_gate], eax
     mov eax, [ebx+host_info+8]
-    inc ax
     mov [ebx+host_api_entry], eax
     movzx edx, word [ebx+host_info+24]
     and dl, 0f8h
@@ -137,6 +146,7 @@ host_switch times 22 db 0
 host_return_frame dd host_jemm_install.return,0,23002h,0,0,0,0,0,0
 host_info db 2
     times 27 db 0
+host_jemm_version dw 0
 host_device db 'EMMXXXX0',0
 host_device_noems db 'EMMQXXX0',0
 times 512 db 0

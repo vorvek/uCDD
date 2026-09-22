@@ -1,6 +1,8 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%include "audio/sb_state.inc"
+
 ; Configuration selects the physical card resources.
 physical_read:
 %ifdef DIRECT_OUTPUT
@@ -327,6 +329,9 @@ audio_irq:
     push ax
     mov ax, cs
     mov ds, ax
+    cmp byte [audio_irq_busy], 0
+    jne .nested
+    mov byte [audio_irq_busy], 1
     mov [irq_ss], ss
     mov [irq_sp], sp
     mov ss, ax
@@ -335,6 +340,7 @@ audio_irq:
     push es
     push fs
     cld
+    call audio_irq_mask
     cmp byte [sound_card], 2
     je .wss
     test byte [sound_card], 1
@@ -397,6 +403,9 @@ audio_irq:
 %ifdef OWN_HOST
     call sb_real_irq
 %endif
+    cli
+    call audio_irq_unmask
+    mov byte [audio_irq_busy], 0
     pop fs
     pop es
     popad
@@ -446,6 +455,9 @@ audio_irq:
     call physical_write
     jmp .acknowledged
 .unowned:
+    cli
+    call audio_irq_unmask
+    mov byte [audio_irq_busy], 0
     pop fs
     pop es
     popad
@@ -455,6 +467,37 @@ audio_irq:
     pop ds
     jmp far [cs:old_irq]
 
+audio_irq.nested:
+    pop ax
+    pop ds
+    jmp far [cs:old_irq]
+
+audio_irq_mask:
+    mov dx, 21h
+    call physical_read
+    mov [audio_irq_old_mask], al
+    mov cl, [sb_irq]
+    mov ah, 1
+    shl ah, cl
+    mov [audio_irq_mask_bit], ah
+    or al, ah
+    call physical_write
+    ret
+
+audio_irq_unmask:
+    mov dx, 21h
+    call physical_read
+    mov ah, [audio_irq_mask_bit]
+    not ah
+    and al, ah
+    mov ah, [audio_irq_old_mask]
+    and ah, [audio_irq_mask_bit]
+    or al, ah
+    mov byte [audio_irq_mask_bit], 0
+    call physical_write
+    ret
+
+audio_irq_old_mask db 0
 old_irq dd 0
 dma_pages db 8bh,89h,8ah
 dma_channel db 1

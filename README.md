@@ -22,7 +22,11 @@ Supported `BLASTER` settings are `A220`, `A240`, `A260`, or `A280`; `I5` or `I7`
 
 ## Usage
 
-A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also needs XMS and a memory manager that can trap I/O ports. [JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) is the usual choice.
+A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also needs XMS, VCPI, and a supported interface for I/O port traps. HIMEM alone does not provide these interfaces.
+
+[JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) 5.86 is the tested baseline. Beta 0.9.1 also supports the changed callback interface in 5.87pre1. Installation and real-mode and protected-mode audio clients passed with both versions in IzarraVM. The published 0.9.0 binary rejects 5.87pre1.
+
+**Protected-mode game support is incomplete.** Beta 0.9.1 fixes protected-mode CD access, interrupt handling, and several mixed-audio faults. Tomb Raider passed a menu/demo audio check with the release driver in 86Box with 128 MB. Carmageddon and Archimedean Dynasty had successful mixed-audio checks during development; they were tested with earlier builds. These checks do not establish long-session stability or support for all DOS extenders. See [the release notes](RELEASE-NOTES.md) for test scope and known limits.
 
 **Note:** CD-Audio Performance on anything below a Pentium processor may be lacklustre. Uncompressed audio requires around 800KB/s of constant read speed.
 
@@ -35,7 +39,7 @@ LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
-`JEMMEX` or `HIMEM` with `EMM386` (or `JEMM`, or `386MAX`) is required. `MSCDEX` is also supported.
+`HIMEM` with `EMM386` has passed limited tests. `JEMM386` and `386MAX` support is not established. `MSCDEX` can also assign the CD drive letter.
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 

@@ -65,14 +65,6 @@ dpmi_entry:
     jne .bad
     cmp byte [cs:dpmi_active], 0
     jne .bad
-%ifdef RESIDENT_HOST
-    push ax
-    xor al, al
-    call far [cs:resident_traps]
-    pop ax
-    jc .bad
-    mov byte [cs:dpmi_traps_suspended], 1
-%endif
     pushf
     pushad
     push ds
@@ -126,6 +118,7 @@ dpmi_entry:
     mov byte [dpmi_exit_code], 1
     call dpmi_bridge_real_allocate
     jc .exit
+    mov byte [dpmi_audio_pm_handler], 0
     mov byte [dpmi_active], 1
     mov byte [dpmi_exit_code], 1
     cli
@@ -146,18 +139,6 @@ dpmi_entry:
     jz .exit
     mov byte [dpmi_exit_code], 1
 .exit:
-%ifdef RESIDENT_HOST
-    cmp byte [dpmi_traps_suspended], 0
-    je .traps_ready
-    mov al, 1
-    call far [resident_traps]
-    jnc .traps_resumed
-    mov byte [dpmi_exit_code], 1
-    jmp .traps_ready
-.traps_resumed:
-    mov byte [dpmi_traps_suspended], 0
-.traps_ready:
-%endif
     mov es, [dpmi_psp]
     mov ax, [dpmi_environment]
     mov [es:2ch], ax
@@ -190,8 +171,7 @@ mon_iret:
     cmp byte [ebp+dpmi_step_active], 1
     jne .check_irq
     or word [esp+48], 300h
-    lea ebx, [esp-8]
-    call dpmi_step_check
+    DPMI_STEP_NORMAL
 .check_irq:
     cmp byte [ebp+dpmi_vif], 1
     jne .no_irq
@@ -211,6 +191,9 @@ mon_iret:
     mov ebx, esp
     jmp dpmi_deliver_hardware
 .no_irq:
+%ifdef RESIDENT_HOST
+    call resident_refill_schedule
+%endif
     pop es
     pop ds
     popad
@@ -248,6 +231,9 @@ mon_iret:
     iretd
 
 dpmi_client_init:
+%ifdef RESIDENT_HOST
+    call resident_refill_reset
+%endif
     xor eax, eax
     lea edi, [ebp+dpmi_ldt]
     mov ecx, DPMI_LDT_COUNT*8/4
@@ -442,9 +428,7 @@ dpmi_dispatch:
     jmp mon_dpmi.success
 .disable_traced:
     or word [ebx+48], 300h
-    sub ebx, 8
-    call dpmi_step_check
-    add ebx, 8
+    DPMI_STEP_NORMAL
     jmp mon_dpmi.success
 .enable:
     call .interrupt_state_value
@@ -563,6 +547,9 @@ dpmi_dos:
     MON_IRETD
 
 dpmi_finish:
+%ifdef RESIDENT_HOST
+    call resident_refill_reset
+%endif
     mov byte [ebp+dpmi_callback_active], 0
     mov byte [ebp+dpmi_exception_active], 0
     lea esi, [ebp+dpmi_exit_frame]
@@ -601,6 +588,10 @@ dpmi_guest_irq db 5
 dpmi_guest_vector db 0dh
 dpmi_pending_irqs dd 0
 dpmi_active db 0
+dpmi_audio_pm_handler db 0
+%if dpmi_audio_pm_handler-dpmi_active != 1
+    %error Invalid resident IRQ state layout
+%endif
 dpmi_psp dw 0
 dpmi_environment dw 0
 dpmi_exit_code db 1

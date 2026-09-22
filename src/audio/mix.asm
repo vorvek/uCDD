@@ -73,6 +73,14 @@ mix_half:
 %endif
     mov bx, [cd_position]
     mov fs, [game_segment]
+    mov ax, [game_offset]
+    mov [sb_tail_read_offset], ax
+    cmp byte [sb_tail_valid], 0
+    je .frame
+    mov fs, [sb_tail_segment]
+    mov ax, [sb_tail_offset]
+    sub ax, [sb_tail_start_bytes]
+    mov [sb_tail_read_offset], ax
 .frame:
     xor edx, edx
     xor esi, esi
@@ -105,7 +113,7 @@ mix_half:
     cmp byte [game_frame_shift], 0
     jne .stereo
     mov si, ax
-    add si, [game_offset]
+    add si, [sb_tail_read_offset]
     movzx edx, byte [fs:si]
     sub edx, 128
     shl edx, 7
@@ -114,8 +122,52 @@ mix_half:
 .stereo:
     cmp byte [game_frame_shift], 1
     je .stereo8
-    shl ax, 2
+    shl eax, 2
+    cmp byte [game_source], 0
+    jne .stereo16_normal
+    cmp byte [sb_single], 0
+    je .stereo16_normal
+    mov edx, [dma16+DMA_POSITION]
+    shl edx, 1
+    add edx, eax
+    movzx esi, word [dma16+DMA_COUNT]
+    inc esi
+    shl esi, 1
+    cmp edx, esi
+    jb .single16_address
+    sub edx, esi
+.single16_address:
+    add dx, [game_offset]
+    push eax
+    mov si, dx
+    movsx edx, word [fs:si]
+    sar edx, 1
+    pop eax
+    add eax, 2
+    cmp eax, [game_block_bytes]
+    jae .single16_left
+    push edx
+    movzx edx, word [dma16+DMA_COUNT]
+    inc edx
+    shl edx, 1
+    movzx eax, si
+    sub ax, [game_offset]
+    add eax, 2
+    cmp eax, edx
+    jb .single16_right
+    sub eax, edx
+.single16_right:
     add ax, [game_offset]
+    mov si, ax
+    movsx esi, word [fs:si]
+    pop edx
+    sar esi, 1
+    jmp .advance
+.single16_left:
+    xor esi, esi
+    jmp .advance
+.stereo16_normal:
+    add ax, [sb_tail_read_offset]
     mov si, ax
     movsx edx, word [fs:si]
     movsx esi, word [fs:si+2]
@@ -131,7 +183,7 @@ mix_half:
 .bytes:
 %endif
     shl ax, 1
-    add ax, [game_offset]
+    add ax, [sb_tail_read_offset]
     mov si, ax
     movzx edx, byte [fs:si]
     movzx esi, byte [fs:si+1]
@@ -166,6 +218,12 @@ mix_half:
     cmp ebp, [game_limit]
     jb .sum
     sub ebp, [game_limit]
+    cmp byte [sb_tail_valid], 0
+    je .wrap
+    mov byte [sb_tail_valid], 0
+    mov fs, [game_segment]
+    mov ax, [game_offset]
+    mov [sb_tail_read_offset], ax
     jmp .wrap
 .sum:
 %ifdef CD_IMAGE_TEST
@@ -337,6 +395,8 @@ mix_half:
 %ifdef RESIDENT_AUDIO
     cmp byte [sb_patch_active], 0
     jne .cd_advanced
+    cmp byte [cd_valid], 0
+    je .cd_advanced
     mov eax, [cd_fraction]
     add eax, [cd_step]
     mov edx, [cd_step_error]
@@ -364,6 +424,15 @@ mix_half:
     jnz .frame
     mov [cd_position], bx
     mov [game_phase], ebp
+    call sb_tail_prepare
+    cmp byte [game_source], 0
+    jne .pending_ready
+    cmp byte [sb_single], 0
+    jne .pending_ready
+    cmp byte [game_start_pending], 2
+    jne .pending_ready
+    mov byte [game_start_pending], 0
+.pending_ready:
 %ifdef CD_IMAGE_TEST
 %ifdef RESIDENT_AUDIO
     cmp byte [sb_patch_active], 0
@@ -402,4 +471,101 @@ mix_half:
     jge .done
     mov eax, -32768
 .done:
+    ret
+
+
+sb_tail_start_bytes dw 0
+
+; Save at most one old-generation tail before the producer owns the ring.
+sb_tail_prepare:
+    pushad
+    push es
+    push fs
+    cmp byte [game_active], 0
+    je .done
+    cmp byte [game_source], 0
+    jne .done
+    cmp byte [sb_single], 0
+    jne .done
+    mov si, [game_dma]
+    cmp byte [si+DMA_MASK], 0
+    jne .done
+%ifdef RESIDENT_AUDIO
+    mov ax, [cd_half_segment]
+    test ax, ax
+    jz .done
+    add ax, (PERIOD_BYTES+PERIOD_BYTES/32+4+15)/16
+    mov [sb_tail_segment], ax
+%endif
+    cmp word [sb_tail_segment], 0
+    je .done
+    mov eax, [game_limit]
+    shr eax, 16
+    mov cl, [game_frame_shift]
+    shl eax, cl
+    cmp eax, [game_block_bytes]
+    jne .done
+    mov eax, [game_step]
+    imul eax, PERIOD_FRAMES*2
+    cmp eax, [game_limit]
+    ja .done
+    mov eax, [game_step]
+    imul eax, PERIOD_FRAMES
+    add eax, 65535
+    shr eax, 16
+    mov cl, [game_frame_shift]
+    shl eax, cl
+    cmp eax, 2048
+    ja .done
+    mov byte [sb_tail_mode], 1
+    mov eax, [game_mix_frame]
+    cmp dword [game_exit_frame], 0
+    je .elapsed
+    cmp eax, [game_exit_frame]
+    jbe .elapsed
+    mov eax, [game_exit_frame]
+.elapsed:
+    mul dword [game_step]
+    shrd eax, edx, 16
+    mov cl, [game_frame_shift]
+    shl eax, cl
+    cmp eax, [sb_tail_consumed]
+    jbe .position_ready
+    mov [sb_tail_consumed], eax
+.position_ready:
+    cmp byte [sb_tail_valid], 0
+    jne .done
+    cmp dword [game_exit_frame], 0
+    jne .done
+    mov eax, [game_step]
+    imul eax, PERIOD_FRAMES
+    add eax, [game_phase]
+    cmp eax, [game_limit]
+    jbe .done
+    mov eax, [game_phase]
+    shr eax, 16
+    shl eax, cl
+    mov [sb_tail_start_bytes], ax
+    mov edx, [game_block_bytes]
+    sub edx, eax
+    cmp edx, 2048
+    ja .done
+    mov fs, [game_segment]
+    mov si, [game_offset]
+    add si, ax
+    mov es, [sb_tail_segment]
+    mov di, [sb_tail_offset]
+    mov cx, dx
+.copy:
+    mov al, [fs:si]
+    mov [es:di], al
+    inc si
+    inc di
+    loop .copy
+    add [sb_tail_consumed], edx
+    mov byte [sb_tail_valid], 1
+.done:
+    pop fs
+    pop es
+    popad
     ret

@@ -16,9 +16,6 @@ cd_half_segment dw 0
 cd_work_allocation dw 0
 cd_work_segment dw 0
 fault db 0
-    db 'UERR'
-fault_port dw 0
-fault_value db 0
 cd_position dw 0
 game_phase dd 0
 game_step dd 32768

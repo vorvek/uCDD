@@ -5,6 +5,7 @@ HOST_PROTECTED
 ; EBX points to the normalized exception frame.
 dpmi_step_check:
     pushad
+    mov dword [esp+12], 0
 .next:
     mov ax, [ebx+52]
     mov ecx, 4
@@ -41,6 +42,10 @@ dpmi_step_check:
     xor ecx, 6
     jmp .prefix
 .other_prefix:
+    cmp al, 0f2h
+    je .rep_prefix
+    cmp al, 0f3h
+    je .rep_prefix
     cmp al, 26h
     je .es_prefix
     cmp al, 2eh
@@ -59,6 +64,9 @@ dpmi_step_check:
     jnz .prefix
     or dl, 2
     xor byte [ebp+dpmi_step_address_size], 6
+    jmp .prefix
+.rep_prefix:
+    or dl, 4
     jmp .prefix
 .es_prefix:
     mov ax, [ebx]
@@ -81,6 +89,17 @@ dpmi_step_check:
     mov [ebp+dpmi_step_segment], ax
     jmp .prefix
 .opcode:
+    test dl, 4
+    jz .ordinary_opcode
+    cmp al, 0a4h
+    je .repeat
+    cmp al, 0a5h
+    je .repeat
+    cmp al, 0aah
+    je .repeat
+    cmp al, 0abh
+    je .repeat
+.ordinary_opcode:
     cmp al, 0fh
     je .extended
     cmp al, 17h
@@ -465,6 +484,173 @@ dpmi_step_check:
 .done:
     popad
     ret
+.repeat:
+    cmp dword [esp+12], 0
+    jne .done
+    sub esp, 48
+    mov [esp], eax
+    test al, 1
+    jnz .repeat_width
+    mov ecx, 1
+.repeat_width:
+    mov [esp+4], ecx
+    mov [esp+8], edi
+    mov eax, [ebx+32]
+    mov edx, [ebx+8]
+    mov esi, [ebx+12]
+    cmp byte [ebp+dpmi_step_address_size], 2
+    jne .repeat_count
+    movzx eax, ax
+    movzx edx, dx
+    movzx esi, si
+.repeat_count:
+    mov [esp+16], eax
+    mov [esp+20], esi
+    mov [esp+24], edx
+    test eax, eax
+    jz .repeat_complete
+    cmp eax, 64
+    jbe .repeat_bound
+    mov eax, 64
+.repeat_bound:
+    mov [esp+12], eax
+    cmp byte [ebp+dpmi_step_address_size], 2
+    jne .repeat_validate
+    mov edi, 24
+.repeat_wrap:
+    mov eax, [esp+edi]
+    test word [ebx+56], 400h
+    jnz .repeat_capacity
+    xor eax, 0ffffh
+.repeat_capacity:
+    xor edx, edx
+    div dword [esp+4]
+    inc eax
+    cmp eax, [esp+12]
+    jae .repeat_wrap_next
+    mov [esp+12], eax
+.repeat_wrap_next:
+    cmp edi, 20
+    je .repeat_validate
+    cmp byte [esp], 0aah
+    jae .repeat_validate
+    mov edi, 20
+    jmp .repeat_wrap
+.repeat_validate:
+    mov ecx, [esp+12]
+    imul ecx, [esp+4]
+    mov [esp+36], ecx
+    mov esi, ecx
+    sub esi, [esp+4]
+    mov [esp+40], esi
+    mov edx, [esp+24]
+    test word [ebx+56], 400h
+    jz .repeat_destination
+    sub edx, esi
+    jc .repeat_done
+.repeat_destination:
+    mov ax, [ebx]
+    mov edi, 1
+    call dpmi_buffer
+    jc .repeat_done
+    test word [ebx+56], 400h
+    jz .repeat_destination_ready
+    add eax, [esp+40]
+.repeat_destination_ready:
+    mov [esp+32], eax
+    cmp byte [esp], 0aah
+    jae .repeat_copy
+    mov edx, [esp+20]
+    test word [ebx+56], 400h
+    jz .repeat_source
+    sub edx, [esp+40]
+    jc .repeat_done
+.repeat_source:
+    mov ax, [ebp+dpmi_step_segment]
+    cmp ax, 0ffffh
+    jne .repeat_source_selector
+    mov ax, [ebx+4]
+.repeat_source_selector:
+    xor edi, edi
+    call dpmi_buffer
+    jc .repeat_done
+    test word [ebx+56], 400h
+    jz .repeat_source_ready
+    add eax, [esp+40]
+.repeat_source_ready:
+    mov [esp+28], eax
+.repeat_copy:
+    mov esi, [esp+28]
+    mov edi, [esp+32]
+    mov ecx, [esp+12]
+    cld
+    test word [ebx+56], 400h
+    jz .repeat_direction
+    std
+.repeat_direction:
+    cmp byte [esp], 0aah
+    jae .repeat_store
+    cmp dword [esp+4], 1
+    je .repeat_move_byte
+    cmp dword [esp+4], 2
+    je .repeat_move_word
+    rep movsd
+    jmp .repeat_advance
+.repeat_move_byte:
+    rep movsb
+    jmp .repeat_advance
+.repeat_move_word:
+    rep movsw
+    jmp .repeat_advance
+.repeat_store:
+    mov eax, [ebx+36]
+    cmp dword [esp+4], 1
+    je .repeat_store_byte
+    cmp dword [esp+4], 2
+    je .repeat_store_word
+    rep stosd
+    jmp .repeat_advance
+.repeat_store_byte:
+    rep stosb
+    jmp .repeat_advance
+.repeat_store_word:
+    rep stosw
+.repeat_advance:
+    cld
+    mov dword [esp+60], 1
+    mov eax, [esp+36]
+    test word [ebx+56], 400h
+    jz .repeat_delta
+    neg eax
+.repeat_delta:
+    mov edx, [esp+16]
+    sub edx, [esp+12]
+    cmp byte [ebp+dpmi_step_address_size], 2
+    je .repeat_advance16
+    mov [ebx+32], edx
+    add [ebx+8], eax
+    cmp byte [esp], 0aah
+    jae .repeat_remaining
+    add [ebx+12], eax
+    jmp .repeat_remaining
+.repeat_advance16:
+    mov [ebx+32], dx
+    add [ebx+8], ax
+    cmp byte [esp], 0aah
+    jae .repeat_remaining
+    add [ebx+12], ax
+.repeat_remaining:
+    test edx, edx
+    jnz .repeat_done
+.repeat_complete:
+    mov eax, [esp+8]
+    add [ebx+48], eax
+    mov dword [esp+60], 1
+    add esp, 48
+    jmp .next
+.repeat_done:
+    add esp, 48
+    jmp .done
 .stack:
     push dword 0
     jmp .stack_access
@@ -532,8 +718,10 @@ dpmi_restore_flags:
     or eax, 202h
     ret
 
+HOST_REAL
 dpmi_vif db 1
 dpmi_step_active db 0
+HOST_PROTECTED
 dpmi_step_address_size db 0
 dpmi_step_segment dw 0
 dpmi_step_ea_segment dw 0

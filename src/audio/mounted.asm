@@ -10,7 +10,9 @@
 %define cd_half 0
 %define cd_stage 0
 %define cd_stack_top (CD_READ_BYTES+2048)
-%define CD_HALF_PARAS ((CD_HALF_BYTES+15)/16)
+%define SB_TAIL_PARAS 128
+%define CD_HALF_DATA_PARAS ((CD_HALF_BYTES+15)/16)
+%define CD_HALF_PARAS (CD_HALF_DATA_PARAS+SB_TAIL_PARAS)
 %define CD_WORK_PARAS ((cd_stack_top+15)/16)
 %endif
 
@@ -390,6 +392,9 @@ cd_request:
 .stop:
     cmp byte [cd_started], 0
     je .reset
+%ifdef OWN_HOST
+    mov byte [cd_refill_pending], 0
+%endif
     mov byte [cd_started], 0
     mov byte [cd_paused], 1
     mov eax, [cd_consumed]
@@ -451,6 +456,9 @@ cd_request:
     jnz .done
     jmp .range_track
 .range_ok:
+%ifdef OWN_HOST
+    mov byte [cd_refill_pending], 0
+%endif
     mov byte [cd_started], 0
     mov byte [cd_paused], 0
     mov [cd_start_lba], eax
@@ -512,6 +520,9 @@ cd_clear_state:
     call cd_head
     mov [cd_head_lba], eax
     pop eax
+%ifdef OWN_HOST
+    mov byte [cd_refill_pending], 0
+%endif
     mov byte [cd_started], 0
     mov byte [cd_paused], 0
     mov dword [cd_remaining], 0
@@ -886,6 +897,9 @@ cd_ems_transfer:
 %endif
 
 cd_close:
+%ifdef OWN_HOST
+    mov byte [cd_refill_pending], 0
+%endif
     mov byte [cd_started], 0
 %ifndef RESIDENT_AUDIO
     cmp byte [cd_attached], 0

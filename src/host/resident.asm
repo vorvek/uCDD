@@ -63,6 +63,17 @@ resident_host_init:
     shl ecx, 4
     add eax, ecx
     mov [cs:resident_game_vector], eax
+    push edx
+    cmp dword [ds:bp+8], 31464443h
+    jne .no_refill
+    movzx edx, word [ds:bp+14]
+    add edx, ecx
+    mov [cs:resident_refill_pending], edx
+    mov dx, [ds:bp+12]
+    mov [cs:resident_refill], dx
+    mov [cs:resident_refill+2], ds
+.no_refill:
+    pop edx
     mov [cs:resident_port], bx
     mov [cs:resident_port+2], ds
     mov [cs:resident_take], dx
@@ -108,6 +119,10 @@ resident_host_init:
     mov [ds:di+2], ax
     mov ax, [cs:host_stack_segment]
     mov [ds:di+4], ax
+    cmp word [cs:resident_refill+2], 0
+    je .refill_ready
+    mov byte [ds:di+6], 1
+.refill_ready:
     clc
     retf
 .release_bad:
@@ -120,6 +135,9 @@ resident_host_init:
     retf
 
 HOST_REAL
+resident_refill dd 0
+resident_refill_pending dd 0
+resident_refill_busy db 0
 resident_port dd 0
 resident_take dd 0
 resident_wss_event dd 0
@@ -517,7 +535,64 @@ host_stack_segment dw 0
 
 HOST_PROTECTED
 host_protected_start:
+resident_refill_schedule:
+    pushad
+    cmp byte [ebp+dpmi_active], 1
+    jne .done
+    cmp byte [ebp+dpmi_vif], 1
+    jne .done
+    cmp byte [ebp+resident_refill_busy], 0
+    jne .done
+    cmp byte [ebp+dpmi_callback_active], 0
+    jne .done
+    cmp byte [ebp+dpmi_exception_active], 0
+    jne .done
+    cmp dword [ebp+dpmi_locked_depth], 0
+    jne .done
+    cmp dword [ebp+dpmi_stack_depth], 0
+    jne .done
+    cmp dword [ebp+dpmi_bridge_depth], 0
+    jne .done
+    test byte [esp+32+4+44], 3
+    jz .done
+    test dword [esp+32+4+48], 20000h
+    jnz .done
+    mov esi, [ebp+resident_refill_pending]
+    test esi, esi
+    jz .done
+    cmp byte [esi], 1
+    jne .done
+    mov byte [ebp+resident_refill_busy], 1
+    sub esp, 52
+    mov edi, esp
+    xor eax, eax
+    mov ecx, 13
+    cld
+    rep stosd
+    mov edi, esp
+    mov word [edi+32], 202h
+    mov eax, [ebp+resident_refill]
+    mov [edi+42], eax
+    mov al, 1
+    call mon_real_far
+    add esp, 52
+    mov byte [ebp+resident_refill_busy], 0
+.done:
+    popad
+    ret
+
+resident_refill_reset:
+    mov byte [ebp+resident_refill_busy], 0
+    mov eax, [ebp+resident_refill_pending]
+    test eax, eax
+    jz .done
+    mov byte [eax], 0
+.done:
+    ret
+
 resident_pending:
+    call dpmi_hardware_room
+    jc .none
     mov esi, [ebp+resident_wss_event]
     movzx eax, word [esi]
     cmp eax, 16

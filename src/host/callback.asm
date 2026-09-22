@@ -343,9 +343,10 @@ dpmi_callback_stubs:
 %assign slot 0
 %rep 16
     push strict word slot
-    jmp near dpmi_callback_enter
+    jmp strict near dpmi_callback_enter
 %assign slot slot+1
 %endrep
+    times 0 / (($-dpmi_callback_stubs) = 16*6) db 0
 dpmi_callback_enter:
     pushf
     cli

@@ -67,7 +67,7 @@ emm_port_callback:
     jz .dispatch
     or cl, 8
 .dispatch:
-    jmp port_callback
+    jmp port_callback.emm_entry
 .physical:
     stc
     retf

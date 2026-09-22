@@ -29,6 +29,16 @@ cd_timer:
     sub eax, [cd_consumed]
     cmp eax, CD_QUEUE_BYTES-65536
     ja .done
+%ifdef OWN_HOST
+    cmp byte [own_host_refill], 1
+    jne .synchronous
+    les bx, [own_host_active]
+    cmp byte [es:bx], 1
+    jne .synchronous
+    mov byte [cd_refill_pending], 1
+    jmp .done
+.synchronous:
+%endif
     mov byte [busy], 1
     mov [cd_call_ss], ss
     mov [cd_call_sp], sp
@@ -39,7 +49,7 @@ cd_timer:
 %endif
     mov ss, ax
     mov sp, cd_stack_top
-    mov byte [cd_background_reads], 8
+    mov byte [cd_background_reads], 32
     sti
     cld
     call cd_foreground
@@ -56,6 +66,70 @@ cd_timer:
     popad
     iret
 
+%ifdef OWN_HOST
+cd_deferred_refill:
+    pushf
+    pushad
+    push ds
+    push es
+    push fs
+    push gs
+    push cs
+    pop ds
+    cli
+    cmp byte [cd_refill_pending], 1
+    jne .done
+    cmp byte [busy], 0
+    jne .done
+    cmp byte [cd_bios_busy], 0
+    jne .done
+    cmp byte [cd_started], 1
+    jne .cancel
+    cmp byte [cd_error], 0
+    jne .cancel
+    cmp dword [cd_remaining], 0
+    je .cancel
+    les bx, [cd_indos]
+    cmp word [es:bx-1], 0
+    jne .done
+    mov eax, [cd_produced]
+    sub eax, [cd_consumed]
+    cmp eax, CD_QUEUE_BYTES-65536
+    ja .cancel
+    mov byte [cd_refill_pending], 0
+    mov byte [busy], 1
+    mov [cd_call_ss], ss
+    mov [cd_call_sp], sp
+%ifdef EXTERNAL_CD_BUFFERS
+    mov ax, [cd_work_segment]
+%else
+    mov ax, cs
+%endif
+    mov ss, ax
+    mov sp, cd_stack_top
+    mov byte [cd_background_reads], 32
+    sti
+    cld
+    call cd_foreground
+    cli
+    mov byte [cd_background_reads], 0
+    mov ss, [cd_call_ss]
+    mov sp, [cd_call_sp]
+    mov byte [busy], 0
+    jmp .done
+.cancel:
+    mov byte [cd_refill_pending], 0
+.done:
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popad
+    popf
+    retf
+cd_refill_pending db 0
+%endif
+
 cd_bios:
     pushf
     inc byte [cs:cd_bios_busy]
@@ -68,6 +142,9 @@ cd_bios:
     retf 2
 
 cd_background_remove:
+%ifdef OWN_HOST
+    mov byte [cd_refill_pending], 0
+%endif
     cmp byte [cd_background_set], 0
     je .done
     push ds

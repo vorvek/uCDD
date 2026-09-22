@@ -50,7 +50,10 @@ sb_real_irq:
     je .done
     les di, [own_host_active]
     cmp byte [es:di], 0
+    je .take
+    cmp byte [es:di+1], 0
     jne .done
+.take:
     push cs
     call virtual_irq_take
     test ax, ax
@@ -91,5 +94,7 @@ sb_dos_vector:
 sb_game_vector dd 0
 sb_host_guest_irq dw guest_irq
 sb_host_ports dw trap_ports
+    dd 31464443h
+    dw cd_deferred_refill, cd_refill_pending
 sb_old_dos dd 0
 %endif

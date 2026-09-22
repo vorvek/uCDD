@@ -260,6 +260,8 @@ dpmi_bridge_pm:
     mov [ebp+mon_return+12], eax
     movzx eax, word [ebp+dpmi_bridge_real_segment]
     mov [ebp+mon_return+16], eax
+    ; The interrupted real-mode code had interrupts enabled.
+    mov byte [ebp+dpmi_vif], 1
     mov byte [ebp+dpmi_step_active], 0
     call dpmi_pic_queue
     push dword DPMI_IRQ_SS
@@ -388,6 +390,8 @@ dpmi_bridge_stubs:
 %rep 16
 dpmi_bridge_irq_%+irq:
     pushf
+    call dpmi_bridge_blocked
+    jc .chain
     test word [cs:dpmi_bridge_mask], 1<<irq
     jz .chain
     popf
@@ -398,6 +402,17 @@ dpmi_bridge_irq_%+irq:
     jmp far [cs:dpmi_bridge_vectors+irq*4]
 %assign irq irq+1
 %endrep
+
+dpmi_bridge_blocked:
+    cmp byte [cs:dpmi_vif], 0
+    jne .enabled
+    cmp dword [cs:dpmi_locked_depth], 0
+    je .enabled
+    stc
+    ret
+.enabled:
+    clc
+    ret
 
 dpmi_bridge_enter:
     pushad

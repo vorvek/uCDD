@@ -9,6 +9,9 @@ virtual_irq_init:
     call physical_read
     mov [virtual_pic_mask], al
     mov [physical_pic_initial], al
+%ifdef RESIDENT_AUDIO
+    mov [emm_pic_mask_shadow], al
+%endif
     mov cl, [sb_irq]
     mov al, 1
     shl al, cl
@@ -60,6 +63,10 @@ virtual_irq_tick:
     je .position
     push eax
     mov eax, [game_block_bytes]
+    cmp si, dma16
+    jne .single_units
+    shr eax, 1
+.single_units:
     add eax, [si+DMA_POSITION]
     movzx ecx, word [si+DMA_COUNT]
     inc ecx
@@ -79,7 +86,14 @@ virtual_irq_tick:
 .single_done:
     mov byte [sb_finished], 1
     pop eax
+    mov eax, [game_block_bytes]
+    jmp .byte_position
 .position:
+    cmp byte [sb_tail_mode], 0
+    je .render_position
+    mov eax, [sb_tail_consumed]
+    jmp .byte_position
+.render_position:
     movzx ecx, word [game_rate]
     mul ecx
     mov ecx, OUTPUT_RATE
@@ -92,6 +106,7 @@ virtual_irq_tick:
     sub eax, [wss_block_origin]
 .block_position:
 %endif
+.byte_position:
     xor edx, edx
     mov ecx, [game_block_bytes]
     div ecx
@@ -240,6 +255,10 @@ virtual_pic_write:
     mov ah, [physical_irq_bit]
     not ah
     and al, ah
+    or al, [audio_irq_mask_bit]
+%ifdef RESIDENT_AUDIO
+    mov [emm_pic_mask_shadow], al
+%endif
     jmp .physical
 
 virtual_dsp_irq db 0
@@ -251,3 +270,7 @@ physical_pic_initial db 0ffh
 physical_irq_bit db 20h
 pic_visible_bits db 0dfh
 physical_pic_read db 0ah
+
+%ifdef RESIDENT_AUDIO
+emm_pic_mask_shadow db 0ffh
+%endif

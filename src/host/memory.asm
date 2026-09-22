@@ -325,12 +325,15 @@ dpmi_memory_cleanup:
 .next:
     add esi, 16
     loop .block
+    xor edx, edx
+    xchg edx, [ebp+dpmi_blocks_page]
     mov eax, [ebp+dpmi_blocks_pte]
     mov [0ffc00ff4h], eax
     call dpmi_flush
-    mov edx, [ebp+dpmi_blocks_page]
     call dpmi_page_free
-    mov dword [ebp+dpmi_blocks_page], 0
+%ifdef DPMI_CLEANUP_FAULT
+    ud2
+%endif
 .done:
     popad
     ret

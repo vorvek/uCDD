@@ -77,6 +77,12 @@ dpmi_write_vector:
     cmp edi, esi
     jne .done
     call dpmi_bridge_update
+%ifdef RESIDENT_HOST
+    movzx eax, byte [ebp+dpmi_guest_vector]
+    imul eax, 6
+    cmp word [ebp+mon_vectors+eax+4], 0
+    setne byte [ebp+dpmi_audio_pm_handler]
+%endif
 .done:
     jmp mon_dpmi.success
 
@@ -167,17 +173,14 @@ dpmi_deliver_exception:
     mov eax, [esp+52]
     mov [ebp+dpmi_first_exception+12], eax
 .recorded:
+    call dpmi_stack_acquire
     mov edi, [ebp+dpmi_locked_cursor]
-    cmp edi, 4096
-    ja dpmi_locked_abort
-    cmp edi, 32
-    jb dpmi_locked_abort
     mov [ebp+dpmi_exception_cursor], edi
     sub edi, 32
     mov [ebp+dpmi_locked_cursor], edi
     lea eax, [edi+8]
     mov [ebp+dpmi_exception_sp], eax
-    add edi, 3ff000h
+    add edi, 3e0000h
     mov byte [ebp+dpmi_exception_active], 1
     mov edx, [esi]
     movzx eax, word [esi+4]
@@ -200,7 +203,7 @@ dpmi_deliver_exception:
     and eax, 0fffffcffh
     call dpmi_restore_flags
     mov [esp+56], eax
-    sub edi, 3ff000h
+    sub edi, 3e0000h
     mov [esp+60], edi
     mov dword [esp+64], DPMI_IRQ_SS
     pop es
@@ -234,14 +237,16 @@ dpmi_exception_done:
     cmp word [esp+56], DPMI_IRQ_SS
     jne .bad_return
     mov esi, [esp+52]
-    cmp esi, 8
+    mov eax, [ebp+dpmi_exception_cursor]
+    sub eax, 4096-8
+    cmp esi, eax
     jb .bad_return
     mov eax, [ebp+dpmi_exception_cursor]
     sub eax, 24
     jc .bad_return
     cmp esi, eax
     ja .bad_return
-    add esi, 3ff004h
+    add esi, 3e0004h
     push esi
     mov edx, [esi]
     mov ax, [esi+4]
@@ -259,8 +264,7 @@ dpmi_exception_done:
     mov eax, [esp+48]
     call dpmi_restore_flags
     mov [esp+48], eax
-    mov eax, [ebp+dpmi_exception_cursor]
-    mov [ebp+dpmi_locked_cursor], eax
+    call dpmi_stack_release
     mov byte [ebp+dpmi_exception_active], 0
     jmp mon_dpmi.done
 .bad_return:
@@ -430,9 +434,7 @@ dpmi_deliver_interrupt:
     cmp byte [ebp+dpmi_step_active], 1
     jne .untraced
     or word [ebx+48], 300h
-    sub ebx, 8
-    call dpmi_step_check
-    add ebx, 8
+    DPMI_STEP_NORMAL
     jmp mon_dpmi.done
 .untraced:
     and word [ebx+48], 0feffh

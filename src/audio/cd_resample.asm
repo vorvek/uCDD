@@ -35,7 +35,7 @@ cd_begin_resampled:
     mov ecx, [cd_produced]
     sub ecx, ebx
     cmp ecx, eax
-    jb .empty
+    jb .restore
     mov ebp, eax
 %ifdef EXTERNAL_CD_BUFFERS
     mov es, [cd_half_segment]
