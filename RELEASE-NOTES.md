@@ -17,7 +17,7 @@ This beta fixes CD access and mixed-audio problems in protected-mode DOS games. 
 
 ## Validation and limits
 
-Tomb Raider passed startup, menu/demo playback, and a user listening check with the release driver in 86Box with 128 MB. Both effects and CD music sounded normal. This was a bounded test, not a long-session stability test.
+Tomb Raider passed startup and menu/demo playback with the release driver in 86Box with 128 MB. Both audio sources stayed active through the final untouched interval, with no driver CD error or host exit. Listening checks of the preceding development builds confirmed normal effects and CD music, without the repeated-start symptom. These were bounded checks, not long-session stability tests.
 
 Carmageddon passed an uninterrupted driving interval with effects and CD music using an earlier development build. A brief loading stutter was reported. An intermittent timer-return crash captured in an earlier build is not proven fixed by this release.
 
