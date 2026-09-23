@@ -98,16 +98,13 @@ MODE2 sectors, compressed audio, FLAGS, synthetic PREGAP, and multi-file CUE she
 
 These are games known to work, not a list of every game that may work.
 
-- Quake
-- Tomb Raider
+- Archimedean Dynasty
 - Carmageddon
+- Quake
 - Screamer
+- Screamer 2
 - Screamer Rally
-- Archimedean Dynasty (tested with JEMMEX; some crackling was heard during loading)
-
-Screamer and Screamer Rally still have long loading times with resident audio.
-
-These results cover tested gameplay with CD music and game sound, not complete playthroughs or every hardware configuration. Use the sound and memory-manager settings described above.
+- Tomb Raider
 
 Real-mode games are also supported, but not every title has been tested. The ADPCM restriction above still applies.
 
