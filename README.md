@@ -24,7 +24,7 @@ Supported `BLASTER` settings are `A220`, `A240`, `A260`, or `A280`; `I5` or `I7`
 
 A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also needs XMS, VCPI, and a supported interface for I/O port traps. HIMEM alone does not provide these interfaces.
 
-[JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) is the default memory manager. Versions 5.86 and 5.87 are supported, including the changed port-trap callback interface introduced in 5.87pre1. The published 0.9.0 binary rejects that interface.
+μCDD is designed to work alongside [JEMMEX](https://github.com/Baron-von-Riedesel/Jemm). Versions 5.86 and 5.87 are supported, including the changed port-trap callback interface introduced in 5.87pre1. The published 0.9.0 binary rejects that interface.
 
 **Protected-mode game support is incomplete.**
 
@@ -45,11 +45,13 @@ LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
-`HIMEM` with `EMM386` has limited, best-effort support. `MSCDEX` can also assign the CD drive letter.
+Compatibility with Microsoft `HIMEM.SYS` and `EMM386` is best effort and requires workarounds, including separate physical and virtual DMA channels as described below.
+
+`MSCDEX` can also assign the CD drive letter.
 
 **Microsoft EMM386 and shared DMA:** EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output.
 
-Use JEMMEX, or select different 16-bit DMA channels for the physical output and the game. For example, physical DMA 7 with virtual DMA 5 avoids the audio failure. Configure the physical card first, then enter its actual settings in `UCDDSET`. Set the virtual channel with `BLASTER` (`H5` in this example) before installing uCDD, and use those virtual settings in the game. Both streams still play through the same sound card.
+With EMM386, select different 16-bit DMA channels for the physical output and the game. For example, physical DMA 7 with virtual DMA 5 avoids the audio failure. Configure the physical card first, then enter its actual settings in `UCDDSET`. Set the virtual channel with `BLASTER` (`H5` in this example) before installing uCDD, and use those virtual settings in the game. Both streams still play through the same sound card.
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 
