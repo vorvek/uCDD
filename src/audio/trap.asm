@@ -220,7 +220,7 @@ port_callback:
 %endif
     inc dword [port_calls]
     test cl, 18h
-    jnz .unsupported
+    jnz .wide
 %ifdef MDM_SUPPORT
     cmp dx, 60h
     jne .not_keyboard
@@ -292,6 +292,19 @@ port_callback:
     je .address
     cmp dx, 3
     je .count
+    jmp .unsupported
+.wide:
+    mov bl, cl
+    and bl, 1ch
+    cmp bl, 0ch
+    jne .unsupported
+    mov bx, dx
+    sub bx, [guest_base]
+    cmp bx, 4
+    jne .unsupported
+    mov [virtual_mixer_index], al
+    mov al, ah
+    jmp .mixer_data
 .unsupported:
 %ifdef MOUNTED_AUDIO
     mov byte [fault], 3
@@ -308,7 +321,9 @@ port_callback:
     mov byte [sb_finished], 0
     mov byte [sb_paused], 0
     mov byte [sb_single], 0
+    mov byte [sb_input], 0
     mov byte [sb_speaker], 1
+    mov byte [sb_filter_legacy], 0
     mov byte [game_active], 0
     mov byte [game_start_pending], 0
     mov dword [game_exit_frame], 0
@@ -332,6 +347,24 @@ port_callback:
     cmp bl, 81h
     je .done
     mov [virtual_mixer+bx], al
+    cmp bl, 0eh
+    jne .mixer_volume
+    and al, 20h
+    mov [sb_filter_bypass], al
+    jmp .done
+.mixer_volume:
+    cmp bl, 4
+    jne .done
+    shr al, 5
+    movzx ebx, al
+    mov eax, [sb_pcm_levels+ebx*4]
+    mov [sb_pcm_gain], eax
+    mov al, [virtual_mixer+4]
+    shr al, 1
+    and al, 7
+    movzx ebx, al
+    mov eax, [sb_pcm_levels+ebx*4]
+    mov [sb_pcm_gain+4], eax
     jmp .done
 .flip_reset:
     mov byte [si+DMA_FLIP], 0
@@ -373,6 +406,10 @@ port_callback:
     cmp al, 49h
     je .set_mode
     cmp al, 59h
+    je .set_mode
+    cmp al, 45h
+    je .set_mode
+    cmp al, 55h
     jne .unsupported
 .set_mode:
     mov [si+DMA_MODE], al
@@ -428,6 +465,8 @@ port_callback:
     cmp al, 48h
     je .rate
     cmp al, 14h
+    je .rate
+    cmp al, 24h
     je .rate
     cmp al, 1ch
     je .legacy_start
@@ -631,6 +670,8 @@ port_callback:
 .legacy_format:
     push ax
     mov byte [pending_frame_shift], 0
+    cmp byte [dsp_command], 24h
+    je .legacy_mono
     test ax, ax
     jz .legacy_mono
     mov ax, [legacy_rate]
@@ -665,6 +706,8 @@ port_callback:
     jmp .argument_done
 .pcm_argument:
     cmp byte [dsp_command], 14h
+    je .length
+    cmp byte [dsp_command], 24h
     je .length
     cmp byte [dsp_command], 40h
     je .set_time_constant
@@ -744,12 +787,20 @@ port_callback:
 .start:
     mov ah, al
     mov al, [block_low]
+    cmp byte [dsp_command], 24h
+    je .legacy_format
     cmp byte [dsp_command], 14h
     jne .validate_start
     jmp .legacy_format
 .validate_start:
     mov byte [sb_finished], 0
     mov byte [sb_single], 0
+    mov byte [sb_input], 0
+    cmp byte [dsp_command], 24h
+    jne .output_kind
+    mov byte [sb_input], 1
+    jmp .single
+.output_kind:
     cmp byte [dsp_command], 0b2h
     je .single
     cmp byte [dsp_command], 14h
@@ -781,6 +832,13 @@ port_callback:
     call emm_dma_snapshot
 .dma_state_ready:
 %endif
+    cmp byte [sb_input], 0
+    je .direction_ready
+    mov bl, [si+DMA_MODE]
+    and bl, 0efh
+    cmp bl, 45h
+    jne .unsupported
+.direction_ready:
     cmp ax, [si+DMA_COUNT]
     ja .unsupported
     movzx edx, ax
@@ -834,7 +892,7 @@ port_callback:
     ja .unsupported
 .single_size:
     test byte [si+DMA_MODE], 10h
-    jnz .single_alignment
+    jnz .buffer_address
     mov eax, [si+DMA_POSITION]
     cmp si, dma16
     jne .single_position
@@ -846,17 +904,6 @@ port_callback:
     add eax, ebx
     cmp edx, eax
     ja .unsupported
-.single_alignment:
-    cmp si, dma16
-    je .buffer_address
-    mov cl, [pending_frame_shift]
-    mov eax, 1
-    shl eax, cl
-    dec eax
-    test edx, eax
-    jnz .unsupported
-    test ebx, eax
-    jnz .unsupported
 .buffer_address:
     movzx eax, word [si+DMA_ADDRESS]
     cmp si, dma16
@@ -911,8 +958,8 @@ port_callback:
     cmp byte [sb_single], 0
     je .origin_ready
     mov di, [game_dma]
-    cmp di, dma16
-    je .origin_ready
+    cmp byte [pending_frame_shift], 0
+    jne .origin_ready
     mov eax, [di+DMA_POSITION]
     shr eax, cl
     shl eax, 16
@@ -923,8 +970,8 @@ port_callback:
     mov [game_limit], ebx
     cmp byte [sb_single], 0
     je .ring_ready
-    cmp word [game_dma], dma16
-    jne .ring_ready
+    cmp byte [pending_frame_shift], 0
+    je .ring_ready
     mov dword [game_limit], 0
 .ring_ready:
     mov bx, si
@@ -951,6 +998,17 @@ port_callback:
 .duration:
     mov [game_exit_frame], eax
 .duration_ready:
+    mov byte [sb_filter_legacy], 0
+    cmp byte [dsp_command], 0a0h
+    jae .filter_ready
+    cmp byte [sb_input], 0
+    jne .filter_ready
+    mov byte [sb_filter_legacy], 1
+.filter_ready:
+    mov dword [sb_filter_state], 0
+    mov dword [sb_filter_state+4], 0
+    mov dword [sb_filter_state+8], 0
+    mov dword [sb_filter_state+12], 0
     mov byte [sb_tail_mode], 0
     mov byte [sb_tail_valid], 0
     mov dword [sb_tail_consumed], 0
@@ -1354,7 +1412,11 @@ game_mix_frame dd 0
 virtual_resets dw 0
 virtual_starts dw 0
 virtual_mixer_index db 0
-virtual_mixer times 256 db 0
+sb_pcm_levels dd 164,2067,3276,5193,8230,13045,20675,32768
+virtual_mixer:
+    times 4 db 0
+    db 0eeh
+    times 251 db 0
 dma8 db 0,1,0,0
     dw 0,0,0
     dd 0

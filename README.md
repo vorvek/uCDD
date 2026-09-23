@@ -24,7 +24,7 @@ Supported `BLASTER` settings are `A220`, `A240`, `A260`, or `A280`; `I5` or `I7`
 
 A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also needs XMS, VCPI, and a supported interface for I/O port traps. HIMEM alone does not provide these interfaces.
 
-[JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) 5.86 is the tested baseline. Since Beta 0.9.1, uCDD also supports the changed callback interface in 5.87pre1. Installation and real-mode and protected-mode audio clients passed with both versions in IzarraVM. The published 0.9.0 binary rejects 5.87pre1.
+[JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) is the default memory manager. Versions 5.86 and 5.87 are supported, including the changed port-trap callback interface introduced in 5.87pre1. The published 0.9.0 binary rejects that interface.
 
 **Protected-mode game support is incomplete.**
 
@@ -32,14 +32,20 @@ A 386 or later, DOS 5 or later, and a CD redirector are required. CD-Audio also 
 
 Copy `UCDD.EXE` and `UCDDSET.EXE` into one directory. Run `UCDDSET` before the first audio install. If there's no `UCDD.CFG` file, `UCDD -install` will start `UCDDSET` itself.
 
+CONFIG.SYS:
+```dos
+DOS=HIGH,UMB
+DEVICE=C:\JEMMEX\JEMMEX.EXE
+```
+
 AUTOEXEC.BAT:
 ```dos
-SET BLASTER=A220 I7 D1 H5 T6
+SET BLASTER=A220 I5 D1 H5 T6
 LH C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
-`HIMEM` with `EMM386` passes limited tests. `MSCDEX` can also assign the CD drive letter.
+`HIMEM` with `EMM386` has limited, best-effort support. `MSCDEX` can also assign the CD drive letter.
 
 **Microsoft EMM386 and shared DMA:** EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output.
 
@@ -99,6 +105,7 @@ MODE2 sectors, compressed audio, FLAGS, synthetic PREGAP, and multi-file CUE she
 These are games known to work, not a list of every game that may work.
 
 - Archimedean Dynasty
+- Battle Chess Enhanced CD-ROM
 - Carmageddon
 - Quake
 - Screamer

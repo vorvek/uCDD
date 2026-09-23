@@ -775,6 +775,21 @@ mon_real_transfer:
 .stack_ready:
 %endif
     pushad
+%ifdef RESIDENT_HOST
+    mov al, [ebp+dpmi_audio_irq]
+    cmp al, [ebp+dpmi_guest_irq]
+    jne .irq_ready
+    movzx ebx, al
+    movzx eax, byte [ebp+mon_master]
+    add eax, ebx
+    shl eax, 2
+    ; Keep the mixer on the real IVT. POPAD ignores its saved ESP slot.
+    mov ecx, [eax]
+    mov [esp+12], ecx
+    mov ecx, [ebp+dpmi_bridge_vectors+ebx*4]
+    mov [eax], ecx
+.irq_ready:
+%endif
     mov [ebp+mon_resume_sp], esp
     mov [ebp+mon_rm_target], edi
     mov esi, edi
@@ -816,6 +831,18 @@ mon_resume:
     mov dword [ebp+mon_return], monitor_run.returned
     lea eax, [ebp+mon_enter]
     mov [ebp+mon_switch+16], eax
+%ifdef RESIDENT_HOST
+    mov al, [ebp+dpmi_audio_irq]
+    cmp al, [ebp+dpmi_guest_irq]
+    jne .irq_restored
+    movzx ebx, al
+    movzx eax, byte [ebp+mon_master]
+    add eax, ebx
+    shl eax, 2
+    mov ecx, [esp+12]
+    mov [eax], ecx
+.irq_restored:
+%endif
     popad
 %ifdef HOST_DPMI
     pop dword [ebp+dpmi_bridge_stack]

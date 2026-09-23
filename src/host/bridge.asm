@@ -86,10 +86,13 @@ dpmi_bridge_install:
     call dpmi_bridge_vector
     mov eax, [edx*4]
     mov [ebp+dpmi_bridge_vectors+ebx*4], eax
+    cmp bl, [ebp+dpmi_audio_irq]
+    je .next
     mov eax, [ebp+mon_real_base]
     shl eax, 12
     mov ax, [ebp+dpmi_bridge_stubs+ebx*2]
     mov [edx*4], eax
+.next:
     inc ebx
     cmp ebx, 16
     jb .irq

@@ -1,3 +1,17 @@
+# Beta 0.9.1c
+
+This update fixes Battle Chess Enhanced CD-ROM sound and disc compatibility, and Tomb Raider's shared-IRQ startup failure.
+
+## Changes in 0.9.1c
+
+- Accept mixed-mode disc images whose ISO volume size extends into the audio tracks, while keeping data access within the data track. This fixes mounting the original Battle Chess CUE/BIN image without changing its track boundaries.
+- Accept legacy CD control requests used by Battle Chess. This restores CD-Audio playback.
+- Support the short Sound Blaster recording transfer used for DMA detection. This fixes Battle Chess's DMA-channel error in original Sound Blaster mode.
+- Support combined SB Pro mixer writes and odd-length stereo transfers. This fixes missing or incorrect Battle Chess sound effects in SB Pro mode.
+- Honor SB Pro PCM volume and output-filter settings for cleaner legacy sound effects. CD-Audio and SB16 PCM playback retain their existing output quality.
+- Preserve the physical audio interrupt handler when protected-mode games write interrupt vectors directly. This fixes Tomb Raider's startup failure when the physical and virtual cards share IRQ5 under JEMMEX.
+- Use JEMMEX as the default memory manager in the setup instructions. EMM386 support remains best effort.
+
 # Beta 0.9.1b
 
 This update improves CD access and loading speed in protected-mode DOS games.

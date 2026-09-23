@@ -99,6 +99,8 @@ mix_half:
     cmp eax, [game_exit_frame]
     jae .sum
 .source:
+    cmp byte [sb_input], 0
+    jne .audible
     cmp byte [game_source], 0
     jne .audible
     cmp byte [sb_speaker], 0
@@ -110,6 +112,15 @@ mix_half:
     jne .sum
     mov eax, ebp
     shr eax, 16
+    cmp byte [sb_input], 0
+    je .output_sample
+    mov si, ax
+    add si, [game_offset]
+    ; The virtual input supplies unsigned PCM silence.
+    mov byte [fs:si], 128
+    xor esi, esi
+    jmp .advance
+.output_sample:
     cmp byte [game_frame_shift], 0
     jne .stereo
     mov si, ax
@@ -145,7 +156,7 @@ mix_half:
     pop eax
     add eax, 2
     cmp eax, [game_block_bytes]
-    jae .single16_left
+    jae .single_left
     push edx
     movzx edx, word [dma16+DMA_COUNT]
     inc edx
@@ -163,7 +174,7 @@ mix_half:
     pop edx
     sar esi, 1
     jmp .advance
-.single16_left:
+.single_left:
     xor esi, esi
     jmp .advance
 .stereo16_normal:
@@ -182,7 +193,47 @@ mix_half:
     jnz .mono16
 .bytes:
 %endif
-    shl ax, 1
+    shl eax, 1
+    cmp byte [game_source], 0
+    jne .stereo8_normal
+    cmp byte [sb_single], 0
+    je .stereo8_normal
+    mov edx, [dma8+DMA_POSITION]
+    add edx, eax
+    movzx esi, word [dma8+DMA_COUNT]
+    inc esi
+    cmp edx, esi
+    jb .single8_address
+    sub edx, esi
+.single8_address:
+    add dx, [game_offset]
+    push eax
+    mov si, dx
+    movzx edx, byte [fs:si]
+    sub edx, 128
+    shl edx, 7
+    pop eax
+    inc eax
+    cmp eax, [game_block_bytes]
+    jae .single_left
+    push edx
+    movzx edx, word [dma8+DMA_COUNT]
+    inc edx
+    movzx eax, si
+    sub ax, [game_offset]
+    inc eax
+    cmp eax, edx
+    jb .single8_right
+    sub eax, edx
+.single8_right:
+    add ax, [game_offset]
+    mov si, ax
+    movzx esi, byte [fs:si]
+    sub esi, 128
+    shl esi, 7
+    pop edx
+    jmp .advance
+.stereo8_normal:
     add ax, [sb_tail_read_offset]
     mov si, ax
     movzx edx, byte [fs:si]
@@ -226,6 +277,19 @@ mix_half:
     mov [sb_tail_read_offset], ax
     jmp .wrap
 .sum:
+    cmp byte [game_source], 0
+    jne .filtered
+    cmp byte [sb_filter_legacy], 0
+    je .pcm_gain
+    cmp byte [sb_filter_bypass], 0
+    jne .pcm_gain
+    call sb_filter
+.pcm_gain:
+    imul edx, [sb_pcm_gain]
+    sar edx, 15
+    imul esi, [sb_pcm_gain+4]
+    sar esi, 15
+.filtered:
 %ifdef CD_IMAGE_TEST
     xor eax, eax
 %ifdef RESIDENT_AUDIO
@@ -473,6 +537,29 @@ mix_half:
 .done:
     ret
 
+
+; Two-pole 3.2 kHz filter at the nominal 44.1 kHz mix rate, Q14.
+sb_filter:
+    push ecx
+%macro filter_channel 2
+    imul ecx, %1, 638
+    mov eax, ecx
+    add eax, [sb_filter_state+%2]
+    sar eax, 14
+    mov %1, eax
+    imul eax, 22436
+    lea eax, [eax+ecx*2]
+    add eax, [sb_filter_state+%2+4]
+    mov [sb_filter_state+%2], eax
+    imul eax, %1, -8604
+    add eax, ecx
+    mov [sb_filter_state+%2+4], eax
+%endmacro
+    filter_channel edx, 0
+    filter_channel esi, 8
+%unmacro filter_channel 2
+    pop ecx
+    ret
 
 sb_tail_start_bytes dw 0
 

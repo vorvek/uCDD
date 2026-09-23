@@ -16,9 +16,14 @@ guest_dma_ports dw 2,3,83h,0c4h,0c6h,8bh
 audio_irq_busy db 0
 audio_irq_mask_bit db 0
 sb_single db 0
+sb_input db 0
 sb_finished db 0
 sb_paused db 0
 sb_speaker db 1
+sb_pcm_gain dd 32768,32768
+sb_filter_legacy db 0
+sb_filter_bypass db 0
+sb_filter_state times 4 dd 0
 sb_tail_mode db 0
 sb_tail_valid db 0
 sb_tail_segment dw 0

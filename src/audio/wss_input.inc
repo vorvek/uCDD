@@ -167,6 +167,7 @@
     je .done
 .wss_start:
     mov byte [sb_single], 0
+    mov byte [sb_input], 0
     mov byte [sb_finished], 0
     mov byte [sb_paused], 0
     mov byte [wss_paused], 0

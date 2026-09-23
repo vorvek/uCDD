@@ -168,6 +168,8 @@ ioctl_buffer:
     ja .bad
     cmp byte [fs:bp], 13
     je .header_ok
+    cmp byte [fs:bp], 18
+    je .header_ok
     cmp byte [fs:bp], 20
     jb .bad
 .header_ok:
@@ -838,7 +840,9 @@ mount_image:
     mov eax, [pvd+80]
     cmp eax, 18
     jb .reject
-    cmp eax, [candidate_sectors]
+    mov edx, [candidate_total]
+    sub edx, [candidate_origin]
+    cmp eax, edx
     ja .reject
     mov edx, [pvd+84]
     xchg dl, dh
@@ -846,7 +850,11 @@ mount_image:
     xchg dl, dh
     cmp eax, edx
     jne .reject
+    ; Some mixed-mode discs include audio sectors in the volume size.
+    cmp eax, [candidate_sectors]
+    jae .volume_limit
     mov [candidate_sectors], eax
+.volume_limit:
     cmp byte [pvd+156], 34
     jb .reject
     test byte [pvd+181], 2
