@@ -3,7 +3,7 @@
 
 %ifdef RESIDENT_HOST
 HOST_SCRATCH
-%define DPMI_TRACE_COUNT 16
+%define DPMI_TRACE_COUNT 4
 %else
 HOST_REAL
 %define DPMI_TRACE_COUNT 32
@@ -264,6 +264,7 @@ mon_iret:
     pop es
     pop ds
     popad
+.restore_stack:
     push eax
     push ecx
     push edx
@@ -397,6 +398,9 @@ dpmi_dispatch:
     mov byte [ebp+dpmi_dos_via21], 0
     movzx eax, word [ebx+36]
     mov [ebp+dpmi_last_call], ax
+%ifdef HOST_PROFILE
+    HOST_COUNT dpmi, 0
+%else
     movzx edx, byte [ebp+dpmi_trace_pos]
     mov [ebp+dpmi_trace+edx*2], ax
     push eax
@@ -425,6 +429,7 @@ dpmi_dispatch:
     inc dl
     and dl, DPMI_TRACE_COUNT-1
     mov [ebp+dpmi_trace_pos], dl
+%endif
     cmp eax, 0ch
     jbe dpmi_descriptors
     cmp eax, 0100h
@@ -528,8 +533,6 @@ dpmi_dispatch:
     mov word [ebx+32], 4096
     jmp mon_dpmi.success
 .simulate:
-    cmp word [ebx+32], 0
-    jne mon_dpmi.unsupported
     mov ax, [ebx]
     mov edx, [ebx+8]
     mov ecx, 50
@@ -537,20 +540,92 @@ dpmi_dispatch:
     call dpmi_buffer
     jc dpmi_error
     mov edi, eax
+    movzx ecx, word [ebx+32]
+    cmp ecx, 30
+    ja dpmi_bad_value
+    mov ax, [ebx+36]
+    cmp al, 0
+    jne .copy_stack
+    cmp byte [ebx+24], 21h
+    jne .copy_stack
+    cmp byte [edi+29], 4ch
+    je dpmi_bad_value
+.copy_stack:
+    call dpmi_stack_copy
+    jc dpmi_error
     mov ax, [ebx+36]
     cmp al, 0
     jne .far_call
-    cmp byte [ebx+24], 21h
-    jne .interrupt
-    cmp byte [edi+29], 4ch
-    je dpmi_bad_value
 .interrupt:
     movzx eax, byte [ebx+24]
-    call mon_real_int
+    call mon_real_int_copy
     jmp mon_dpmi.success
 .far_call:
-    call mon_real_far
+    call mon_real_far_copy
     jmp mon_dpmi.success
+
+; EBX=client frame, EDI=real-mode register structure, ECX=word count.
+dpmi_stack_copy:
+    shl ecx, 1
+    jz .done
+    push edi
+    push ecx
+    mov ax, [ebx+56]
+    call dpmi_descriptor
+    jc .selector
+    mov edx, [ebx+52]
+    test byte [esi+6], 40h
+    jnz .wide_stack
+    movzx edx, dx
+.wide_stack:
+    mov ax, [ebx+56]
+    xor edi, edi
+    call dpmi_buffer
+    jc .error
+    mov esi, eax
+    mov edi, [esp+4]
+    movzx eax, word [edi+48]
+    test eax, eax
+    jz .host_stack
+    shl eax, 4
+    movzx edx, word [edi+46]
+    cmp edx, ecx
+    jae .custom_ready
+    test edx, edx
+    jnz .value
+    mov edx, 10000h
+.custom_ready:
+    sub edx, ecx
+    mov [edi+46], dx
+    jmp .copy
+.host_stack:
+    movzx eax, word [ebp+mon_return+16]
+    shl eax, 4
+    movzx edx, word [ebp+mon_return+12]
+    cmp edx, ecx
+    jb .value
+    sub edx, ecx
+    mov [ebp+mon_return+12], dx
+.copy:
+    mov edi, eax
+    add edi, edx
+    rep movsb
+    mov ecx, [esp]
+    mov edi, [esp+4]
+    add esp, 8
+.done:
+    clc
+    ret
+.error:
+    add esp, 8
+    stc
+    ret
+.selector:
+    mov eax, 8022h
+    jmp .error
+.value:
+    mov eax, 8021h
+    jmp .error
 
 dpmi_bad_selector:
     mov ax, 8022h
@@ -603,6 +678,7 @@ dpmi_dos:
     mov byte [ebp+dpmi_reflect_vector], 21h
     mov ax, [ebx+36]
     mov [ebp+dpmi_last_dos], ax
+    HOST_COUNT dos, 0
     cmp byte [esp+37], 4ch
     jne dpmi_dos_translate
     mov al, [esp+36]
@@ -690,10 +766,31 @@ dpmi_client_ss dw 0
 HOST_PROTECTED
 dpmi_error_frame times 60 db 0
 dpmi_unsupported_frame times 60 db 0
+%ifdef HOST_PROFILE
+align 4
+host_profile:
+    db 'uCDprof',1
+    dw host_profile_end-host_profile,12,4,8
+host_profile_step dd 0
+host_profile_decode dd 0
+host_profile_gp dd 0
+host_profile_cli dd 0
+host_profile_dpmi dd 0
+host_profile_dos dd 0
+host_profile_bridge dd 0
+host_profile_allocate dd 0
+host_profile_page dd 0
+host_profile_flush dd 0
+host_profile_irqentry dd 0
+host_profile_refill dd 0
+host_profile_samples times 4*2 dd 0
+host_profile_end:
+%else
 dpmi_trace_pos db 0
 dpmi_trace times DPMI_TRACE_COUNT dw 0
 dpmi_trace_args times DPMI_TRACE_COUNT*24 db 0
 dpmi_trace_end:
+%endif
 dpmi_fault_ip dd 0
 dpmi_fault_regs times 16 dd 0
 dpmi_fault_bytes times 8 db 0

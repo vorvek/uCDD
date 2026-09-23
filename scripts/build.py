@@ -36,14 +36,22 @@ def assemble(source, name, defines=(), exe=False, listing=False):
 
 
 def main():
+    global BUILD
     parser = argparse.ArgumentParser()
     parser.add_argument('--resident-audio', '--own-host', action='store_true',
                         help='Build resident audio with the internal DPMI host.')
+    parser.add_argument('--profile-host', action='store_true',
+                        help='Build host counters in build/profile. Use with --resident-audio.')
     args = parser.parse_args()
+    if args.profile_host:
+        if not args.resident_audio:
+            parser.error('--profile-host requires --resident-audio.')
+        BUILD = BUILD / 'profile'
+        BUILD.mkdir(parents=True, exist_ok=True)
     for source, name in [('src/ucdd.asm', 'UCDD.EXE'),
                          ('src/setup.asm', 'UCDDSET.EXE')]:
         if args.resident_audio and name == 'UCDD.EXE':
-            assemble_resident_host()
+            assemble_resident_host(profile=args.profile_host)
         else:
             assemble(source, name, exe=True)
     (BUILD / 'UCDDRV.EXE').unlink(missing_ok=True)
@@ -58,8 +66,9 @@ def main():
         assemble('tests/exit.asm', 'FAIL.COM', ('EXIT_CODE=1',))
 
 
-def assemble_resident_host(defines=()):
-    assemble('src/host/resident.asm', 'UCDDHOST.BIN', listing=True)
+def assemble_resident_host(defines=(), profile=False):
+    assemble('src/host/resident.asm', 'UCDDHOST.BIN',
+             ('HOST_PROFILE=1',) if profile else (), listing=True)
     host = (BUILD / 'UCDDHOST.BIN').read_bytes()
     if len(host) > 65535:
         raise ValueError('The host exceeds one segment.')

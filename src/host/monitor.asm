@@ -1,6 +1,8 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%include "host/profile.inc"
+
 %ifndef SPLIT_HOST
 %macro HOST_REAL 0
     bits 16
@@ -454,10 +456,21 @@ mon_exception_%+vector:
 %assign vector vector+1
 %endrep
 
-%assign vector 0
-%rep 32
+%assign vector 8
+%rep 24
 mon_shared_%+vector:
     push eax
+%if vector == 13
+    ; A ring-3 #GP has one more stack dword than IRQ5.
+    call .base
+.base:
+    pop eax
+    sub eax, .base
+    mov eax, [cs:eax+mon_tss+4]
+    sub eax, 28
+    cmp esp, eax
+    je .exception
+%endif
     mov al, 0bh
     out 20h, al
     in al, 20h
@@ -471,6 +484,11 @@ mon_shared_%+vector:
     push dword 0
     push dword (vector & 7)
     jmp mon_irq
+%if vector == 13
+.exception:
+    pop eax
+    jmp mon_exception_13
+%endif
 %assign vector vector+1
 %endrep
 
@@ -521,6 +539,7 @@ mon_irq:
     pop ebp
     sub ebp, .base
     inc dword [ebp+mon_irqs]
+    HOST_COUNT irqentry, 0
 %ifdef HOST_DPMI
     lea ebx, [esp+8]
     call dpmi_locked_capture
@@ -707,6 +726,11 @@ mon_dpmi:
 
 ; Ring 0, EBP=module base, EDI=flat register frame, AX=real interrupt.
 mon_real_int:
+    push dword 0
+    jmp mon_real_int_start
+mon_real_int_copy:
+    push ecx
+mon_real_int_start:
     mov byte [ebp+mon_rm_kind], 0
     mov [ebp+mon_int_opcode+1], al
 %ifdef HOST_DPMI
@@ -724,8 +748,14 @@ mon_real_int:
 %endif
     jmp mon_real_transfer
 mon_real_far:
+    push dword 0
+    jmp mon_real_far_start
+mon_real_far_copy:
+    push ecx
+mon_real_far_start:
     mov [ebp+mon_rm_kind], al
 mon_real_transfer:
+    HOST_COUNT bridge, 0
     push fs
     push gs
     push dword [ebp+mon_rm_stack]
@@ -764,6 +794,20 @@ mon_resume:
     mov ss, ax
     mov ebp, edi
     mov esp, [ebp+mon_resume_sp]
+%ifdef HOST_DPMI
+    movzx eax, word [esp+50]
+%else
+    movzx eax, word [esp+44]
+%endif
+    test eax, eax
+    jz .stack_ready
+    cmp word [ebp+mon_rm_regs+48], 0
+    je .host_stack
+    add [ebp+mon_rm_regs+46], ax
+    jmp .stack_ready
+.host_stack:
+    add [ebp+mon_return+12], ax
+.stack_ready:
     lea esi, [ebp+mon_rm_regs]
     mov edi, [ebp+mon_rm_target]
     mov ecx, 50
@@ -780,6 +824,7 @@ mon_resume:
     pop dword [ebp+mon_rm_stack]
     pop gs
     pop fs
+    add esp, 4
     ret
 
 mon_exception:
@@ -843,12 +888,26 @@ mon_exception:
     jne .ordinary_exception
     test byte [esp+52], 3
     jz .ordinary_exception
+    mov ebx, esp
+    cld
+    HOST_SAMPLE_STEP
+    call dpmi_step_check
+    ; VIF stays clear: skip IRQ/refill checks, but retain stack repair.
+    cmp word [ebp+dpmi_vif], 0100h
+    jne .step_full
+    pop es
+    pop ds
+    popad
+    add esp, 8
+    jmp mon_iret.restore_stack
+.step_full:
     xor edi, edi
     jmp .advance
 .ordinary_exception:
 %endif
     cmp dword [esp+40], 13
     jne .fault
+    HOST_COUNT gp, 0
     cmp byte [ebp+mon_virtual_active], 1
     jne .ordinary
     cmp dword [esp+44], 0fff8h
@@ -888,9 +947,6 @@ mon_exception:
     jnz .wide_opcode
     mov ecx, 2
 .wide_opcode:
-    call dpmi_descriptor_base
-    add eax, [esp+48]
-    mov esi, eax
 .flat_opcode:
     call mon_gp_fetch
     jc .fault
@@ -898,7 +954,11 @@ mon_exception:
 %else
     cmp byte [esi], 66h
 %endif
+%ifdef HOST_DPMI
+    jne .opcode_ready
+%else
     jne .opcode
+%endif
     inc edi
     xor cl, 6
 .opcode:
@@ -908,6 +968,7 @@ mon_exception:
 %else
     mov al, [esi+edi]
 %endif
+.opcode_ready:
     inc edi
     cmp al, 0fah
     je .cli
@@ -982,6 +1043,7 @@ mon_exception:
     or word [esp+56], 200h
     jmp .advance
 .trace_cli:
+    HOST_COUNT cli, 0
     mov byte [ebp+dpmi_vif], 0
     mov byte [ebp+dpmi_step_active], 1
     or word [esp+56], 300h
@@ -1260,7 +1322,11 @@ mon_stubs:
 mon_shared_stubs:
 %assign vector 0
 %rep 32
+%if vector < 8
+    dw mon_exception_%+vector
+%else
     dw mon_shared_%+vector
+%endif
 %assign vector vector+1
 %endrep
 mon_irq_stubs:

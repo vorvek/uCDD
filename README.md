@@ -94,6 +94,23 @@ Use DOS 8.3 names on a local hard disk. Image files must be smaller than 2 GiB. 
 
 MODE2 sectors, compressed audio, FLAGS, synthetic PREGAP, and multi-file CUE sheets are not supported.
 
+## GAMES WITH REDBOOK AUDIO THAT WORK
+
+These are games known to work, not a list of every game that may work.
+
+- Quake
+- Tomb Raider
+- Carmageddon
+- Screamer
+- Screamer Rally
+- Archimedean Dynasty (tested with JEMMEX; some crackling was heard during loading)
+
+Screamer and Screamer Rally still have long loading times with resident audio.
+
+These results cover tested gameplay with CD music and game sound, not complete playthroughs or every hardware configuration. Use the sound and memory-manager settings described above.
+
+Real-mode games are also supported, but not every title has been tested. The ADPCM restriction above still applies.
+
 ## Build
 
 Assembler sources are in `src/`. NASM is required.

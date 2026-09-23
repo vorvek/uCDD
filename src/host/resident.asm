@@ -1,6 +1,8 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%include "host/profile.inc"
+
 %define SPLIT_HOST 1
 %macro HOST_REAL 0
     section .gateway
@@ -565,6 +567,7 @@ resident_refill_schedule:
     cmp byte [esi], 1
     jne .done
     mov byte [ebp+resident_refill_busy], 1
+    HOST_COUNT refill, 0
     sub esp, 52
     mov edi, esp
     xor eax, eax

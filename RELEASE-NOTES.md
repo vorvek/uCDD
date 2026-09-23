@@ -1,3 +1,15 @@
+# Beta 0.9.1b
+
+This update improves CD access and loading speed in protected-mode DOS games.
+
+## Changes in 0.9.1b
+
+- Support stack arguments in DPMI real-mode interrupt and far-call services. This fixes CD-ROM initialization errors in Pro Pinball: The Web and Timeshock.
+- Accept short, non-interleaved CD read requests. This fixes the CD prompts in Screamer, Screamer 2, and Screamer Rally.
+- Reuse extended-memory pages and reduce page-table updates, memory clearing, and interrupt-stepping overhead to improve loading speed with resident audio.
+- Correct the distinction between a protection fault and physical IRQ 5 under EMM386. This prevents the Screamer reset when CD audio starts with that interrupt configuration.
+- Add an optional host-profiling build without adding counters to the normal release build.
+
 # Beta 0.9.1a
 
 This update corrects interrupt timing in the internal protected-mode host. It retains the audio changes from Beta 0.9.1.

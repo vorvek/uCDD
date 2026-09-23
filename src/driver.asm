@@ -363,7 +363,7 @@ audio_request:
     ret
 
 read_sectors:
-    cmp byte [fs:bp], 27
+    cmp byte [fs:bp], 26
     jb request_error
     mov cx, [fs:bp+18]
     mov [read_remaining], cx
@@ -375,8 +375,13 @@ read_sectors:
     jne request_unknown
     cmp byte [fs:bp+24], 0
     jne request_unknown
-    cmp word [fs:bp+25], 0
+    cmp byte [fs:bp+25], 0
     jne request_unknown
+    cmp byte [fs:bp], 27
+    jb .interleave_ok
+    cmp byte [fs:bp+26], 0
+    jne request_unknown
+.interleave_ok:
     mov eax, [fs:bp+20]
     movzx edx, cx
     add edx, eax

@@ -4,6 +4,7 @@
 HOST_PROTECTED
 ; EBX points to the normalized exception frame.
 dpmi_step_check:
+    HOST_COUNT decode, 0
     pushad
     mov dword [esp+12], 0
 .next:
@@ -19,19 +20,13 @@ dpmi_step_check:
     mov ax, [ebx+52]
     mov ecx, 4
     cmp ax, 23h
-    je .flat_code
+    je .decode
     call dpmi_descriptor
     jc .done
     test byte [esi+6], 40h
     jnz .code_size
     mov ecx, 2
 .code_size:
-    call dpmi_descriptor_base
-    add eax, [ebx+48]
-    mov esi, eax
-    jmp .decode
-.flat_code:
-    mov esi, [ebx+48]
 .decode:
     mov [ebp+dpmi_step_address_size], cl
     mov word [ebp+dpmi_step_segment], 0ffffh

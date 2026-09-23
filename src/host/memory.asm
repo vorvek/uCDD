@@ -39,6 +39,7 @@ dpmi_memory_info:
     call far [ebp+mon_server]
     mov [esp+20], edx
     popad
+    add edx, [ebp+dpmi_pool_count]
     sub edx, 64
     jnc .count
     xor edx, edx
@@ -127,6 +128,7 @@ dpmi_resize:
 
 ; EAX=bytes, returns EAX=linear address and EDX=handle.
 dpmi_memory_allocate:
+    HOST_COUNT allocate, 0
     push ebx
     push ecx
     push esi
@@ -189,9 +191,16 @@ dpmi_memory_allocate:
 .map:
     call dpmi_page_table
     jc .rollback
+    xor ecx, ecx
     cmp dword [ebp+dpmi_map_source], 0
     jne .physical
-    call dpmi_page_allocate
+    HOST_COUNT page, 0
+    mov ecx, [ebp+dpmi_pool_head]
+    mov edx, ecx
+    jecxz .fresh
+    jmp .map_page
+.fresh:
+    call dpmi_page_allocate.uncounted
     jc .rollback
     jmp .map_page
 .physical:
@@ -200,20 +209,16 @@ dpmi_memory_allocate:
     add edx, [ebp+dpmi_map_source]
     or edx, 18h
 .map_page:
+    ; The final mapping also exposes a pooled page's next link.
     mov eax, edi
     shr eax, 10
     or edx, 7
     mov [eax+0ffc00000h], edx
     call dpmi_flush
-    cmp dword [ebp+dpmi_map_source], 0
-    jne .mapped
-    push ecx
-    push edi
-    xor eax, eax
-    mov ecx, 1024
-    rep stosd
-    pop edi
-    pop ecx
+    jecxz .mapped
+    mov edx, [edi]
+    mov [ebp+dpmi_pool_head], edx
+    dec dword [ebp+dpmi_pool_count]
 .mapped:
     inc ebx
     add edi, 4096
@@ -270,16 +275,20 @@ dpmi_memory_release:
 .page:
     mov eax, edi
     shr eax, 10
-    xor edx, edx
-    xchg edx, [eax+0ffc00000h]
-    and edx, 0fffff000h
-    call dpmi_flush
     test dword [esi+8], 80000000h
-    jnz .released_page
-    call dpmi_page_free
-.released_page:
+    jnz .unmap
+    mov edx, [ebp+dpmi_pool_head]
+    mov [edi], edx
+    mov edx, [eax+0ffc00000h]
+    and edx, 0fffff000h
+    mov [ebp+dpmi_pool_head], edx
+    inc dword [ebp+dpmi_pool_count]
+.unmap:
+    xor edx, edx
+    mov [eax+0ffc00000h], edx
     add edi, 4096
     loop .page
+    call dpmi_flush
 .empty:
     xor eax, eax
     mov [esi], eax
@@ -325,6 +334,13 @@ dpmi_memory_cleanup:
 .next:
     add esi, 16
     loop .block
+.pool:
+    cmp dword [ebp+dpmi_pool_head], 0
+    je .metadata
+    call dpmi_page_allocate
+    call dpmi_page_free
+    jmp .pool
+.metadata:
     xor edx, edx
     xchg edx, [ebp+dpmi_blocks_page]
     mov eax, [ebp+dpmi_blocks_pte]
@@ -416,11 +432,30 @@ dpmi_page_table:
     ret
 
 dpmi_page_allocate:
+    HOST_COUNT page, 0
+.uncounted:
     pushad
+    mov edx, [ebp+dpmi_pool_head]
+    test edx, edx
+    jz .vcpi
+    ; Borrow the metadata mapping while interrupts are disabled.
+    mov ebx, [0ffc00ff4h]
+    mov eax, edx
+    or eax, 3
+    mov [0ffc00ff4h], eax
+    call dpmi_flush
+    mov eax, [dpmi_blocks]
+    mov [ebp+dpmi_pool_head], eax
+    dec dword [ebp+dpmi_pool_count]
+    mov [0ffc00ff4h], ebx
+    call dpmi_flush
+    jmp .ok
+.vcpi:
     mov ax, 0de04h
     call far [ebp+mon_server]
     test ah, ah
     jnz .bad
+.ok:
     mov [esp+20], edx
     popad
     clc
@@ -446,6 +481,7 @@ dpmi_page_free:
     ret
 
 dpmi_flush:
+    HOST_COUNT flush
     push eax
     mov eax, cr3
     mov cr3, eax
@@ -458,6 +494,8 @@ dpmi_blocks equ 3fd000h
 DPMI_BLOCK_COUNT equ 256
 dpmi_blocks_page dd 0
 dpmi_blocks_pte dd 0
+dpmi_pool_head dd 0
+dpmi_pool_count dd 0
 dpmi_map_source dd 0
 dpmi_release_failed db 0
 
