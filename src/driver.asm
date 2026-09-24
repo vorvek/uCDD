@@ -45,7 +45,7 @@ read_skip dw 0
 descriptor_sector dd 0
 read_remaining dw 0
 read_completed dw 0
-read_chunk dw 0
+read_bytes dw 0
 read_destination dd 0
 units_base dw 0
 
@@ -429,17 +429,27 @@ read_sectors:
     int 21h
     jc .io_failure
 .next:
-    mov ax, 1
-    cmp word [read_skip], 0
-    jne .chunk
     mov ax, [cs:read_remaining]
     cmp ax, 31
     jbe .chunk
     mov ax, 31
 .chunk:
-    mov [cs:read_chunk], ax
     mov cx, ax
     shl cx, 11
+    cmp word [read_skip], 0
+    je .read_chunk
+    ; Raw input must fit in the caller's remaining cooked buffer.
+    mov ax, cx
+    sub ax, 2048
+    xor dx, dx
+    mov bx, [read_skip]
+    add bx, 2048
+    div bx
+    mul bx
+    add ax, 2048
+    mov cx, ax
+.read_chunk:
+    mov [read_bytes], cx
     mov si, [cs:unit_pointer]
     mov bx, [cs:si+HANDLE]
     lds dx, [cs:read_destination]
@@ -449,11 +459,17 @@ read_sectors:
     pop ds
     jc .io_failure
     mov dx, ax
+    cmp word [read_skip], 0
+    je .cooked_result
+    push dx
+    call compact_raw_read
+    pop dx
+    jmp .count_result
+.cooked_result:
     shr ax, 11
+.count_result:
     add [read_completed], ax
-    cmp ax, [read_chunk]
-    jne .io_failure
-    test dx, 2047
+    cmp dx, [read_bytes]
     jnz .io_failure
     sub [read_remaining], ax
     jz .read_done
@@ -486,6 +502,53 @@ read_sectors:
     ret
 .range:
     mov ax, 8108h
+    ret
+
+compact_raw_read:
+    push bx
+    push cx
+    push si
+    push di
+    push bp
+    push ds
+    push es
+    cmp ax, 2048
+    jb .empty
+    sub ax, 2048
+    xor dx, dx
+    mov bx, [read_skip]
+    add bx, 2048
+    div bx
+    inc ax
+    cmp ax, 1
+    jbe .done
+    push ax
+    mov bp, ax
+    dec bp
+    lds si, [read_destination]
+    push ds
+    pop es
+    mov di, si
+    add di, 2048
+    add si, bx
+.copy:
+    mov cx, 512
+    rep movsd
+    add si, [cs:read_skip]
+    dec bp
+    jnz .copy
+    pop ax
+    jmp .done
+.empty:
+    xor ax, ax
+.done:
+    pop es
+    pop ds
+    pop bp
+    pop di
+    pop si
+    pop cx
+    pop bx
     ret
 
 request_ok:

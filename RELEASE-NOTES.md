@@ -1,3 +1,12 @@
+# Beta 0.9.2
+
+## Changes in 0.9.2
+
+- Batch raw BIN sector reads and compact their payloads in place. This reduces DOS reads and seeks for multi-sector requests.
+- Defer blocked timer, keyboard, and mouse interrupts for protected-mode games. This fixes missed key releases and mouse-triggered slowdown in Descent II.
+- Add a build-time audio output period option for testing. The standard build retains its 32-frame period.
+- Add Descent II to the list of working Redbook-audio games.
+
 # Beta 0.9.1e
 
 This update improves sound playback in Pro Pinball: The Web, reduces audio and protected-mode processing overhead, and lowers conventional-memory use.

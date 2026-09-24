@@ -402,12 +402,24 @@ dpmi_bridge_irq_%+irq:
     jmp dpmi_bridge_defer
 .open:
     call dpmi_bridge_blocked
+%if irq < 2 || irq = 12
+    jc .defer_blocked
+%else
     jc .chain
+%endif
     test word [cs:dpmi_bridge_mask], 1<<irq
     jz .chain
     popf
     push strict word irq
     jmp dpmi_bridge_enter
+%if irq < 2 || irq = 12
+.defer_blocked:
+    test word [cs:dpmi_bridge_mask], 1<<irq
+    jz .chain
+    popf
+    push strict word irq
+    jmp dpmi_bridge_defer
+%endif
 .chain:
     popf
     jmp far [cs:dpmi_bridge_vectors+irq*4]

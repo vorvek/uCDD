@@ -42,7 +42,11 @@ def main():
                         help='Build resident audio with the internal DPMI host.')
     parser.add_argument('--profile-host', action='store_true',
                         help='Build host counters in build/profile. Use with --resident-audio.')
+    parser.add_argument('--audio-period-frames', type=int, choices=(32, 64, 128, 256),
+                        default=32, help='Set the resident audio output period for testing.')
     args = parser.parse_args()
+    if args.audio_period_frames != 32 and not args.resident_audio:
+        parser.error('--audio-period-frames requires --resident-audio.')
     if args.profile_host:
         if not args.resident_audio:
             parser.error('--profile-host requires --resident-audio.')
@@ -51,7 +55,8 @@ def main():
     for source, name in [('src/ucdd.asm', 'UCDD.EXE'),
                          ('src/setup.asm', 'UCDDSET.EXE')]:
         if args.resident_audio and name == 'UCDD.EXE':
-            assemble_resident_host(profile=args.profile_host)
+            assemble_resident_host((f'OUTPUT_SHIFT={args.audio_period_frames.bit_length()-1}',),
+                                   profile=args.profile_host)
         else:
             assemble(source, name, exe=True)
     (BUILD / 'UCDDRV.EXE').unlink(missing_ok=True)
