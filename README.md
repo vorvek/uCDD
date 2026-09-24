@@ -49,9 +49,13 @@ Compatibility with Microsoft `HIMEM.SYS` and `EMM386` is best effort and require
 
 `MSCDEX` can also assign the CD drive letter.
 
-**Microsoft EMM386 and shared DMA:** EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output.
+### Microsoft EMM386 and shared DMA
+
+EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output.
 
 With EMM386, select different 16-bit DMA channels for the physical output and the game. For example, physical DMA 7 with virtual DMA 5 avoids the audio failure. Configure the physical card first, then enter its actual settings in `UCDDSET`. Set the virtual channel with `BLASTER` (`H5` in this example) before installing uCDD, and use those virtual settings in the game. Both streams still play through the same sound card.
+
+### Installation
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available (requires ~38KB of contiguous space).
 
