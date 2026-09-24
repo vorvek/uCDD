@@ -1,3 +1,17 @@
+# Beta 0.9.1e
+
+This update improves sound playback in Pro Pinball: The Web, reduces audio and protected-mode processing overhead, and lowers conventional-memory use.
+
+## Changes in 0.9.1e
+
+- Support shorter game DMA buffers and reduce audio output latency. This fixes the repeated sound-effect stutter in Pro Pinball: The Web.
+- Reduce mixer overhead for silent output, CD-Audio, and 16-bit stereo game sound. Reuse CD samples between output blocks to reduce extended-memory transfers.
+- Schedule background CD reads to give games more time to refill their sound buffers. Avoid redundant seeks and add an optional extended-memory cache for disc-image file metadata.
+- Preserve pending hardware interrupts while a protected-mode game disables virtual interrupts. Reduce overhead when games poll the timer, display status, or sound card.
+- Process simple protected-mode instructions in bounded batches and reduce repeated code and buffer checks.
+- Release the host's page-setup workspace after installation. This saves 7.5 KiB of conventional memory when the driver is loaded high.
+- Add Pro Pinball: The Web and Pro Pinball: Timeshock! to the list of working Redbook-audio games.
+
 # Beta 0.9.1c
 
 This update fixes Battle Chess Enhanced CD-ROM sound and disc compatibility, and Tomb Raider's shared-IRQ startup failure.
