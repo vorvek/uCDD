@@ -418,6 +418,12 @@ read_sectors:
     shr eax, 16
     mov cx, ax
     mov bx, [si+HANDLE]
+%ifdef RESIDENT_AUDIO
+    cmp bx, [cd_handle]
+    jne .audio_position_ready
+    mov byte [cd_seek], 1
+.audio_position_ready:
+%endif
     call dos_enter
     mov ax, 4200h
     int 21h

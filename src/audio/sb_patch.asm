@@ -94,7 +94,7 @@ sb_dos_vector:
 sb_game_vector dd 0
 sb_host_guest_irq dw guest_irq
 sb_host_ports dw trap_ports
-    dd 31464443h
-    dw cd_deferred_refill, cd_refill_pending
+    dd 33464443h
+    dw cd_deferred_refill, cd_refill_pending, virtual_pic_request, last_clock
 sb_old_dos dd 0
 %endif

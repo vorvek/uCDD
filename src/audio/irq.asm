@@ -274,3 +274,8 @@ physical_pic_read db 0ah
 %ifdef RESIDENT_AUDIO
 emm_pic_mask_shadow db 0ffh
 %endif
+
+; CDF2 exposes these offsets to the protected host.
+cdf2_service_check equ 1 / ((virtual_pic_service-virtual_pic_request) = 1)
+cdf2_visible_check equ 1 / ((pic_visible_bits-virtual_pic_request) = 8)
+cdf2_mode_check equ 1 / ((physical_pic_read-virtual_pic_request) = 9)

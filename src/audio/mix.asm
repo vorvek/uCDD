@@ -76,11 +76,256 @@ mix_half:
     mov ax, [game_offset]
     mov [sb_tail_read_offset], ax
     cmp byte [sb_tail_valid], 0
-    je .frame
+    je .fast_dispatch
     mov fs, [sb_tail_segment]
     mov ax, [sb_tail_offset]
     sub ax, [sb_tail_start_bytes]
     mov [sb_tail_read_offset], ax
+    jmp .frame
+%ifdef RESIDENT_AUDIO
+.fast_dispatch:
+    cmp byte [sound_card], 0
+    jne .frame
+    cmp byte [sb_patch_active], 0
+    jne .frame
+    cmp dword [cd_step], 65536
+    jne .frame
+    cmp dword [cd_step_remainder], 0
+    jne .frame
+    cmp dword [cd_fraction], 0
+    jne .frame
+    cmp byte [sb_filter_legacy], 0
+    jne .frame
+    cmp byte [game_active], 0
+    jne .fast_active
+    cmp byte [cd_valid], 0
+    jne .cd_only
+    movzx eax, cx
+    add [game_mix_frame], eax
+    shl cx, 1
+    xor ax, ax
+    rep stosw
+    jmp .half_complete
+.cd_only:
+    cmp dword [cd_gain], 256
+    ja .fast_frame
+    cmp dword [cd_gain+4], 256
+    ja .fast_frame
+    movzx eax, cx
+    add [game_mix_frame], eax
+.cd_only_frame:
+    movsx eax, word [gs:bx]
+    imul eax, [cd_gain]
+    sar eax, 9
+    stosw
+    movsx eax, word [gs:bx+2]
+    imul eax, [cd_gain+4]
+    sar eax, 9
+    stosw
+    add bx, 4
+    dec cx
+    jnz .cd_only_frame
+    jmp .half_complete
+.fast_active:
+    cmp byte [game_source], 0
+    jne .frame
+    cmp byte [sb_single], 0
+    jne .frame
+    cmp byte [sb_tail_valid], 0
+    jne .frame
+    cmp byte [sb_input], 0
+    jne .frame
+    cmp byte [sb_speaker], 1
+    jne .frame
+    cmp byte [sb_filter_legacy], 0
+    jne .frame
+    cmp byte [game_frame_shift], 2
+    jne .frame
+    cmp dword [game_step], 65536
+    jne .frame
+    cmp dword [game_exit_frame], 0
+    jne .frame
+    mov si, [game_dma]
+    cmp byte [si+DMA_MASK], 0
+    jne .frame
+    cmp dword [game_limit], 0
+    je .frame
+    cmp dword [sb_pcm_gain], 32768
+    jne .fast_frame
+    cmp dword [sb_pcm_gain+4], 32768
+    jne .fast_frame
+    cmp dword [cd_gain], 256
+    ja .fast_frame
+    cmp dword [cd_gain+4], 256
+    ja .fast_frame
+    cmp byte [cd_valid], 0
+    jne .unity_frame
+    push bx
+    movzx edx, cx
+    add [game_mix_frame], edx
+.unity_chunk:
+    mov eax, ebp
+    shr eax, 16
+    shl ax, 2
+    mov si, ax
+    add si, [game_offset]
+    mov eax, [game_limit]
+    sub eax, ebp
+    add eax, 65535
+    shr eax, 16
+    cmp eax, edx
+    jbe .unity_amount
+    mov eax, edx
+.unity_amount:
+    sub edx, eax
+    mov cx, ax
+    shl eax, 16
+    add ebp, eax
+    cmp ebp, [game_limit]
+    jb .unity_copy
+    sub ebp, [game_limit]
+.unity_copy:
+    mov eax, [fs:si]
+    mov ebx, eax
+    and ebx, 80008000h
+    shr eax, 1
+    and eax, 7fff7fffh
+    or eax, ebx
+    mov [es:di], eax
+    add si, 4
+    add di, 4
+    dec cx
+    jnz .unity_copy
+    test edx, edx
+    jnz .unity_chunk
+    pop bx
+    jmp .half_complete
+.unity_frame:
+    movzx eax, cx
+    add [game_mix_frame], eax
+.cd_chunk:
+    mov eax, ebp
+    shr eax, 16
+    shl ax, 2
+    mov si, ax
+    add si, [game_offset]
+    mov eax, [game_limit]
+    sub eax, ebp
+    add eax, 65535
+    shr eax, 16
+    cmp ax, cx
+    jbe .cd_amount
+    movzx eax, cx
+.cd_amount:
+    sub cx, ax
+    push cx
+    mov cx, ax
+    shl eax, 16
+    add ebp, eax
+    cmp ebp, [game_limit]
+    jb .cd_copy
+    sub ebp, [game_limit]
+.cd_copy:
+    cmp dword [cd_gain], 256
+    jne .cd_gain_copy
+    cmp dword [cd_gain+4], 256
+    jne .cd_gain_copy
+.cd_full_copy:
+    mov eax, [fs:si]
+    mov edx, [gs:bx]
+    shr eax, 1
+    shr edx, 1
+    and eax, 7fff7fffh
+    and edx, 7fff7fffh
+    xor eax, 40004000h
+    xor edx, 40004000h
+    add eax, edx
+    xor eax, 80008000h
+    mov [es:di], eax
+    add si, 4
+    add bx, 4
+    add di, 4
+    dec cx
+    jnz .cd_full_copy
+    jmp .cd_chunk_done
+.cd_gain_copy:
+    movsx edx, word [fs:si]
+    sar edx, 1
+    movsx eax, word [gs:bx]
+    imul eax, [cd_gain]
+    sar eax, 9
+    add eax, edx
+    stosw
+    movsx edx, word [fs:si+2]
+    sar edx, 1
+    movsx eax, word [gs:bx+2]
+    imul eax, [cd_gain+4]
+    sar eax, 9
+    add eax, edx
+    stosw
+    add si, 4
+    add bx, 4
+    dec cx
+    jnz .cd_gain_copy
+.cd_chunk_done:
+    pop cx
+    test cx, cx
+    jnz .cd_chunk
+    jmp .half_complete
+.fast_frame:
+    xor edx, edx
+    xor esi, esi
+    cmp byte [game_active], 0
+    je .fast_pcm_ready
+    mov eax, ebp
+    shr eax, 16
+    shl ax, 2
+    add ax, [game_offset]
+    mov si, ax
+    movsx edx, word [fs:si]
+    movsx esi, word [fs:si+2]
+    sar edx, 1
+    sar esi, 1
+    imul edx, [sb_pcm_gain]
+    imul esi, [sb_pcm_gain+4]
+    sar edx, 15
+    sar esi, 15
+.fast_pcm_ready:
+    xor eax, eax
+    cmp byte [cd_valid], 0
+    je .fast_left
+    movsx eax, word [gs:bx]
+    imul eax, [cd_gain]
+    sar eax, 9
+.fast_left:
+    add eax, edx
+    call .clip
+    stosw
+    xor eax, eax
+    cmp byte [cd_valid], 0
+    je .fast_right
+    movsx eax, word [gs:bx+2]
+    imul eax, [cd_gain+4]
+    sar eax, 9
+    add bx, 4
+.fast_right:
+    add eax, esi
+    call .clip
+    stosw
+    cmp byte [game_active], 0
+    je .fast_phase
+    add ebp, 65536
+    cmp ebp, [game_limit]
+    jb .fast_phase
+    sub ebp, [game_limit]
+.fast_phase:
+    inc dword [game_mix_frame]
+    dec cx
+    jnz .fast_frame
+    jmp .half_complete
+%else
+.fast_dispatch:
+%endif
 .frame:
     xor edx, edx
     xor esi, esi
@@ -486,6 +731,7 @@ mix_half:
 %endif
     dec cx
     jnz .frame
+.half_complete:
     mov [cd_position], bx
     mov [game_phase], ebp
     call sb_tail_prepare
@@ -581,7 +827,7 @@ sb_tail_prepare:
     mov ax, [cd_half_segment]
     test ax, ax
     jz .done
-    add ax, (PERIOD_BYTES+PERIOD_BYTES/32+4+15)/16
+    add ax, (CD_HALF_BYTES+15)/16
     mov [sb_tail_segment], ax
 %endif
     cmp word [sb_tail_segment], 0

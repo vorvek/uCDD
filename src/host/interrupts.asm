@@ -8,6 +8,7 @@ dpmi_step_check:
     pushad
     mov dword [esp+12], 0
 .next:
+    mov dword [ebp+dpmi_step_code], 0
     cmp byte [ebp+dpmi_sti_shadow], 0
     je .shadow_ready
     mov eax, [ebx+48]
@@ -119,7 +120,7 @@ dpmi_step_check:
     cmp al, 0cfh
     je .iret
     cmp al, 9dh
-    jne .done
+    jne .simple
     push edi
     call .stack
     jc .bad_stack
@@ -475,16 +476,51 @@ dpmi_step_check:
 .read_code:
     push edx
     push edi
+    ; Reuse validated addresses, not instruction bytes.
     lea edx, [edi+ecx]
     cmp edx, 15
     ja .code_bad
+    mov eax, [ebp+dpmi_step_code]
+    test eax, eax
+    jz .code_validate
+    mov edx, [ebx+48]
+    sub edx, [ebp+dpmi_step_code_ip]
+    jc .code_validate
+    add edx, edi
+    jc .code_validate
+    add edx, ecx
+    jc .code_validate
+    cmp edx, 32
+    ja .code_validate
+    sub edx, ecx
+    add eax, edx
+    jmp .code_load
+.code_validate:
+    mov dword [ebp+dpmi_step_code], 0
+    push ecx
+    push edi
+    mov ax, [ebx+52]
+    mov edx, [ebx+48]
+    mov ecx, 32
+    mov edi, 2
+    call dpmi_code_buffer
+    pop edi
+    pop ecx
+    jc .code_uncached
+    mov [ebp+dpmi_step_code], eax
+    mov edx, [ebx+48]
+    mov [ebp+dpmi_step_code_ip], edx
+    add eax, edi
+    jmp .code_load
+.code_uncached:
     mov edx, [ebx+48]
     add edx, edi
     jc .code_bad
     mov ax, [ebx+52]
     mov edi, 2
-    call dpmi_buffer
+    call dpmi_code_buffer
     jc .code_bad
+.code_load:
     cmp ecx, 4
     je .code_dword
     cmp ecx, 2
@@ -511,6 +547,319 @@ dpmi_step_check:
     call .adjust_stack
 .bad_stack:
     pop edi
+    jmp .done
+.simple:
+    cmp word [ebp+dpmi_vif], 0100h
+    jne .done
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    jne .done
+    cmp dword [esp+12], 16
+    jae .done
+    test dl, 6
+    jnz .done
+    cmp byte [ebp+dpmi_step_address_size], 4
+    jne .done
+    mov edx, dr7
+    test dl, 0ffh
+    jnz .done
+    cmp al, 0e4h
+    je .simple_io
+    cmp al, 0f7h
+    je .simple_negate
+    cmp al, 0e4h
+    ja .simple_io
+    cmp al, 74h
+    je .simple_branch
+    cmp al, 75h
+    je .simple_branch
+    cmp al, 23h
+    je .simple_memory
+    cmp al, 3bh
+    je .simple_memory
+    cmp al, 8bh
+    jne .simple_move
+    call .fetch
+    jc .done
+    cmp al, 0c0h
+    mov al, 8bh
+    jb .simple_memory
+.simple_move:
+    mov dl, al
+    cmp al, 0b0h
+    jb .simple_register
+    cmp al, 0bfh
+    ja .done
+    and eax, 7
+    test dl, 8
+    jnz .simple_immediate_word
+    movzx esi, byte [ebp+dpmi_byte_registers+eax]
+    mov ecx, 1
+    jmp .simple_immediate
+.simple_immediate_word:
+    cmp eax, 4
+    je .done
+    movzx esi, byte [ebp+dpmi_full_registers+eax]
+.simple_immediate:
+    call .read_code
+    jc .done
+    add edi, ecx
+    cmp ecx, 4
+    je .simple_store_dword
+    cmp ecx, 2
+    je .simple_store_word
+    mov [ebx+esi], al
+    jmp .simple_advance
+.simple_store_word:
+    mov [ebx+esi], ax
+    jmp .simple_advance
+.simple_store_dword:
+    mov [ebx+esi], eax
+    jmp .simple_advance
+.simple_register:
+    cmp al, 86h
+    jb .done
+    cmp al, 8bh
+    ja .done
+    call .fetch
+    jc .done
+    cmp al, 0c0h
+    jb .done
+    inc edi
+    mov esi, eax
+    and eax, 7
+    shr esi, 3
+    and esi, 7
+    test dl, 1
+    jnz .simple_full
+    mov ecx, 1
+    movzx eax, byte [ebp+dpmi_byte_registers+eax]
+    movzx esi, byte [ebp+dpmi_byte_registers+esi]
+    jmp .simple_direction
+.simple_full:
+    cmp eax, 4
+    je .done
+    cmp esi, 4
+    je .done
+    movzx eax, byte [ebp+dpmi_full_registers+eax]
+    movzx esi, byte [ebp+dpmi_full_registers+esi]
+.simple_direction:
+    cmp dl, 88h
+    jb .simple_exchange
+    test dl, 2
+    jz .simple_copy
+    xchg eax, esi
+.simple_copy:
+    cmp ecx, 4
+    je .simple_copy_dword
+    cmp ecx, 2
+    je .simple_copy_word
+    mov dl, [ebx+esi]
+    mov [ebx+eax], dl
+    jmp .simple_advance
+.simple_copy_word:
+    mov dx, [ebx+esi]
+    mov [ebx+eax], dx
+    jmp .simple_advance
+.simple_copy_dword:
+    mov edx, [ebx+esi]
+    mov [ebx+eax], edx
+    jmp .simple_advance
+.simple_exchange:
+    cmp ecx, 4
+    je .simple_exchange_dword
+    cmp ecx, 2
+    je .simple_exchange_word
+    mov dl, [ebx+esi]
+    xchg dl, [ebx+eax]
+    mov [ebx+esi], dl
+    jmp .simple_advance
+.simple_exchange_word:
+    mov dx, [ebx+esi]
+    xchg dx, [ebx+eax]
+    mov [ebx+esi], dx
+    jmp .simple_advance
+.simple_exchange_dword:
+    mov edx, [ebx+esi]
+    xchg edx, [ebx+eax]
+    mov [ebx+esi], edx
+    jmp .simple_advance
+.simple_memory:
+    push eax
+    call .fetch
+    jc .simple_memory_bad_opcode
+    cmp al, 0c0h
+    jae .simple_memory_bad_opcode
+    shr eax, 3
+    and eax, 7
+    cmp eax, 4
+    je .simple_memory_bad_opcode
+    movzx esi, byte [ebp+dpmi_full_registers+eax]
+    push esi
+    call .effective_address
+    jc .simple_memory_bad_target
+    push edi
+    xor edi, edi
+    call dpmi_read_buffer
+    pop edi
+    jc .simple_memory_bad_target
+    cmp ecx, 2
+    jne .simple_memory_dword
+    movzx edx, word [eax]
+    jmp .simple_memory_loaded
+.simple_memory_dword:
+    mov edx, [eax]
+.simple_memory_loaded:
+    pop esi
+    pop eax
+    cmp al, 8bh
+    je .simple_memory_move
+    cmp al, 23h
+    mov eax, [ebx+esi]
+    je .simple_and
+    cmp ecx, 2
+    jne .simple_compare_dword
+    cmp ax, dx
+    jmp .simple_flags
+.simple_compare_dword:
+    cmp eax, edx
+    jmp .simple_flags
+.simple_and:
+    cmp ecx, 2
+    jne .simple_and_dword
+    and ax, dx
+    mov [ebx+esi], ax
+    jmp .simple_flags
+.simple_and_dword:
+    and eax, edx
+    mov [ebx+esi], eax
+    jmp .simple_flags
+.simple_memory_move:
+    cmp ecx, 2
+    jne .simple_memory_move_dword
+    mov [ebx+esi], dx
+    jmp .simple_advance
+.simple_memory_move_dword:
+    mov [ebx+esi], edx
+    jmp .simple_advance
+.simple_memory_bad_target:
+    pop esi
+.simple_memory_bad_opcode:
+    pop eax
+    jmp .done
+.simple_negate:
+    call .fetch
+    jc .done
+    cmp al, 0d8h
+    jb .done
+    cmp al, 0dfh
+    ja .done
+    and eax, 7
+    cmp eax, 4
+    je .done
+    movzx esi, byte [ebp+dpmi_full_registers+eax]
+    inc edi
+    mov eax, [ebx+esi]
+    cmp ecx, 2
+    jne .simple_negate_dword
+    neg ax
+    mov [ebx+esi], ax
+    jmp .simple_flags
+.simple_negate_dword:
+    neg eax
+    mov [ebx+esi], eax
+.simple_flags:
+    pushfd
+    pop edx
+    and edx, 8d5h
+    and dword [ebx+56], ~8d5h
+    or [ebx+56], edx
+    jmp .simple_advance
+.simple_branch:
+    cmp edi, 1
+    jne .done
+    mov esi, eax
+    call .fetch
+    jc .done
+    inc edi
+    movsx eax, al
+    test dword [ebx+56], 40h
+    setz dl
+    and esi, 1
+    cmp esi, 0
+    je .simple_branch_zero
+    test dl, dl
+    jz .simple_advance
+    add edi, eax
+    jmp .simple_branch_target
+.simple_branch_zero:
+    test dl, dl
+    jnz .simple_advance
+    add edi, eax
+    jmp .simple_branch_target
+.simple_branch_target:
+    mov edx, [ebx+48]
+    add edx, edi
+    mov ax, [ebx+52]
+    call dpmi_code_target
+    jc .done
+    jmp .simple_advance
+.simple_io:
+    cmp al, 0efh
+    ja .done
+    cmp al, 0ech
+    jae .simple_io_dx
+    cmp al, 0e7h
+    ja .done
+    push eax
+    call .fetch
+    movzx edx, al
+    pop eax
+    jc .done
+    inc edi
+    jmp .simple_io_width
+.simple_io_dx:
+    movzx edx, word [ebx+28]
+.simple_io_width:
+    test al, 1
+    jnz .simple_io_direction
+    mov cl, 1
+.simple_io_direction:
+    test al, 2
+    setnz ch
+    bt [ebp+mon_bitmap], edx
+    jnc .done
+    mov eax, [ebx+36]
+    push ebx
+    push ecx
+    push edi
+    call dpmi_pic_io
+    pop edi
+    pop ecx
+    pop ebx
+    jc .done
+    test ch, ch
+    jnz .simple_io_advance
+    cmp cl, 1
+    jne .simple_io_word
+    mov [ebx+36], al
+    jmp .simple_io_advance
+.simple_io_word:
+    cmp cl, 2
+    jne .simple_io_dword
+    mov [ebx+36], ax
+    jmp .simple_io_advance
+.simple_io_dword:
+    mov [ebx+36], eax
+.simple_io_advance:
+    add [ebx+48], edi
+    inc dword [esp+12]
+    jmp .next
+.simple_advance:
+    add [ebx+48], edi
+    inc dword [esp+12]
+    ; These instructions keep the same 32-bit code segment.
+    mov ecx, 4
+    jmp .decode
 .done:
     popad
     ret
@@ -764,6 +1113,8 @@ dpmi_step_address_size db 0
 dpmi_step_segment dw 0
 dpmi_step_ea_segment dw 0
 dpmi_step_modrm db 0
+dpmi_step_code dd 0
+dpmi_step_code_ip dd 0
 
 HOST_PROTECTED
 ; EBX is a normalized frame; EDI is the decoded STI length.
@@ -821,3 +1172,8 @@ dpmi_sti_cs dw 0
 dpmi_sti_ip dd 0
 HOST_PROTECTED
 %endif
+
+HOST_PROTECTED
+dpmi_full_registers db 36,32,28,24,60,16,12,8
+dpmi_byte_registers db 36,32,28,24,37,33,29,25
+HOST_REAL

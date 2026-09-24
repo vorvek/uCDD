@@ -248,6 +248,39 @@ dpmi_pic_read_isr:
     ret
 
 dpmi_pic_backend:
+%ifdef RESIDENT_HOST
+    cmp dx, 20h
+    jne .resident_regular
+    mov esi, [ebp+resident_audio_request]
+    test esi, esi
+    jz .resident_regular
+    test ch, ch
+    jnz .resident_select
+    mov al, [esi+9]
+    out dx, al
+    in al, dx
+    and al, [esi+8]
+    cmp byte [esi+9], 0bh
+    je .resident_service
+    or al, [esi]
+    clc
+    ret
+.resident_service:
+    or al, [esi+1]
+    clc
+    ret
+.resident_select:
+    cmp al, 0ah
+    je .resident_mode
+    cmp al, 0bh
+    jne .resident_regular
+.resident_mode:
+    mov [esi+9], al
+    out dx, al
+    clc
+    ret
+.resident_regular:
+%endif
     cmp dx, 0a0h
     jae .physical
     cmp [ebp+mon_callback], ebp

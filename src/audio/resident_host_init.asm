@@ -42,7 +42,7 @@ own_host_install:
     mov ax, 5801h
     xor bx, bx
     int 21h
-    mov bx, (OWN_HOST_SIZE+15)/16
+    mov bx, (OWN_HOST_SIZE+15+12287+15)/16
     mov ah, 48h
     int 21h
     pushf

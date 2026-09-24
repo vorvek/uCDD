@@ -109,6 +109,7 @@ These are games known to work, not a list of every game that may work.
 - Archimedean Dynasty
 - Battle Chess Enhanced CD-ROM
 - Carmageddon
+- Pro Pinball: Timeshock!
 - Quake
 - Screamer
 - Screamer 2

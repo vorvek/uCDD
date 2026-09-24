@@ -222,10 +222,18 @@ mon_iret:
     jne .no_irq
     test byte [esp+44], 3
     jz .no_irq
-    cmp byte [ebp+dpmi_sti_sb_held], 0
-    je .pic_only
     call dpmi_pic_audio_allowed
     jc .pic_only
+    cmp byte [ebp+dpmi_sti_sb_held], 0
+    jne .audio_ready
+%ifdef RESIDENT_HOST
+    call resident_audio_take
+    cmp ax, 1
+    jne .pic_only
+%else
+    jmp .pic_only
+%endif
+.audio_ready:
     movzx eax, byte [ebp+dpmi_guest_vector]
     mov edx, eax
     imul eax, 6
@@ -233,12 +241,13 @@ mon_iret:
     cmp word [esi+4], 0
     jne .sb_inject
     mov byte [ebp+dpmi_sti_sb_held], 0
+.real_irq:
     mov eax, edx
     lea edi, [ebp+mon_rm_regs]
     mov dword [edi+32], 2
     mov dword [edi+46], 0
     call mon_real_int
-    jmp .pic_only
+    jmp .shadow_done
 .sb_inject:
     mov byte [ebp+dpmi_sti_sb_held], 0
     mov ebx, esp
@@ -253,8 +262,15 @@ mon_iret:
     sub edx, 8
 .irq_vector:
     add eax, edx
+    mov edx, eax
     imul eax, 6
     lea esi, [ebp+mon_vectors+eax]
+    cmp word [esi+4], 0
+    jne .pic_protected
+    mov [ebp+dpmi_reflect_vector], dl
+    call dpmi_pic_reflect
+    jmp .real_irq
+.pic_protected:
     mov ebx, esp
     jmp dpmi_deliver_hardware
 .no_irq:

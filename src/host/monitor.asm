@@ -555,9 +555,6 @@ mon_irq:
 %ifdef HOST_DPMI
     cmp bl, [ebp+dpmi_audio_irq]
     je .real_irq
-    imul edx, eax, 6
-    cmp word [ebp+mon_vectors+edx+4], 0
-    je .real_irq
     call dpmi_pic_queue
     jmp .done
 .real_irq:
@@ -1030,7 +1027,28 @@ mon_exception:
     test al, 2
     setnz ch
     bt [ebp+mon_bitmap], edx
-    jnc .fault
+    jc .trapped
+    cmp cl, 1
+    je .fault
+    push edx
+    push ecx
+    movzx ecx, cl
+.more_ports:
+    dec ecx
+    jz .untrapped
+    inc edx
+    cmp edx, 10000h
+    jae .untrapped
+    bt [ebp+mon_bitmap], edx
+    jnc .more_ports
+    pop ecx
+    pop edx
+    jmp .trapped
+.untrapped:
+    pop ecx
+    pop edx
+    jmp .fault
+.trapped:
     mov eax, [esp+36]
     push ecx
     push edi
@@ -1145,7 +1163,7 @@ mon_gp_fetch:
     jc .bad
     mov ecx, 1
     mov edi, 2
-    call dpmi_buffer
+    call dpmi_code_buffer
     jc .bad
     movzx eax, byte [eax]
     mov [esp+28], eax
@@ -1372,8 +1390,13 @@ mon_tss:
 mon_bitmap times 8192 db 0
     db 0ffh
 mon_tss_end:
+%ifdef RESIDENT_HOST
+section .pages
+mon_pages resb 12287
+%else
 HOST_SCRATCH
 mon_pages times 12287 db 0
+%endif
 HOST_PROTECTED
     times 2048 db 0
 mon_kernel_stack_top:

@@ -1,6 +1,10 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+%ifdef OWN_HOST
+CD_REFILL_URGENT equ CD_READ_BYTES*2
+%endif
+
 cd_timer:
     pushf
     call far [cs:cd_old_timer]
@@ -77,8 +81,8 @@ cd_deferred_refill:
     push cs
     pop ds
     cli
-    cmp byte [cd_refill_pending], 1
-    jne .done
+    cmp byte [cd_refill_pending], 0
+    je .done
     cmp byte [busy], 0
     jne .done
     cmp byte [cd_bios_busy], 0
@@ -107,7 +111,7 @@ cd_deferred_refill:
 %endif
     mov ss, ax
     mov sp, cd_stack_top
-    mov byte [cd_background_reads], 32
+    mov byte [cd_background_reads], 1
     sti
     cld
     call cd_foreground
@@ -134,8 +138,12 @@ cd_bios:
     pushf
     inc byte [cs:cd_bios_busy]
     popf
+%ifdef RESIDENT_AUDIO
+    call cd_cache_bios
+%else
     pushf
     call far [cs:cd_old_bios]
+%endif
     pushf
     dec byte [cs:cd_bios_busy]
     popf
@@ -166,3 +174,7 @@ cd_old_bios dd 0
 cd_bios_busy db 0
 cd_background_set db 0
 cd_background_reads db 0
+
+%ifdef RESIDENT_AUDIO
+%include "audio/disk_cache.asm"
+%endif

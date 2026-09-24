@@ -20,6 +20,7 @@
 section .gateway start=0
 section .protected follows=.gateway align=16
 section .scratch follows=.protected align=16
+section .pages follows=.scratch nobits align=16
 HOST_REAL
 cpu 386
 org 0
@@ -50,7 +51,7 @@ resident_host_init:
     push cs
     pop es
     mov di, resident_ports
-    mov cx, resident_port_count-2
+    mov cx, resident_port_count-5
     rep movsw
     pop cx
     pop di
@@ -66,8 +67,24 @@ resident_host_init:
     add eax, ecx
     mov [cs:resident_game_vector], eax
     push edx
+    cmp dword [ds:bp+8], 33464443h
+    jne .version2
+    movzx edx, word [ds:bp+18]
+    add edx, ecx
+    mov [cs:resident_refill_clock], edx
+    jmp .audio_request
+.version2:
+    cmp dword [ds:bp+8], 32464443h
+    jne .version1
+.audio_request:
+    movzx edx, word [ds:bp+16]
+    add edx, ecx
+    mov [cs:resident_audio_request], edx
+    jmp .refill
+.version1:
     cmp dword [ds:bp+8], 31464443h
     jne .no_refill
+.refill:
     movzx edx, word [ds:bp+14]
     add edx, ecx
     mov [cs:resident_refill_pending], edx
@@ -147,7 +164,7 @@ resident_traps dd 0
 resident_game_vector dd 0
 resident_ports:
 %include "audio/ports.inc"
-    dw 0a0h,0a1h
+    dw 0a0h,0a1h,03dah,40h,43h
 resident_port_count equ ($-resident_ports)/2
 
 HOST_SCRATCH
@@ -561,11 +578,50 @@ resident_refill_schedule:
     jz .done
     test dword [esp+32+4+48], 20000h
     jnz .done
+    ; Give the foreground mixer time after a retrace.
+    movzx edx, byte [ebp+resident_vga_ready]
+    mov edi, [ebp+resident_refill_clock]
+    test edi, edi
+    jz .hint_ready
+    cmp edx, 1
+    jne .hint_waiting
+    mov eax, [edi]
+    mov [ebp+resident_vga_clock], eax
+    mov byte [ebp+resident_vga_ready], 2
+    jmp .done
+.hint_waiting:
+    cmp edx, 2
+    jne .hint_ready
+    mov eax, [edi]
+    sub eax, [ebp+resident_vga_clock]
+    cmp eax, 128
+    jb .done
+    xor edx, edx
+    cmp eax, 192
+    seta dl
+    xor dl, 1
+.hint_ready:
+    mov byte [ebp+resident_vga_ready], 0
     mov esi, [ebp+resident_refill_pending]
     test esi, esi
     jz .done
-    cmp byte [esi], 1
-    jne .done
+    cmp byte [esi], 0
+    je .done
+    mov edi, [ebp+resident_refill_clock]
+    test edi, edi
+    jz .refill_due
+    mov eax, [edi]
+    sub eax, [ebp+resident_refill_last]
+    cmp eax, 128
+    jb .done
+.refill_due:
+    cmp edx, 1
+    je .window
+    mov eax, [46ch]
+    sub eax, [ebp+resident_vga_tick]
+    cmp eax, 2
+    jb .done
+.window:
     mov byte [ebp+resident_refill_busy], 1
     HOST_COUNT refill, 0
     sub esp, 52
@@ -581,12 +637,25 @@ resident_refill_schedule:
     mov al, 1
     call mon_real_far
     add esp, 52
+    mov esi, [ebp+resident_refill_clock]
+    test esi, esi
+    jz .refill_finished
+    mov eax, [esi]
+    mov [ebp+resident_refill_last], eax
+.refill_finished:
     mov byte [ebp+resident_refill_busy], 0
 .done:
     popad
     ret
 
 resident_refill_reset:
+    mov eax, [ebp+resident_refill_clock]
+    test eax, eax
+    jz .clock_reset
+    mov eax, [eax]
+.clock_reset:
+    sub eax, 128
+    mov [ebp+resident_refill_last], eax
     mov byte [ebp+resident_refill_busy], 0
     mov eax, [ebp+resident_refill_pending]
     test eax, eax
@@ -609,14 +678,8 @@ resident_pending:
     je .sb_now
     cmp byte [ebp+dpmi_sti_sb_held], 0
     jne .none
-    lea edi, [ebp+mon_rm_regs]
-    mov dword [edi+46], 0
-    mov word [edi+32], 2
-    mov eax, [ebp+resident_take]
-    mov [edi+42], eax
-    mov al, 1
-    call mon_real_far
-    cmp word [edi+28], 1
+    call resident_audio_take
+    cmp ax, 1
     jne .none
     mov byte [ebp+dpmi_sti_sb_held], 1
     jmp .none
@@ -627,14 +690,8 @@ resident_pending:
     jne .none
     test byte [esp+4+52], 3
     jz .none
-    lea edi, [ebp+mon_rm_regs]
-    mov dword [edi+46], 0
-    mov word [edi+32], 2
-    mov eax, [ebp+resident_take]
-    mov [edi+42], eax
-    mov al, 1
-    call mon_real_far
-    cmp word [edi+28], 1
+    call resident_audio_take
+    cmp ax, 1
     jne .none
     movzx eax, byte [ebp+dpmi_guest_vector]
     inc eax
@@ -642,7 +699,166 @@ resident_pending:
 .none:
     xor eax, eax
     ret
+resident_audio_request dd 0
+resident_refill_clock dd 0
+resident_refill_last dd 0
+resident_audio_take:
+    mov esi, [ebp+resident_audio_request]
+    test esi, esi
+    jz .take
+    cmp byte [esi], 0
+    je .none
+.take:
+    call dpmi_hardware_room
+    jc .none
+    lea edi, [ebp+mon_rm_regs]
+    mov dword [edi+46], 0
+    mov word [edi+32], 2
+    mov eax, [ebp+resident_take]
+    mov [edi+42], eax
+    mov al, 1
+    call mon_real_far
+    movzx eax, word [edi+28]
+    ret
+.none:
+    xor eax, eax
+    ret
+resident_vga_pending db 0
+resident_pit_reads db 0
+resident_vga_previous db 0
+resident_vga_ready db 0
+resident_vga_tick dd 0
+resident_vga_clock dd 0
 resident_io:
+    cmp cl, 1
+    je .narrow
+    cmp dx, 43h
+    ja .wide_vga
+    cmp dx, 40h
+    jae .wide_pit
+    cmp dx, 3dh
+    jb .regular
+    push edx
+    movzx edi, cl
+    add edx, edi
+    cmp edx, 40h
+    pop edx
+    jbe .regular
+.wide_pit:
+    test ch, ch
+    jz .physical_read
+    mov byte [ebp+resident_pit_reads], 0
+    jmp .vga_write
+.wide_vga:
+    cmp dx, 3dah
+    je .vga
+    ja .regular
+    cmp dx, 3d7h
+    jb .regular
+    push edx
+    movzx edi, cl
+    add edx, edi
+    cmp edx, 3dah
+    pop edx
+    jbe .regular
+    test ch, ch
+    jnz .vga_write
+.physical_read:
+    cmp cl, 2
+    je .physical_word
+    in eax, dx
+    clc
+    ret
+.physical_word:
+    in ax, dx
+    clc
+    ret
+.narrow:
+    cmp dx, 40h
+    je .pit
+    cmp dx, 43h
+    je .pit
+    jmp .vga
+.pit:
+    cmp cl, 1
+    jne .regular
+    test ch, ch
+    jz .pit_read
+    out dx, al
+    mov byte [ebp+resident_pit_reads], 0
+    cmp dx, 43h
+    jne .pit_done
+    test al, al
+    jnz .pit_done
+    mov byte [ebp+resident_pit_reads], 2
+.pit_done:
+    clc
+    ret
+.pit_read:
+    in al, dx
+    cmp dx, 40h
+    jne .pit_done
+    cmp byte [ebp+resident_pit_reads], 0
+    je .pit_done
+    dec byte [ebp+resident_pit_reads]
+    jnz .pit_done
+    cmp byte [ebp+resident_vga_pending], 0
+    je .pit_done
+    mov byte [ebp+resident_vga_pending], 0
+    mov byte [ebp+resident_vga_ready], 1
+    push eax
+    mov eax, [46ch]
+    mov [ebp+resident_vga_tick], eax
+    pop eax
+    jmp .pit_done
+.vga:
+    cmp dx, 03dah
+    jne .regular
+    test ch, ch
+    jnz .vga_write
+    cmp cl, 1
+    je .vga_read_byte
+    cmp cl, 2
+    je .vga_read_word
+    in eax, dx
+    jmp .vga_sample
+.vga_read_word:
+    in ax, dx
+    jmp .vga_sample
+.vga_read_byte:
+    in al, dx
+.vga_sample:
+    push eax
+    push edx
+    and al, 8
+    cmp al, [ebp+resident_vga_previous]
+    je .vga_return
+    mov [ebp+resident_vga_previous], al
+    test al, al
+    jz .vga_return
+    mov byte [ebp+resident_vga_pending], 1
+.vga_return:
+    pop edx
+    pop eax
+    clc
+    ret
+.vga_write:
+    cmp cl, 1
+    je .vga_write_byte
+    cmp cl, 2
+    je .vga_write_word
+    out dx, eax
+    clc
+    ret
+.vga_write_word:
+    out dx, ax
+    clc
+    ret
+.vga_write_byte:
+    out dx, al
+    clc
+    ret
+.regular:
     cmp cl, 1
     jne .bad
     lea edi, [ebp+mon_rm_regs]

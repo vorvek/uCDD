@@ -105,3 +105,54 @@ dpmi_buffer:
     popad
     stc
     ret
+
+HOST_PROTECTED
+; Fast path for flat code and readable data.
+dpmi_read_buffer:
+dpmi_code_buffer:
+    pushad
+    test ecx, ecx
+    jz .slow
+    call dpmi_descriptor
+    jc .slow
+    cmp dword [esi], 0000ffffh
+    jne .slow
+    mov eax, [esi+4]
+    and eax, 0fffffeffh
+    cmp edi, 2
+    je .code
+    test edi, edi
+    jnz .slow
+    cmp eax, 00cff200h
+    je .flat
+.code:
+    cmp eax, 00cffa00h
+    jne .slow
+.flat:
+    mov eax, [esp+20]
+    mov edx, eax
+    add edx, [esp+24]
+    jc .slow
+    dec edx
+    xor edx, eax
+    shr edx, 12
+    jnz .slow
+    mov edx, eax
+    shr edx, 22
+    mov edx, [0fffff000h+edx*4]
+    and edx, 5
+    cmp edx, 5
+    jne .slow
+    mov edx, eax
+    shr edx, 12
+    mov edx, [0ffc00000h+edx*4]
+    and edx, 5
+    cmp edx, 5
+    jne .slow
+    mov [esp+28], eax
+    popad
+    clc
+    ret
+.slow:
+    popad
+    jmp dpmi_buffer

@@ -395,6 +395,22 @@ audio_irq:
     call mix_half
 %ifdef VIRTUAL_IRQ
     call virtual_irq_tick
+%ifdef OWN_HOST
+    mov byte [cd_refill_pending], 0
+    cmp byte [cd_started], 1
+    jne .refill_ready
+    cmp byte [cd_error], 0
+    jne .refill_ready
+    cmp dword [cd_remaining], 0
+    je .refill_ready
+    mov byte [cd_refill_pending], 1
+    mov eax, [cd_produced]
+    sub eax, [cd_consumed]
+    cmp eax, CD_REFILL_URGENT
+    jae .refill_ready
+    mov byte [cd_refill_pending], 2
+.refill_ready:
+%endif
 %endif
 .eoi:
     mov al, 20h

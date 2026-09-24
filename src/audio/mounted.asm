@@ -6,7 +6,6 @@
 %define CD_READ_BYTES 4096
 %ifdef RESIDENT_AUDIO
 %define EXTERNAL_CD_BUFFERS 1
-%define CD_HALF_BYTES (PERIOD_BYTES+PERIOD_BYTES/32+4)
 %define cd_half 0
 %define cd_stage 0
 %define cd_stack_top (CD_READ_BYTES+2048)
@@ -129,6 +128,9 @@ cd_open:
     mov [cd_indos], bx
     mov [cd_indos+2], es
 %ifdef RESIDENT_AUDIO
+    call cd_cache_open
+%endif
+%ifdef RESIDENT_AUDIO
     clc
     ret
 %else
@@ -219,6 +221,19 @@ cd_request:
     mov sp, cd_stack_top
     sti
     cld
+%ifdef OWN_HOST
+    push es
+    push bx
+    cmp byte [own_host_refill], 1
+    jne .refill_limit_ready
+    les bx, [own_host_active]
+    cmp byte [es:bx], 1
+    jne .refill_limit_ready
+    mov byte [cd_background_reads], 0ffh
+.refill_limit_ready:
+    pop bx
+    pop es
+%endif
     cmp byte [cd_started], 0
     je .dispatch
     mov eax, [cd_consumed]
@@ -504,6 +519,9 @@ cd_request:
     mov word [cd_result], 810bh
 .done:
     cli
+%ifdef OWN_HOST
+    mov byte [cd_background_reads], 0
+%endif
     mov ss, [cd_call_ss]
     mov sp, [cd_call_sp]
     pop gs
@@ -601,6 +619,10 @@ cd_head:
     ret
 
 cd_foreground:
+%ifdef OWN_HOST
+    cmp byte [cd_background_reads], 0ffh
+    je .done
+%endif
     cmp dword [cd_remaining], 0
     je .done
 %ifdef EXTERNAL_CD_BUFFERS
@@ -616,10 +638,8 @@ cd_foreground:
     mov ah, 50h
     int 21h
 %endif
-%ifndef RESIDENT_AUDIO
     cmp byte [cd_seek], 0
     je .pump
-%endif
     mov byte [cd_seek], 0
     mov bx, [cd_handle]
     mov dx, [cd_offset]
@@ -663,6 +683,17 @@ cd_pump:
     cmp eax, CD_QUEUE_BYTES-CD_READ_BYTES
     ja .done
     mov ecx, CD_READ_BYTES
+%ifdef RESIDENT_AUDIO
+    mov edx, [cd_offset]
+    and edx, 511
+    jz .aligned_read
+    neg edx
+    add edx, 512
+    cmp ecx, edx
+    jbe .aligned_read
+    mov ecx, edx
+.aligned_read:
+%endif
     cmp [cd_remaining], ecx
     jae .read
     mov cx, [cd_remaining]
@@ -712,15 +743,22 @@ cd_pump:
     mov eax, [cd_produced]
     and eax, CD_QUEUE_BYTES-1
     mov [cd_write_offset], eax
+%ifdef RESIDENT_AUDIO
+    call cd_write_chunk
+%else
     call cd_queue_write
+%endif
     cmp ax, 1
     jne .bad
-    add dword [cd_produced], CD_READ_BYTES
 %ifdef RESIDENT_AUDIO
+    movzx eax, word [cd_read_size]
+    add [cd_produced], eax
     cmp byte [cd_background_reads], 0
     je cd_pump
     dec byte [cd_background_reads]
     jz .done
+%else
+    add dword [cd_produced], CD_READ_BYTES
 %endif
     jmp cd_pump
 .bad:
@@ -765,6 +803,29 @@ cd_begin_half:
     mov byte [cd_error], 2
     ret
 
+%ifdef RESIDENT_AUDIO
+cd_write_chunk:
+    movzx eax, word [cd_read_size]
+    mov [cd_write_move], eax
+    mov word [cd_write_address], cd_stage
+    mov ecx, CD_QUEUE_BYTES
+    sub ecx, [cd_write_offset]
+    cmp eax, ecx
+    jbe cd_queue_write
+    mov [cd_write_move], ecx
+    call cd_queue_write
+    cmp ax, 1
+    jne .done
+    mov eax, [cd_write_move]
+    add [cd_write_address], ax
+    movzx ecx, word [cd_read_size]
+    sub ecx, eax
+    mov [cd_write_move], ecx
+    mov dword [cd_write_offset], 0
+    call cd_queue_write
+.done:
+    ret
+%endif
 cd_queue_write:
 %ifdef RESIDENT_AUDIO
 %ifdef EMS_QUEUE
@@ -897,6 +958,9 @@ cd_ems_transfer:
 %endif
 
 cd_close:
+%ifdef RESIDENT_AUDIO
+    call cd_cache_close
+%endif
 %ifdef OWN_HOST
     mov byte [cd_refill_pending], 0
 %endif

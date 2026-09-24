@@ -1,7 +1,7 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
-%define OUTPUT_SHIFT 9
+%define OUTPUT_SHIFT 5
 %define MOUNTED_AUDIO 1
 %define CD_IMAGE_TEST 1
 %define VIRTUAL_IRQ 1
@@ -84,6 +84,7 @@ audio_bind:
     mov byte [cd_error], 0
     mov eax, [si+ORIGIN]
     mov [cd_head_lba], eax
+    call cd_cache_warm
     pop es
     popad
 .done:
