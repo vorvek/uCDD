@@ -4,12 +4,15 @@
 %include "audio/wss_codec.asm"
 
 wss_start:
+    mov byte [wss_output_board], 0
     mov dx, [sb_base]
     add dx, 3
     call physical_read
     and al, 3fh
     cmp al, 4
-    jne .fail
+    jne .codec
+    mov byte [wss_output_board], 1
+.codec:
     call wss_ready
     jc .fail
     mov al, 9
@@ -25,13 +28,20 @@ wss_start:
     cmp bx, 16
     jb .save
     mov byte [wss_saved_valid], 1
-    mov al, 0ah
+    cmp byte [wss_output_board], 0
+    je .program
+    mov al, 2
+    cmp byte [sb_irq], 5
+    je .dma_select
+    add al, 8
+.dma_select:
     cmp byte [sb_dma8], 1
     je .board
     inc al
 .board:
     mov dx, [sb_base]
     call physical_write
+.program:
     mov ax, 0c49h
     call indexed_write
     mov ax, 5b48h
@@ -60,18 +70,26 @@ wss_start:
     je .irq
     mov word [dma_page_port], 82h
 .irq:
-    mov ax, 350fh
+    mov al, [sb_irq]
+    add al, 8
+    mov ah, 35h
     int 21h
     mov [old_irq], bx
     mov [old_irq+2], es
     mov dx, audio_irq
-    mov ax, 250fh
+    mov al, [sb_irq]
+    add al, 8
+    mov ah, 25h
     int 21h
     cli
     mov dx, 21h
     call physical_read
     mov [saved_pic], al
-    and al, 7fh
+    mov cl, [sb_irq]
+    mov ah, 1
+    shl ah, cl
+    not ah
+    and al, ah
     call physical_write
     mov dx, 0ah
     mov al, [dma_channel]
@@ -136,7 +154,9 @@ wss_stop:
     call physical_write
     push ds
     lds dx, [old_irq]
-    mov ax, 250fh
+    mov al, [sb_irq]
+    add al, 8
+    mov ah, 25h
     int 21h
     pop ds
     mov byte [sb_running], 0
@@ -175,3 +195,4 @@ wss_restore:
     ret
 wss_saved times 16 db 0
 wss_saved_valid db 0
+wss_output_board db 0

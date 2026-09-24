@@ -8,6 +8,7 @@
 
 - **Set `BLASTER` first.** Run `SET BLASTER=...` before `UCDD -install`, and use those settings in the game. The driver reads the virtual I/O address, IRQ, and DMA channels once, at installation. Changing `BLASTER` later does not change the loaded driver; restart DOS to use different settings.
 - **Set up the physical card with `UCDDSET`.** It saves the card type, I/O address, IRQ, and DMA channels in `UCDD.CFG`. These are separate from the virtual settings in `BLASTER`. The game's settings and the physical card's settings can differ.
+- **For a Plug and Play WSS card, configure the card first.** Enter its WSS base address (four ports below the codec index port), assigned IRQ 5 or 7, and DMA 1 or 3 in `UCDDSET`.
 - **Do not load the audio driver for games that use ADPCM sound.** ADPCM is not supported or passed through. Its playback commands would conflict with the PCM output that μCDD uses to mix game sound and CD audio. Boot DOS without `UCDD -install` before playing those games. Unmounting an image does not unload the driver.
 
 ## How it works

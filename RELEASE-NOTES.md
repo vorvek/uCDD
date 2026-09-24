@@ -1,3 +1,11 @@
+# Beta 0.9.2a
+
+## Changes in 0.9.2a
+
+- Improve WSS compatibility with Plug and Play codecs, including Crystal CS4236B cards.
+- Support IRQ 5 for WSS output and let UCDDSET select IRQ 5 or 7.
+- Document the WSS settings for Plug and Play cards.
+
 # Beta 0.9.2
 
 ## Changes in 0.9.2

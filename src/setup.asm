@@ -242,10 +242,7 @@ change_port:
     mov word [sb_base], 0f40h
     ret
 change_irq:
-    cmp byte [sound_card], 2
-    je .done
     xor byte [sb_irq], 2
-.done:
     ret
 change_dma8:
     xor byte [sb_dma8], 2

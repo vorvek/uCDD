@@ -66,8 +66,11 @@ config_load:
     ja .bad
     jmp .default
 .wss:
+    cmp byte [sb_irq], 5
+    je .wss_port
     cmp byte [sb_irq], 7
     jne .bad
+.wss_port:
     mov ax, [sb_base]
     cmp ax, 530h
     je .dma
