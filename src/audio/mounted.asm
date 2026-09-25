@@ -449,11 +449,11 @@ cd_request:
     mov si, cd_info+INFO_TRACKS
     mov cx, [cd_info+INFO_COUNT]
 .track:
-    cmp eax, [si+TRACK_START]
+    cmp eax, [si+TRACK_INDEX0]
     jb .done
     cmp cx, 1
     je .track_found
-    cmp eax, [si+TRACK_SIZE+TRACK_START]
+    cmp eax, [si+TRACK_SIZE+TRACK_INDEX0]
     jb .track_found
     add si, TRACK_SIZE
     loop .track
@@ -463,7 +463,7 @@ cd_request:
 .range_track:
     cmp cx, 1
     je .range_ok
-    cmp edx, [si+TRACK_SIZE+TRACK_START]
+    cmp edx, [si+TRACK_SIZE+TRACK_INDEX0]
     jbe .range_ok
     add si, TRACK_SIZE
     dec cx
@@ -493,6 +493,12 @@ cd_request:
 %ifndef CD_FAILURE_TEST
     mov byte [cd_error], 0
 %endif
+    movzx eax, word [cd_info+INFO_COUNT]
+    dec eax
+    imul si, ax, TRACK_SIZE
+    mov eax, [cd_info+INFO_TRACKS+si+TRACK_CONTROL]
+    shr eax, 8
+    mov [cd_gap_total], eax
     mov byte [cd_seek], 1
     call cd_foreground
     cmp byte [cd_error], 0
@@ -669,6 +675,54 @@ cd_foreground:
 .done:
     ret
 
+; Map disc bytes to file bytes, with zero-filled synthetic gaps.
+cd_map_chunk:
+    push bp
+    mov eax, [cd_offset]
+    mov si, cd_info+INFO_TRACKS
+    xor edx, edx
+    mov bp, [cd_info+INFO_COUNT]
+.track:
+    mov ebx, [cd_end_lba]
+    imul ebx, 2352
+    cmp bp, 1
+    je .found
+    mov ebx, [si+TRACK_SIZE+TRACK_INDEX0]
+    imul ebx, 2352
+    cmp eax, ebx
+    jb .found
+    mov edx, [si+TRACK_CONTROL]
+    shr edx, 8
+    add si, TRACK_SIZE
+    dec bp
+    jmp .track
+.found:
+    mov [cd_span_end], ebx
+    mov ebx, [si+TRACK_CONTROL]
+    shr ebx, 8
+    sub edx, ebx
+    neg edx
+    add edx, [si+TRACK_INDEX0]
+    imul edx, 2352
+    cmp eax, edx
+    jae .file
+    mov byte [cd_silence], 1
+    mov [cd_span_end], edx
+    jmp .limit
+.file:
+    imul ebx, 2352
+    sub eax, ebx
+    mov [cd_file_offset], eax
+.limit:
+    mov eax, [cd_span_end]
+    sub eax, [cd_offset]
+    cmp ecx, eax
+    jbe .done
+    mov ecx, eax
+.done:
+    pop bp
+    ret
+
 cd_pump:
 %ifdef CD_STARVE
     cmp dword [cd_reads], CD_QUEUE_BYTES/CD_READ_BYTES
@@ -698,7 +752,26 @@ cd_pump:
     jae .read
     mov cx, [cd_remaining]
 .read:
+    mov byte [cd_silence], 0
+    cmp dword [cd_gap_total], 0
+    je .mapped
+    call cd_map_chunk
+.mapped:
     mov [cd_read_size], cx
+    cmp byte [cd_silence], 0
+    jne .silence
+    cmp dword [cd_gap_total], 0
+    je .file_read
+    mov eax, [cd_file_offset]
+    mov dx, ax
+    shr eax, 16
+    mov cx, ax
+    mov bx, [cd_handle]
+    mov ax, 4200h
+    int 21h
+    jc .bad
+    mov cx, [cd_read_size]
+.file_read:
 %ifdef CD_READ_ERROR
     cmp dword [cd_reads], CD_QUEUE_BYTES/CD_READ_BYTES+32
     jne .handle_ready
@@ -722,10 +795,23 @@ cd_pump:
     jc .bad
     cmp ax, [cd_read_size]
     jne .bad
-    movzx eax, ax
-%ifdef RESIDENT_AUDIO
-    add [cd_offset], eax
+    jmp .read_ready
+.silence:
+    push es
+%ifdef EXTERNAL_CD_BUFFERS
+    mov es, [cd_work_segment]
+%else
+    push ds
+    pop es
 %endif
+    mov di, cd_stage
+    xor ax, ax
+    rep stosb
+    pop es
+    mov ax, [cd_read_size]
+.read_ready:
+    movzx eax, ax
+    add [cd_offset], eax
     sub [cd_remaining], eax
     inc dword [cd_reads]
 %ifdef RESIDENT_AUDIO
@@ -743,22 +829,16 @@ cd_pump:
     mov eax, [cd_produced]
     and eax, CD_QUEUE_BYTES-1
     mov [cd_write_offset], eax
-%ifdef RESIDENT_AUDIO
     call cd_write_chunk
-%else
-    call cd_queue_write
-%endif
     cmp ax, 1
     jne .bad
-%ifdef RESIDENT_AUDIO
     movzx eax, word [cd_read_size]
     add [cd_produced], eax
+%ifdef RESIDENT_AUDIO
     cmp byte [cd_background_reads], 0
     je cd_pump
     dec byte [cd_background_reads]
     jz .done
-%else
-    add dword [cd_produced], CD_READ_BYTES
 %endif
     jmp cd_pump
 .bad:
@@ -803,7 +883,6 @@ cd_begin_half:
     mov byte [cd_error], 2
     ret
 
-%ifdef RESIDENT_AUDIO
 cd_write_chunk:
     movzx eax, word [cd_read_size]
     mov [cd_write_move], eax
@@ -825,7 +904,6 @@ cd_write_chunk:
     call cd_queue_write
 .done:
     ret
-%endif
 cd_queue_write:
 %ifdef RESIDENT_AUDIO
 %ifdef EMS_QUEUE
@@ -1068,6 +1146,10 @@ cd_info equ $-INFO_STRIDE
 cd_info times INFO_SIZE db 0
 %endif
 cd_handle dw 0ffffh
+cd_gap_total dd 0
+cd_file_offset dd 0
+cd_span_end dd 0
+cd_silence db 0
 cd_offset dd 0
 cd_length dd 0
 cd_remaining dd 0

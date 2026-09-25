@@ -66,6 +66,17 @@ sb_real_irq:
     mov bl, [guest_irq]
     cmp [sb_irq], bl
     jne .vector
+    cmp ax, audio_irq
+    jne .direct_vector
+    mov edx, eax
+    shr edx, 16
+    mov bx, cs
+    cmp dx, bx
+    je .saved_vector
+.direct_vector:
+    cmp dword [host_irq_slot], 0
+    jne .vector
+.saved_vector:
     mov eax, [sb_game_vector]
 .vector:
     mov [sb_real_vector], eax
@@ -78,6 +89,24 @@ sb_real_pending db 0
 sb_dos_vector:
     cmp al, [cs:guest_vector]
     jne .chain
+    cmp dword [cs:host_irq_slot], 0
+    je .saved
+    push ax
+    push bx
+    push es
+    xor bx, bx
+    mov es, bx
+    mov bl, al
+    shl bx, 2
+    mov ax, cs
+    cmp word [es:bx], audio_irq
+    jne .direct
+    cmp [es:bx+2], ax
+    jne .direct
+    pop es
+    pop bx
+    pop ax
+.saved:
     cmp ah, 35h
     je .get
     cmp ah, 25h
@@ -90,6 +119,11 @@ sb_dos_vector:
     iret
 .chain:
     jmp far [cs:sb_old_dos]
+.direct:
+    pop es
+    pop bx
+    pop ax
+    jmp .chain
 
 sb_game_vector dd 0
 sb_host_guest_irq dw guest_irq

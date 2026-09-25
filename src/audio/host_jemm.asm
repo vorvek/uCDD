@@ -14,6 +14,11 @@ host_backend db 0
 host_port_count dw 0
 host_ports times 64 dw 0
 host_port_old times 64 db 0
+host_irq_slot dd 0
+host_irq_previous dd 0
+host_irq_root dd 0
+host_irq_dispatch_previous dd 0
+host_irq_table times 256 dd 0
 
 host_mux:
     cmp ax, 1684h
@@ -71,6 +76,8 @@ host_gate:
     jne .error
     cmp dword [ebx+host_callback], 0
     jne .error
+    call host_irq_remove
+    jc .error
     mov esi, [ebx+host_services]
     mov esi, [esi+48]
     mov eax, [ebx+host_old_io]
@@ -185,6 +192,101 @@ host_io:
     push dword [ebx+host_old_io]
     mov ebx, [esp+4]
     ret 4
+
+; Jemm calls this before it reflects a hardware interrupt through the IVT.
+    dd host_irq_previous
+host_irq_dispatch:
+    pushad
+    call .base
+.base:
+    pop ebx
+    sub ebx, .base
+    cmp byte [ebx+sb_running], 1
+    jne .chain
+    mov cl, [ebx+sb_irq]
+    mov al, 0bh
+    out 20h, al
+    in al, 20h
+    mov ah, al
+    mov al, [ebx+physical_pic_read]
+    out 20h, al
+    mov al, 1
+    shl al, cl
+    test ah, al
+    jz .chain
+    movzx ecx, word [ebp+56]
+    shl ecx, 4
+    movzx edx, word [ebp+52]
+    mov eax, [ebp+48]
+    sub dx, 2
+    mov [ecx+edx], ax
+    and ah, 0fch
+    mov [ebp+48], eax
+    mov ax, [ebp+44]
+    sub dx, 2
+    mov [ecx+edx], ax
+    mov ax, [ebp+40]
+    sub dx, 2
+    mov [ecx+edx], ax
+    mov [ebp+52], dx
+    mov dword [ebp+40], audio_irq
+    mov eax, ebx
+    shr eax, 4
+    mov [ebp+44], eax
+    popad
+    clc
+    ret
+.chain:
+    popad
+    stc
+    ret
+
+host_irq_call:
+    jmp ecx
+
+host_irq_remove:
+    mov edx, [ebx+host_irq_slot]
+    test edx, edx
+    jz .ok
+    lea eax, [ebx+host_irq_dispatch]
+    cmp [edx], eax
+    jne .bad
+    mov esi, [ebx+host_irq_root]
+    movzx ecx, byte [ebx+sb_irq]
+    mov eax, [esi]
+    lea ecx, [eax+ecx*4+8*4]
+    cmp ecx, edx
+    jne .bad
+    lea eax, [ebx+host_irq_table]
+    cmp [esi], eax
+    jne .restore
+    lea ecx, [ebx+host_irq_call]
+    cmp [esi+4], ecx
+    jne .bad
+    xor ecx, ecx
+.check:
+    lea edi, [eax+ecx*4]
+    cmp edi, edx
+    je .next
+    cmp dword [edi], 0
+    jne .bad
+.next:
+    inc ecx
+    cmp ecx, 256
+    jb .check
+    mov dword [esi], 0
+    mov eax, [ebx+host_irq_dispatch_previous]
+    mov [esi+4], eax
+.restore:
+    mov eax, [ebx+host_irq_previous]
+    mov [edx], eax
+    mov dword [ebx+host_irq_slot], 0
+.ok:
+    clc
+    ret
+.bad:
+    stc
+    ret
 
 bits 16
 host_gate_slot dd 0

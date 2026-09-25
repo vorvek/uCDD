@@ -36,6 +36,8 @@ path_pointer dd 0
 candidate dw 0ffffh
 candidate_sectors dd 0
 candidate_total dd 0
+candidate_file_total dd 0
+candidate_file_origin dd 0
 candidate_limit dd 0
 candidate_stride dw 0
 candidate_payload dw 0
@@ -407,6 +409,9 @@ read_sectors:
     mov [read_destination], dx
     mov [read_destination+2], bx
     add eax, [si+ORIGIN]
+    mov edx, [si+TRACKS+TRACK_CONTROL]
+    shr edx, 8
+    sub eax, edx
     movzx edx, word [si+STRIDE]
     imul eax, edx
     movzx edx, word [si+PAYLOAD]
@@ -822,9 +827,15 @@ mount_image:
     test edx, edx
     jnz .reject
     mov [candidate_total], eax
+    mov [candidate_file_total], eax
     mov [candidate_limit], eax
     mov eax, [es:di+INFO_ORIGIN]
     mov [candidate_origin], eax
+    mov edx, [es:di+INFO_TRACKS+TRACK_CONTROL]
+    shr edx, 8
+    sub eax, edx
+    jc .reject
+    mov [candidate_file_origin], eax
     mov ax, [es:di+INFO_COUNT]
     test ax, ax
     jz .reject
@@ -839,14 +850,25 @@ mount_image:
     mov cx, [candidate_count]
     add di, INFO_TRACKS
     xor ebx, ebx
+    xor edx, edx
 .validate_track:
     mov eax, [es:di+TRACK_INDEX0]
+    sub eax, edx
+    jc .reject
     cmp eax, ebx
     jb .reject
-    cmp eax, [es:di+TRACK_START]
-    ja .reject
+    mov ebx, eax
+    mov eax, [es:di+TRACK_CONTROL]
+    shr eax, 8
+    cmp eax, edx
+    jb .reject
+    mov edx, eax
     mov eax, [es:di+TRACK_START]
-    cmp eax, [candidate_total]
+    sub eax, edx
+    jc .reject
+    cmp eax, ebx
+    jb .reject
+    cmp eax, [candidate_file_total]
     jae .reject
     mov ebx, eax
     inc ebx
@@ -855,6 +877,16 @@ mount_image:
     jnz .reject
     add di, TRACK_SIZE
     loop .validate_track
+    mov eax, [candidate_file_total]
+    add eax, edx
+    jc .reject
+    movzx ebx, word [candidate_stride]
+    imul ebx, eax
+    jo .reject
+    test ebx, ebx
+    js .reject
+    mov [candidate_total], eax
+    mov [candidate_limit], eax
     cmp word [candidate_count], 1
     je .data_limit
     les di, [path_pointer]
@@ -870,7 +902,7 @@ mount_image:
 .descriptor:
     mov bx, [candidate]
     mov eax, [descriptor_sector]
-    add eax, [candidate_origin]
+    add eax, [candidate_file_origin]
     movzx edx, word [candidate_stride]
     imul eax, edx
     movzx edx, word [candidate_payload]
@@ -909,8 +941,8 @@ mount_image:
     mov eax, [pvd+80]
     cmp eax, 18
     jb .reject
-    mov edx, [candidate_total]
-    sub edx, [candidate_origin]
+    mov edx, [candidate_file_total]
+    sub edx, [candidate_file_origin]
     cmp eax, edx
     ja .reject
     mov edx, [pvd+84]

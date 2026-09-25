@@ -138,6 +138,31 @@ host_protected_install:
     movzx ecx, word [eax+66h]
     add eax, ecx
     mov [ebx+host_io_bitmap], eax
+    mov esi, [ebx+host_services]
+    mov edx, [esi+56]
+    cmp word [ebx+host_jemm_version], 5705h
+    je .irq_root
+    mov edx, [esi+64]
+.irq_root:
+    mov [ebx+host_irq_root], edx
+    mov eax, [edx]
+    test eax, eax
+    jnz .irq_table
+    lea eax, [ebx+host_irq_table]
+    mov [edx], eax
+    mov ecx, [edx+4]
+    mov [ebx+host_irq_dispatch_previous], ecx
+    lea ecx, [ebx+host_irq_call]
+    mov [edx+4], ecx
+.irq_table:
+    movzx ecx, byte [ebx+sb_irq]
+    lea edx, [eax+ecx*4+8*4]
+    mov [ebx+host_irq_slot], edx
+    lea eax, [ebx+host_irq_dispatch]
+    xchg eax, [edx]
+    mov [ebx+host_irq_previous], eax
+    lea eax, [ebx+host_irq_previous]
+    mov [ebx+host_irq_dispatch-4], eax
     lea esp, [ebx+host_return_frame]
     iretd
 bits 16
@@ -149,5 +174,6 @@ host_info db 2
 host_jemm_version dw 0
 host_device db 'EMMXXXX0',0
 host_device_noems db 'EMMQXXX0',0
-times 512 db 0
+; The installation path makes no calls.
+times 256 db 0
 host_init_stack_top:

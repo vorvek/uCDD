@@ -1,3 +1,11 @@
+# Beta 0.9.2b
+
+## Changes in 0.9.2b
+
+- Support PREGAP in CUE sheets, with silent gaps and corrected track positions. This lets Loom use its original disc layout and play complete voice prompts.
+- Preserve the physical audio interrupt handler when real-mode games write interrupt vectors directly under JEMMEX. This fixes stalled playback and sustained tones in the Alone in the Dark games.
+- Add Loom and Alone in the Dark 1, 2, and 3 to the list of working Redbook-audio games.
+
 # Beta 0.9.2a
 
 ## Changes in 0.9.2a

@@ -52,6 +52,7 @@ prepare_image:
     mov byte [si], 0
     mov word [cue_next], cue_text
     mov word [cue_count], 0
+    mov dword [cue_gaps], 0
     mov byte [cue_file_seen], 0
     mov byte [cue_have_index], 1
 .line:
@@ -103,6 +104,9 @@ prepare_image:
     mov di, cue_track
     call option_equal
     je .track
+    mov di, cue_pregap
+    call option_equal
+    je .pregap
     mov di, cue_index
     call option_equal
     je .index
@@ -139,6 +143,10 @@ prepare_image:
     imul di, ax, TRACK_SIZE
     add di, mount_tracks
     mov [cue_current], di
+    mov eax, [cue_gaps]
+    shl eax, 8
+    mov [di+TRACK_CONTROL], eax
+    mov byte [cue_gap_seen], 0
     mov dword [di+TRACK_START], 0ffffffffh
     mov dword [di+TRACK_INDEX0], 0ffffffffh
     inc word [cue_count]
@@ -163,6 +171,32 @@ prepare_image:
     call token
     jnc cue_bad
     jmp .line
+.pregap:
+    cmp word [cue_count], 0
+    je cue_bad
+    cmp byte [cue_gap_seen], 0
+    jne cue_bad
+    cmp byte [cue_have_index], 0
+    jne cue_bad
+    mov di, [cue_current]
+    cmp dword [di+TRACK_INDEX0], 0ffffffffh
+    jne cue_bad
+    call token
+    jc cue_bad
+    call cue_time
+    jc cue_bad
+    add [cue_gaps], eax
+    cmp dword [cue_gaps], 7fffffffh/2352
+    ja cue_bad
+    mov eax, [cue_gaps]
+    shl eax, 8
+    mov di, [cue_current]
+    mov al, [di+TRACK_CONTROL]
+    mov [di+TRACK_CONTROL], eax
+    inc byte [cue_gap_seen]
+    call token
+    jnc cue_bad
+    jmp .line
 .index:
     cmp word [cue_count], 0
     je cue_bad
@@ -184,6 +218,7 @@ prepare_image:
     jne cue_bad
     cmp dword [di+TRACK_INDEX0], 0ffffffffh
     jne cue_bad
+    call .index_zero
     mov [di+TRACK_INDEX0], eax
     jmp .index_done
 .index_one:
@@ -191,8 +226,12 @@ prepare_image:
     jne cue_bad
     cmp dword [di+TRACK_INDEX0], 0ffffffffh
     jne .index_zero_set
+    push eax
+    call .index_zero
     mov [di+TRACK_INDEX0], eax
+    pop eax
 .index_zero_set:
+    add eax, [cue_gaps]
     cmp eax, [di+TRACK_INDEX0]
     jb cue_bad
     mov [di+TRACK_START], eax
@@ -209,6 +248,14 @@ prepare_image:
     call token
     jnc cue_bad
     jmp .line
+.index_zero:
+    cmp word [cue_count], 1
+    je .zero_done
+    mov edx, [di-TRACK_SIZE+TRACK_CONTROL]
+    shr edx, 8
+    add eax, edx
+.zero_done:
+    ret
 .finish:
     cmp byte [cue_file_seen], 1
     jne cue_bad
@@ -339,6 +386,9 @@ cue_time:
     stc
     ret
 
+cue_gaps dd 0
+cue_gap_seen db 0
+cue_pregap db 'PREGAP',0
 cue_next dw 0
 cue_count dw 0
 cue_current dw 0

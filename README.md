@@ -101,20 +101,26 @@ Use DOS 8.3 names on a local hard disk. Image files must be smaller than 2 GiB. 
 | Format | Notes |
 | --- | --- |
 | `.ISO` | 2048-byte data sectors |
-| `.CUE` / `.BIN` | One BINARY file, sequential tracks, INDEX 01 on each track. INDEX 00 is accepted |
+| `.CUE` / `.BIN` | One BINARY file, sequential tracks, INDEX 01 on each track. INDEX 00 and PREGAP are accepted |
 | `.BIN` alone | MODE1/2352 data, no audio track table. Use a CUE sheet for CD-Audio |
 | `.MDM` | Disc list, as above |
 
-MODE2 sectors, compressed audio, FLAGS, synthetic PREGAP, and multi-file CUE sheets are not supported.
+PREGAP adds silence without reading sectors from the BIN file. Put PREGAP before the track's INDEX entries. Track positions include these gaps.
+
+MODE2 sectors, compressed audio, FLAGS, and multi-file CUE sheets are not supported.
 
 ## GAMES WITH REDBOOK AUDIO THAT WORK
 
 These are games known to work, not a list of every game that may work.
 
+- Alone in the Dark
+- Alone in the Dark 2
+- Alone in the Dark 3
 - Archimedean Dynasty
 - Battle Chess Enhanced CD-ROM
 - Carmageddon
 - Descent II
+- Loom
 - Pro Pinball: The Web
 - Pro Pinball: Timeshock!
 - Quake

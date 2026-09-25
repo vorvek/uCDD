@@ -7,6 +7,7 @@
 %define TRACK_START 0
 %define TRACK_INDEX0 4
 %define TRACK_CONTROL 8
+; The upper 24 bits hold the cumulative synthetic gap in sectors.
 %define HANDLE 0
 %define SECTORS 2
 %define CHANGED 6
