@@ -129,8 +129,6 @@ These are games known to work, not a list of every game that may work.
 - Screamer Rally
 - Tomb Raider
 
-Real-mode games are also supported, but not every title has been tested. The ADPCM restriction above still applies.
-
 ## Build
 
 Assembler sources are in `src/`. NASM is required.
