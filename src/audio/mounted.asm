@@ -283,6 +283,8 @@ cd_request:
     mov [cd_gain+4], eax
     jmp .ok
 .input:
+    cmp byte [es:di], 6
+    je .device_status
     cmp byte [es:di], 1
     je .head
     cmp byte [es:di], 4
@@ -304,6 +306,10 @@ cd_request:
     mov [es:di+3], eax
     mov eax, [cd_status_end]
     mov [es:di+7], eax
+    jmp .ok
+.device_status:
+    cmp cx, 5
+    jb .done
     jmp .ok
 .head:
     cmp cx, 6

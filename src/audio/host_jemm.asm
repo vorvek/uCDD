@@ -184,6 +184,7 @@ host_io:
     pop dword [ebp+48]
     pop edx
     pop ecx
+    call host_io_irq
     pop esi
     pop ebx
     ret
@@ -192,6 +193,75 @@ host_io:
     push dword [ebx+host_old_io]
     mov ebx, [esp+4]
     ret 4
+
+host_io_irq:
+    pushad
+    test byte [ebp+49], 2
+    jz .done
+    cmp byte [ebx+virtual_pic_request], 0
+    je .done
+    cmp byte [ebx+virtual_pic_service], 0
+    jne .done
+    mov al, [ebx+guest_irq_bit]
+    test [ebx+virtual_pic_mask], al
+    jnz .done
+    movzx esi, word [ebx+own_host_active+2]
+    test esi, esi
+    jz .done
+    shl esi, 4
+    movzx eax, word [ebx+own_host_active]
+    add esi, eax
+    cmp byte [esi], 0
+    je .priority
+    cmp byte [esi+1], 0
+    jne .done
+.priority:
+    mov al, 0bh
+    out 20h, al
+    in al, 20h
+    mov ah, al
+    mov al, [ebx+physical_pic_read]
+    out 20h, al
+    test ah, [ebx+guest_irq_priority]
+    jnz .done
+    movzx esi, byte [ebx+guest_vector]
+    mov esi, [esi*4]
+    mov al, [ebx+guest_irq]
+    cmp al, [ebx+sb_irq]
+    jne .vector
+    mov eax, ebx
+    shr eax, 4
+    shl eax, 16
+    mov ax, audio_irq
+    cmp esi, eax
+    jne .vector
+    mov esi, [ebx+sb_game_vector]
+.vector:
+    mov byte [ebx+virtual_pic_request], 0
+    mov al, [ebx+guest_irq_bit]
+    mov [ebx+virtual_pic_service], al
+    movzx ecx, word [ebp+56]
+    shl ecx, 4
+    movzx edx, word [ebp+52]
+    mov eax, [ebp+48]
+    sub dx, 2
+    mov [ecx+edx], ax
+    and ah, 0fch
+    mov [ebp+48], eax
+    mov ax, [ebp+44]
+    sub dx, 2
+    mov [ecx+edx], ax
+    mov ax, [ebp+40]
+    sub dx, 2
+    mov [ecx+edx], ax
+    mov [ebp+52], dx
+    movzx eax, si
+    mov [ebp+40], eax
+    shr esi, 16
+    mov [ebp+44], esi
+.done:
+    popad
+    ret
 
 ; Jemm calls this before it reflects a hardware interrupt through the IVT.
     dd host_irq_previous

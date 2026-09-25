@@ -33,8 +33,14 @@ sb_tail_read_offset dw 0
 sb_pause_clock dd 0
 sb_pause_mix_frame dd 0
 sb_test_register db 0
+sb_dac_enabled db 0
+sb_dac_value db 128
+sb_dac_head dw 0
+sb_dac_tail dw 0
+sb_dac_frame dd 0
 game_origin dd 0
 %ifdef RESIDENT_AUDIO
+game_physical dd 0
 sb_patch_active db 0
 sb_patch_available db 0
 sb_patch_clock dd 0

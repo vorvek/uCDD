@@ -106,6 +106,8 @@ interrupt:
     je .success
     cmp al, 80h
     je .read
+    cmp al, 82h
+    je .success
     cmp al, 83h
     je .audio
     cmp al, 84h
@@ -210,7 +212,6 @@ ioctl_input:
     movzx ax, al
     cmp cx, ax
     jb request_error
-    mov [fs:bp+18], ax
     cmp bl, 0
     je .header
     cmp bl, 6
@@ -261,6 +262,8 @@ ioctl_input:
     or ax, 0310h
 .status_store:
     mov [es:di+1], eax
+    cmp dword [si+AUDIO_ENTRY], 0
+    jne audio_request
     jmp request_ok
 .sector_size:
     cmp byte [es:di+1], 0
@@ -379,8 +382,7 @@ read_sectors:
     jne request_unknown
     cmp byte [fs:bp+24], 0
     jne request_unknown
-    cmp byte [fs:bp+25], 0
-    jne request_unknown
+    ; A zero skip is contiguous for any interleave size.
     cmp byte [fs:bp], 27
     jb .interleave_ok
     cmp byte [fs:bp+26], 0
@@ -951,11 +953,12 @@ mount_image:
     xchg dl, dh
     cmp eax, edx
     jne .reject
-    ; Some mixed-mode discs include audio sectors in the volume size.
+    ; Limit directory validation, not sector reads, to the ISO volume.
     cmp eax, [candidate_sectors]
-    jae .volume_limit
-    mov [candidate_sectors], eax
+    jbe .volume_limit
+    mov eax, [candidate_sectors]
 .volume_limit:
+    mov [candidate_limit], eax
     cmp byte [pvd+156], 34
     jb .reject
     test byte [pvd+181], 2
@@ -986,7 +989,7 @@ mount_image:
     shr eax, 11
     add eax, ebx
     jc .reject
-    cmp eax, [candidate_sectors]
+    cmp eax, [candidate_limit]
     ja .reject
     cmp word [control_op], 7
     jne .commit

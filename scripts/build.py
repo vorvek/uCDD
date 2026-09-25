@@ -25,12 +25,12 @@ def assemble(source, name, defines=(), exe=False, listing=False):
                     '-o', str(output)], check=True)
     if exe:
         payload = output.read_bytes()
-        stack_top = (len(payload) + 15) // 16 * 16 + 1024
-        if stack_top > 65534:
+        stack_segment = (len(payload) + 15) // 16
+        if len(payload) > 65536:
             raise ValueError('The program exceeds one DOS segment.')
         size = 32 + len(payload)
         header = struct.pack('<14H', 0x5a4d, size % 512, (size + 511) // 512,
-                             0, 2, 64, 64, 0, stack_top, 0, 0, 0, 28, 0)
+                             0, 2, 64, 64, stack_segment, 1024, 0, 0, 0, 28, 0)
         output.write_bytes(header.ljust(32, b'\0') + payload)
     print(f'{name}: {output.stat().st_size} bytes')
 

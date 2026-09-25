@@ -1,3 +1,19 @@
+# Beta 0.9.2c
+
+## Changes in 0.9.2c
+
+- Support advisory CD prefetch requests used by Gobliiins and Gobliins 2.
+- Support Sound Blaster direct DAC speech and effects. Support single-cycle 8-bit mono DMA samples above 1 MiB with the JEMM audio backend.
+- Prevent a lockup when background CD reads interrupt hardware interrupt handlers.
+- Accept contiguous CD reads with a nonzero interleave size and allow reads beyond the ISO volume size within the data track. This fixes resource reads in Fascination.
+- Preserve CD information buffer counts and report active CD playback correctly. This fixes repeated music restarts in Future Wars.
+- Improve Sound Blaster detection and short-sample interrupt response for The Secret of Monkey Island.
+- Correct the DOS startup stack layout for larger executables.
+- Keep free conventional memory contiguous when loading the audio service into upper memory.
+- Add Fascination, Future Wars, Gobliiins, Gobliins 2: The Prince Buffoon, Goblins Quest 3, and Lost in Time to the list of working Redbook-audio games.
+- Add Descent II: Vertigo Series, The Manhole, The Secret of Monkey Island, Realms of Arkania III: Shadows over Riva, and the German CD editions of Realms of Arkania: Blade of Destiny and Star Trail to the list of working Redbook-audio games.
+- Add Alien Trilogy, Battle Arena Toshinden, BC Racers, Big Red Racing, and Blam! Machinehead to the list of working Redbook-audio games.
+
 # Beta 0.9.2b
 
 ## Changes in 0.9.2b

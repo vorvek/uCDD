@@ -1,21 +1,45 @@
 ; SPDX-FileCopyrightText: 2026 vorvek
 ; SPDX-License-Identifier: GPL-3.0-only
 
+sb_patch_initial:
+    cmp byte [sb_patch_available], 0
+    jne .done
+    cmp dword [periods], 0
+    je .done
+    mov byte [sb_patch_available], 2
+.done:
+    ret
+
 sb_patch:
     cmp byte [sb_patch_available], 0
     je .done
-    mov byte [sb_patch_available], 0
     cmp byte [sb_single], 0
-    je .done
+    je .clear
     pushad
     push es
     pushf
     cli
     call output_clock
     add eax, 32
+    cmp byte [sb_patch_available], 2
+    je .initial
+    mov byte [sb_patch_available], 0
     cmp eax, [sb_patch_clock]
     jae .restore
     mov eax, [sb_patch_clock]
+    jmp .scheduled
+.initial:
+    mov byte [sb_patch_available], 0
+    inc eax
+    and al, 0feh
+    mov edx, [periods]
+    add edx, 2
+    shl edx, OUTPUT_SHIFT
+    cmp eax, edx
+    jae .restore
+    mov [sb_patch_clock], eax
+    mov [sb_patch_limit], edx
+.scheduled:
     mov [game_started], eax
     mov byte [game_start_pending], 2
     cmp eax, [sb_patch_limit]
@@ -41,6 +65,9 @@ sb_patch:
     popf
     pop es
     popad
+    ret
+.clear:
+    mov byte [sb_patch_available], 0
 .done:
     ret
 

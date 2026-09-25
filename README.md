@@ -113,20 +113,37 @@ MODE2 sectors, compressed audio, FLAGS, and multi-file CUE sheets are not suppor
 
 These are games known to work, not a list of every game that may work.
 
+- Alien Trilogy
 - Alone in the Dark
 - Alone in the Dark 2
 - Alone in the Dark 3
 - Archimedean Dynasty
+- Battle Arena Toshinden
 - Battle Chess Enhanced CD-ROM
+- BC Racers
+- Big Red Racing
+- Blam! Machinehead
 - Carmageddon
 - Descent II
+- Descent II: Vertigo Series
+- Fascination
+- Future Wars
+- Gobliiins
+- Gobliins 2: The Prince Buffoon
+- Goblins Quest 3
 - Loom
+- Lost in Time
 - Pro Pinball: The Web
 - Pro Pinball: Timeshock!
 - Quake
+- Realms of Arkania III: Shadows over Riva
+- Realms of Arkania: Blade of Destiny (German CD edition)
+- Realms of Arkania: Star Trail (German CD edition)
 - Screamer
 - Screamer 2
 - Screamer Rally
+- The Manhole
+- The Secret of Monkey Island
 - Tomb Raider
 
 ## Build

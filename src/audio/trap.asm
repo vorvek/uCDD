@@ -274,6 +274,8 @@ port_callback:
     je .reset
     cmp dx, 22ch
     je .command
+    cmp dx, 22ah
+    je .done
     cmp dx, 224h
     je .mixer_index
     cmp dx, 225h
@@ -313,6 +315,9 @@ port_callback:
 %endif
     jmp .done
 .reset:
+    mov byte [sb_id_value], 0aah
+    mov byte [sb_id_phase], 0
+    mov byte [sb_dac_enabled], 0
     mov byte [sb_tail_mode], 0
     mov byte [sb_tail_valid], 0
 %ifdef RESIDENT_AUDIO
@@ -458,6 +463,8 @@ port_callback:
     cmp byte [arguments], 0
     jne .argument
     mov [dsp_command], al
+    cmp al, 10h
+    je .time_constant
     cmp al, 41h
     je .rate
     cmp al, 40h
@@ -507,6 +514,8 @@ port_callback:
     cmp al, 0e0h
     je .time_constant
     cmp al, 0e4h
+    je .time_constant
+    cmp al, 0e2h
     je .time_constant
     cmp al, 0e8h
     je .test_read
@@ -693,6 +702,17 @@ port_callback:
     pop ax
     jmp .validate_start
 .argument:
+    cmp byte [dsp_command], 10h
+    jne .normal_argument
+    call sb_dac_write
+    jmp .argument_done
+.normal_argument:
+    cmp byte [dsp_command], 0e2h
+    jne .invert_argument
+    call sb_identify
+    jc .unsupported
+    jmp .argument_done
+.invert_argument:
     cmp byte [dsp_command], 0e0h
     jne .test_argument
     not al
@@ -942,7 +962,28 @@ port_callback:
     mov eax, ecx
     add eax, ebx
     cmp eax, 0a0000h
+%ifdef OWN_HOST
+    jbe .low_source
+    cmp byte [host_backend], 1
+    jne .unsupported
+    cmp ecx, 100000h
+    jb .unsupported
+    cmp eax, 1000000h
     ja .unsupported
+    cmp byte [sb_single], 1
+    jne .unsupported
+    cmp byte [pending_frame_shift], 0
+    jne .unsupported
+    cmp byte [sb_input], 0
+    jne .unsupported
+    mov [game_physical], ecx
+    jmp .source_ready
+.low_source:
+    mov dword [game_physical], 0
+.source_ready:
+%else
+    ja .unsupported
+%endif
     mov [game_dma], si
     mov esi, ecx
     mov [game_block_bytes], edx
@@ -974,6 +1015,7 @@ port_callback:
     je .ring_ready
     mov dword [game_limit], 0
 .ring_ready:
+    mov byte [sb_dac_enabled], 0
     mov bx, si
     and bx, 15
     mov [game_offset], bx
@@ -1015,11 +1057,16 @@ port_callback:
 %ifdef VIRTUAL_IRQ
     call virtual_irq_reset
 %endif
+    mov bl, [game_active]
     mov byte [game_active], 1
     inc word [virtual_starts]
 %ifdef RESIDENT_AUDIO
     cmp dword [ss:ebp+12], 1
     je .patch_deferred
+    test bl, bl
+    jnz .patch
+    call sb_patch_initial
+.patch:
     call sb_patch
 .patch_deferred:
 %endif
@@ -1171,6 +1218,7 @@ port_callback:
     jmp .snapshot
 .idle_snapshot:
     mov bx, [si+DMA_COUNT]
+    sub bx, [si+DMA_POSITION]
     cmp byte [si+3], 0
     je .snapshot
     mov bx, 0ffffh
@@ -1213,6 +1261,67 @@ port_callback:
     clc
     retf
 
+sb_identify:
+    movzx bx, byte [sb_id_phase]
+    xor al, [.masks+bx]
+    add [sb_id_value], al
+    inc bl
+    and bl, 3
+    mov [sb_id_phase], bl
+    mov si, dma8
+    cmp byte [si+DMA_MASK], 0
+    jne .reply
+    cmp byte [si+3], 0
+    jne .reply
+    mov al, [si+DMA_MODE]
+    and al, 0ch
+    cmp al, 4
+    jne .reply
+%ifdef RESIDENT_AUDIO
+    cmp dword [ss:ebp+12], 1
+    je .failed
+%endif
+    cmp byte [game_active], 0
+    jne .failed
+    cmp byte [si+DMA_PAGE], 10h
+    jae .failed
+    movzx ax, byte [si+DMA_PAGE]
+    shl ax, 12
+    mov es, ax
+    mov bx, [si+DMA_ADDRESS]
+    mov di, [si+DMA_POSITION]
+    test byte [si+DMA_MODE], 20h
+    jz .forward
+    sub bx, di
+    jmp .store
+.forward:
+    add bx, di
+.store:
+    mov al, [sb_id_value]
+    mov [es:bx], al
+    inc dword [si+DMA_POSITION]
+    movzx eax, word [si+DMA_COUNT]
+    cmp [si+DMA_POSITION], eax
+    jbe .done
+    test byte [si+DMA_MODE], 10h
+    jz .terminal
+    mov dword [si+DMA_POSITION], 0
+    jmp .done
+.terminal:
+    mov byte [si+3], 1
+    jmp .done
+.reply:
+    mov al, [sb_id_value]
+    mov [reply], al
+    mov byte [reply_count], 1
+.done:
+    clc
+    ret
+.failed:
+    stc
+    ret
+.masks db 96h,0a5h,69h,5ah
+
 dma_unowned_write:
 %ifdef RESIDENT_AUDIO
     cmp byte [sb_running], 0
@@ -1237,6 +1346,8 @@ dma_unowned_write:
 %else
     jmp dma_shared_write
 %endif
+
+%include "audio/direct_write.asm"
 
 dma_shared_write:
     push dx
@@ -1432,6 +1543,8 @@ legacy_block dw 0
 legacy_rate dw 22050
 reply dw 0
 reply_count db 0
+sb_id_value db 0aah
+sb_id_phase db 0
 %ifdef RESIDENT_AUDIO
 callback_port dw 0
 callback_value db 0

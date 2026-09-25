@@ -50,6 +50,7 @@ mix_half:
     mov [game_started], eax
     mov byte [game_start_pending], 2
 .phase:
+    mov [sb_dac_frame], eax
     sub eax, [game_started]
     mov [game_mix_frame], eax
     mul dword [game_step]
@@ -75,6 +76,9 @@ mix_half:
     mov fs, [game_segment]
     mov ax, [game_offset]
     mov [sb_tail_read_offset], ax
+%ifdef OWN_HOST
+    mov dword [sb_high_tag], -1
+%endif
     cmp byte [sb_tail_valid], 0
     je .fast_dispatch
     mov fs, [sb_tail_segment]
@@ -84,6 +88,12 @@ mix_half:
     jmp .frame
 %ifdef RESIDENT_AUDIO
 .fast_dispatch:
+    cmp byte [sb_dac_enabled], 0
+    jne .frame
+%ifdef OWN_HOST
+    cmp dword [game_physical], 0
+    jne .frame
+%endif
     cmp byte [sound_card], 0
     jne .frame
     cmp byte [sb_patch_active], 0
@@ -329,6 +339,11 @@ mix_half:
 .frame:
     xor edx, edx
     xor esi, esi
+    cmp byte [sb_dac_enabled], 0
+    je .dma_frame
+    call sb_dac_sample
+    jmp .sum
+.dma_frame:
     cmp byte [game_active], 0
     je .sum
 %ifdef WSS_INPUT
@@ -369,8 +384,19 @@ mix_half:
     cmp byte [game_frame_shift], 0
     jne .stereo
     mov si, ax
+%ifdef OWN_HOST
+    cmp dword [game_physical], 0
+    je .mono_low
+    call sb_high_sample
+    movzx edx, al
+    jmp .mono_value
+.mono_low:
+%endif
     add si, [sb_tail_read_offset]
     movzx edx, byte [fs:si]
+%ifdef OWN_HOST
+.mono_value:
+%endif
     sub edx, 128
     shl edx, 7
     mov esi, edx
@@ -808,6 +834,12 @@ sb_filter:
     ret
 
 sb_tail_start_bytes dw 0
+
+%include "audio/direct_sample.asm"
+
+%ifdef OWN_HOST
+%include "audio/high_dma.asm"
+%endif
 
 ; Save at most one old-generation tail before the producer owns the ring.
 sb_tail_prepare:

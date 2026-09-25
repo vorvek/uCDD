@@ -20,6 +20,9 @@ cd_timer:
     jne .done
     cmp byte [cd_bios_busy], 0
     jne .done
+    call physical_pic_isr
+    or al, [virtual_pic_service]
+    jnz .done
     cmp byte [cd_started], 1
     jne .done
     cmp byte [cd_error], 0
@@ -87,6 +90,9 @@ cd_deferred_refill:
     jne .done
     cmp byte [cd_bios_busy], 0
     jne .done
+    call physical_pic_isr
+    or al, [virtual_pic_service]
+    jnz .done
     cmp byte [cd_started], 1
     jne .cancel
     cmp byte [cd_error], 0

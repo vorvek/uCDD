@@ -19,22 +19,6 @@ audio_activate:
     mov word [audio_error_text], memory_control_message
     call cd_memory_low
     jc .cleanup
-    mov word [audio_error_text], cd_half_memory_message
-    call cd_half_allocate
-    jc .cleanup
-    mov word [audio_error_text], cd_work_memory_message
-    call cd_work_allocate
-    jc .cleanup
-    mov word [audio_error_text], xms_memory_message
-%ifdef EMS_QUEUE
-    cmp byte [memory_mode], 0
-    je .queue_message_ready
-    mov word [audio_error_text], ems_memory_message
-.queue_message_ready:
-%endif
-    call cd_open
-    jc .cleanup
-    call virtual_irq_init
     mov bx, RING_PARAS*2
     cmp byte [sound_card], 3
     jne .pro_size
@@ -65,6 +49,23 @@ audio_activate:
     and ax, ~(RING_PARAS-1)
 .dma_ready:
     mov [output_segment], ax
+    mov word [audio_error_text], cd_half_memory_message
+    call cd_half_allocate
+    jc .cleanup
+    mov word [audio_error_text], cd_work_memory_message
+    call cd_work_allocate
+    jc .cleanup
+    mov word [audio_error_text], xms_memory_message
+%ifdef EMS_QUEUE
+    cmp byte [memory_mode], 0
+    je .queue_message_ready
+    mov word [audio_error_text], ems_memory_message
+.queue_message_ready:
+%endif
+    call cd_open
+    jc .cleanup
+    call virtual_irq_init
+    mov ax, [output_segment]
     mov es, ax
     xor di, di
     call mix_half
