@@ -137,7 +137,7 @@ wave_name db 'WAVE OUT',0
 fm_name db 'FM SYNTH',0
 master_name db 'MASTER',0
 step_name db 'HOTKEY STEP',0
-cd_note db 'CD AUDIO sets the CD-Audio level. Hotkeys change all levels in a game.',0
+cd_note db 'CD AUDIO sets the CD-Audio level.',0
 wave_note db 'WAVE OUT sets the level of the game PCM sound.',0
 fm_note db 'FM SYNTH sets the FM music level. A WSS codec or SB 1.5/2.0 has none.',0
 master_note db 'An SB 1.5/2.0 has no master volume.',0
