@@ -835,12 +835,12 @@ control:
     call dos_enter
     call mount_image
     call dos_leave
-    jmp .done
+    jmp .reconsider
 .mdm_mount:
     call dos_enter
     call mdm_mount
     call dos_leave
-    jmp .done
+    jmp .reconsider
 .mdm_name:
     call mdm_name
     jmp .done
@@ -848,8 +848,13 @@ control:
     call dos_enter
     call eject_unit
     call dos_leave
-    jc .done
+    jc .reconsider
     mov word [control_result], 0
+.reconsider:
+%ifdef RESIDENT_AUDIO
+    ; A mount or an eject may change whether the driver has anything to add.
+    call audio_reconsider
+%endif
     jmp .done
 .query:
     xor ax, ax
@@ -921,6 +926,8 @@ control:
     mov eax, [periods]
     sub eax, [diag_periods]
     mov [es:di-DIAG_BYTES+4], eax
+    movzx eax, byte [audio_engaged]
+    mov [es:di-4], eax
     cmp word [control_op], 11
     jne .diag_done
     mov eax, [periods]
@@ -1737,7 +1744,7 @@ installed_message db 'uCDD ',UCDD_VERSION,' is installed.',13,10,'$'
 dos_message db 'uCDD cannot use this DOS version. Use DOS 5 or later.',13,10,'$'
 resize_message db 'uCDD cannot change its memory block size.',13,10,'$'
 sda_message db 'DOS did not supply its swappable data area.',13,10,'$'
-duplicate_message db 'The uCDD driver is already installed.',13,10,'$'
+duplicate_message db 'uCDD is already installed.',13,10,'$'
 %ifdef RESIDENT_AUDIO
 trap_resident_message db 'uCDD keeps its port-trap code in memory.',13,10,'$'
 audio_unit_message db 'For CD audio, use only one uCDD drive.',13,10,'$'

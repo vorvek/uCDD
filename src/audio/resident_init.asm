@@ -115,6 +115,8 @@ audio_activate:
     mov byte [cd_background_set], 1
     ; The hotkeys work without an MDM list.
     call mdm_hooks
+    ; Nothing is mounted at install: step aside when the pairing allows it.
+    call audio_reconsider
     clc
     ret
 .cleanup:

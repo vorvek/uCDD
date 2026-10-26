@@ -27,7 +27,7 @@ fault db 0
 ; UCDD -status reads this block with control 10 and 11 (driver.asm). Counters
 ; are words that wrap. diag_host and the abort record are the part that the
 ; protected host writes (CDF5); the host uses the offsets DIAG_HOST_*.
-DIAG_BYTES equ 140
+DIAG_BYTES equ 144
 DIAG_HOST_DUE_PM equ 82
 DIAG_HOST_REFUSED equ 0
 DIAG_HOST_ABORT equ 20
@@ -103,6 +103,8 @@ diag_due_tick dw 0
 diag_due_mask dw 0
 diag_due_arm_v86 dw 0
 diag_due_arm_pm dw 0
+; The copy gets audio_engaged here (driver.asm).
+diag_state dd 0
 diag_end:
 %if diag_due_arm_pm-diag_host != DIAG_HOST_DUE_PM
 %error The host counter offset is wrong.
@@ -162,6 +164,7 @@ audio_linked db 0
 %include "audio/background.asm"
 %include "audio/irq.asm"
 %include "audio/sb_patch.asm"
+%include "audio/standby.asm"
 %include "audio/host_jemm.asm"
 %ifdef OWN_HOST
 %include "audio/resident_host.asm"

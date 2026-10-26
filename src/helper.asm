@@ -623,6 +623,17 @@ status_run:
     mov si, status_page_table
     call status_print
 .exit:
+    ; A driver from 0.9.5-a1 has no state word.
+    cmp word [full_path+2], 144
+    jb .state_done
+    mov dx, status_active
+    cmp byte [full_path+140], 0
+    jne .state
+    mov dx, status_inactive
+.state:
+    mov ah, 9
+    int 21h
+.state_done:
     mov ax, 4c00h
     int 21h
 .old_driver:
@@ -819,7 +830,9 @@ status_return_table:
     STAT 0, 0, '.',13,10
     db 0ffh
 status_none db 'none$'
-status_old_message db 'This uCDD driver cannot show the status.',13,10,'$'
+status_old_message db 'This uCDD version cannot show the status.',13,10,'$'
+status_active db 'uCDD is active.',13,10,'$'
+status_inactive db 'uCDD is inactive (no CD-Audio image mounted).',13,10,'$'
 status_number times 12 db 0
 %endif
 operation db 0

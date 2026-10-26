@@ -373,6 +373,11 @@ main_draw:
     mov si, other_irq_label
     call put_text
     call disk_draw
+    ; The step-aside switch's label, beside its box.
+    mov dx, 0e35h
+    mov si, always_label
+    mov bl, A_BOX
+    call put_text
     ret
 
 main_keys:
@@ -568,7 +573,7 @@ model_changed:
     clc
     ret
 
-MAIN_ITEMS equ 19
+MAIN_ITEMS equ 20
 main_items:
     item 6,16,21,0, NONE,5,NONE,1, format_choice,choice_popup,choice_cycle,model_choice
     item 6,41,3,0, NONE,6,0,2, format_choice,choice_popup,choice_cycle,port_choice
@@ -582,18 +587,28 @@ main_items:
     item 10,67,3,0, 4,11,8,NONE, format_choice,choice_popup,choice_cycle,virtual_dma16_choice
     item 11,41,3,0, 6,18,NONE,11, format_choice,choice_popup,choice_cycle,wss_port_choice
     item 11,49,3,0, 7,18,10,NONE, format_choice,choice_popup,choice_cycle,wss_irq_choice
-    item 20,5,9,0, 18,NONE,NONE,13, format_button,hotkeys_screen,0,hotkeys_label
-    item 20,18,7,0, 18,NONE,12,14, format_button,mixer_screen,0,mixer_label
-    item 20,31,8,0, 18,NONE,13,15, format_button,detect_action,0,detect_label
-    item 20,43,6,0, 18,NONE,14,16, format_button,test_action,0,test_label
-    item 20,55,6,0, 18,NONE,15,17, format_button,save_action,0,save_label
-    item 20,65,8,0, 18,NONE,16,NONE, format_button,cancel_action,0,cancel_label
+    item 20,5,9,0, 19,NONE,NONE,13, format_button,hotkeys_screen,0,hotkeys_label
+    item 20,18,7,0, 19,NONE,12,14, format_button,mixer_screen,0,mixer_label
+    item 20,31,8,0, 19,NONE,13,15, format_button,detect_action,0,detect_label
+    item 20,43,6,0, 19,NONE,14,16, format_button,test_action,0,test_label
+    item 20,55,6,0, 19,NONE,15,17, format_button,save_action,0,save_label
+    item 20,65,8,0, 19,NONE,16,NONE, format_button,cancel_action,0,cancel_label
     ; The Disk row: an IRQ set by hand for a disk card the PCI scan misses.
-    item 13,69,4,0, 10,12,NONE,NONE, format_choice,choice_popup,choice_cycle,disk_irq_choice
+    item 13,69,4,0, 10,19,NONE,NONE, format_choice,choice_popup,choice_cycle,disk_irq_choice
+    ; The step-aside switch: ticked, the driver stays on without a CD audio disc.
+    item 14,48,3,0, 18,12,NONE,NONE, format_tick,toggle_tick,0,always_tick
 main_notes dw 0,0,0,0,0
     dw virtual_note,virtual_note,virtual_note,virtual_note,virtual_note,wss_note,wss_note
     dw 0,0,0,0,0,0
     dw disk_note
+    dw always_help
+always_tick:
+    tick config_audio_always,always_available
+; CF set when the physical card cannot act as the virtual one (the driver's
+; own rule, audio/pairing.asm). Greyed, the box keeps its stored value.
+always_available:
+    jmp card_pairing
+%include "audio/pairing.asm"
 model_choice:
     choice sound_card,1,model_list,text_model,model_changed
 port_choice:
@@ -664,6 +679,8 @@ virtual_cards_text db 'VIRTUAL CARDS',0
 disk_label db 'Disk',0
 pci_irq_label db 'PCI disk card IRQ',0
 other_irq_label db 'Other disk card IRQ',0
+always_label db 'uCDD always on',0
+always_help db 'Ticked: uCDD stays on without a CD-Audio disc. Tick it for WSS games.',0
 hotkeys_label db 'Hotkeys',0
 mixer_label db 'Mixer',0
 detect_label db 'Detect',0

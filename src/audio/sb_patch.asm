@@ -462,6 +462,11 @@ host_pending_irqs dw 0
 sb_dos_vector:
     cmp al, [cs:guest_vector]
     jne .chain
+    ; While the driver has stepped aside the vector is DOS's to give and
+    ; take: audio_release and audio_engage move it through INT 21h with this
+    ; byte clear, and a game on the real card installs its own handler.
+    cmp byte [cs:audio_engaged], 0
+    je .chain
     cmp dword [cs:host_irq_slot], 0
     je .saved
     push ax

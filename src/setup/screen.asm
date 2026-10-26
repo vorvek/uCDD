@@ -47,6 +47,11 @@
 %define CHOICE_TEXT 6
 %define CHOICE_CHANGED 8
 
+; value byte, availability routine (CF set when the box cannot be ticked)
+%macro tick 2
+    dw %1,%2
+%endmacro
+
 ; value, size, list routine, text routine, change check or 0
 %macro choice 5
     dw %1
@@ -563,6 +568,42 @@ fader_track:
 ; Format routines. BX item, DI output.
 format_button:
     jmp format_label
+
+format_tick:
+    mov si, [bx+ITEM_DATA]
+    push si
+    call [si+2]
+    pop si
+    jnc .available
+    mov byte [item_disabled], 1
+.available:
+    mov si, [si]
+    mov al, '['
+    stosb
+    mov al, ' '
+    cmp byte [si], 0
+    je .mark
+    mov al, 'X'
+.mark:
+    stosb
+    mov al, ']'
+    stosb
+    mov byte [di], 0
+    ret
+
+; Space or Enter on a tick box. Nothing happens on a greyed one; its help
+; line says why.
+toggle_tick:
+    mov si, [bx+ITEM_DATA]
+    push si
+    call [si+2]
+    pop si
+    jc .done
+    mov si, [si]
+    xor byte [si], 1
+    mov byte [changed], 1
+.done:
+    ret
 
 format_label:
     mov si, [bx+ITEM_DATA]

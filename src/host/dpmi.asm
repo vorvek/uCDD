@@ -120,6 +120,12 @@ dpmi_ems_name times 8 db 0
 dpmi_ems:
     cmp ax, 0de00h
     jne .chain
+    ; Stepped aside, the driver offers no DPMI: VCPI stays visible.
+    push ds
+    mov ds, [cs:dpmi_ems_gateway-dpmi_ems_base]
+    cmp byte [dpmi_dormant], 0
+    pop ds
+    jne .chain
     push bp
     mov bp, sp
     push bx
@@ -139,6 +145,8 @@ dpmi_ems:
 %endif
 dpmi_mux:
     cmp ax, 1687h
+    jne .chain
+    cmp byte [cs:dpmi_dormant], 0
     jne .chain
     xor ax, ax
     mov bx, 1
@@ -1258,7 +1266,11 @@ dpmi_rm_call db 0
 %endif
 dpmi_cpu db 3
 dpmi_psp dw 0
-%if dpmi_psp-dpmi_active != 12
+; The driver sets this byte while it has stepped aside (audio/standby.asm):
+; no DPMI is offered and VCPI stays visible, so a protected-mode game runs
+; under its own extender.
+dpmi_dormant db 0
+%if dpmi_psp-dpmi_active != 12 || dpmi_dormant-dpmi_active != 14
     %error Invalid resident IRQ state layout
 %endif
 ; The saved dpmi_rm_call of a callback, an exception and a raw switch.

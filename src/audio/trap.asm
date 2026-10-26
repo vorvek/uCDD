@@ -38,6 +38,47 @@ trap_install:
 .fail:
     stc
     ret
+; Stepping aside (audio_release): give back every trapped port but the
+; keyboard's, which the hotkeys read; the callback stays installed.
+; trap_engage traps them again. Both walk the list, not trapped_count, which
+; stays the install's figure for trap_remove.
+trap_release:
+    mov si, trap_ports
+.next:
+    lodsw
+    test ax, ax
+    jz .done
+%ifdef MDM_SUPPORT
+    cmp ax, 60h
+    je .next
+%endif
+    mov dx, ax
+    mov ax, 1a0ah
+    call far [qpi]
+    jmp .next
+.done:
+    ret
+trap_engage:
+    mov si, trap_ports
+.next:
+    lodsw
+    test ax, ax
+    jz .done
+%ifdef MDM_SUPPORT
+    cmp ax, 60h
+    je .next
+%endif
+    mov dx, ax
+    mov ax, 1a09h
+    call far [qpi]
+    jc .fail
+    jmp .next
+.done:
+    clc
+    ret
+.fail:
+    stc
+    ret
 trap_remove:
     mov byte [trap_remove_failed], 0
     mov si, trap_ports
