@@ -1795,6 +1795,7 @@ install_audio_error:
 %include "audio/guest_config.asm"
 %include "config_path.asm"
 %include "audio/ess_install.asm"
+%include "disk_scan.asm"
 audio_prepare:
     mov word [audio_error_text], audio_unit_message
     cmp byte [unit_count], 1
@@ -1802,6 +1803,12 @@ audio_prepare:
     call audio_configure
     jc .bad
     call sb_model
+    ; The disk controller IRQs of this machine, found now, and the one set by
+    ; hand in UCDDSET. Never the physical card's, which the record just gave.
+    call disk_scan
+    call disk_mask
+    mov [config_disk_mask], ax
+    call disk_report
     call guest_configure
     cmp byte [sound_card], 3
     jne .pro_rate
@@ -1821,6 +1828,52 @@ audio_prepare:
 .bad:
     stc
     ret
+
+; Report the disk IRQs beyond 14 and 15, and a disk IRQ that a sound card
+; setting uses too.
+disk_report:
+    call disk_used
+    test ax, ax
+    jz .warning
+    mov dx, disk_report_message
+    mov ah, 9
+    int 21h
+    mov di, disk_report_buffer
+    call disk_mask
+    mov byte [disk_irq_first], 1
+    call disk_irq_text
+    mov si, disk_report_buffer
+    call disk_print
+.warning:
+    call disk_check
+    test si, si
+    jz .done
+    call disk_print
+.done:
+    ret
+
+; SI text ending in 0. Print it and a line break.
+disk_print:
+    mov dx, si
+    xor cx, cx
+.length:
+    lodsb
+    test al, al
+    jz .write
+    inc cx
+    jmp .length
+.write:
+    mov bx, 1
+    mov ah, 40h
+    int 21h
+    mov dx, disk_crlf_message
+    mov ah, 9
+    int 21h
+    ret
+
+disk_report_message db 'Disk controller IRQs go to DOS directly: $'
+disk_crlf_message db 13,10,'$'
+disk_report_buffer times 56 db 0
 %ifdef OWN_HOST
 
 resident_relocate:

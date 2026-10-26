@@ -6,6 +6,8 @@ LOAD_MISSING equ 1
 LOAD_OLD equ 2
 LOAD_INVALID equ 3
 LOAD_UNREADABLE equ 4
+; Version 4's record (0.9.4-a1 to a6); version 5 adds three bytes after it.
+CONFIG_V4_SIZE equ 42
 
 ; Return AL: LOAD_OK, LOAD_MISSING, LOAD_OLD, LOAD_INVALID, or LOAD_UNREADABLE.
 ; Every result except LOAD_OK leaves settings that the user must examine.
@@ -38,6 +40,8 @@ config_load:
     je .old
     cmp ax, 36
     je .five_keys
+    cmp ax, CONFIG_V4_SIZE
+    je .version4
     cmp ax, CONFIG_SIZE
     jne .invalid
     cmp byte [file_buffer+4], CONFIG_VERSION
@@ -86,7 +90,7 @@ config_load:
     mov byte [file_buffer+35], 100
     std
     mov si, file_buffer+35
-    mov di, file_buffer+CONFIG_SIZE-1
+    mov di, file_buffer+CONFIG_V4_SIZE-1
     mov cx, 12
     rep movsb
     cld
@@ -110,6 +114,16 @@ config_load:
     inc di
     cmp di, file_buffer+30
     jb .conflict
+    jmp .extend
+
+.version4:
+    cmp byte [file_buffer+4], 4
+    jne .invalid
+; Joined from .version4 and .five_keys with a version 4 record in the buffer:
+; version 5's bytes read 0.
+.extend:
+    mov word [file_buffer+CONFIG_V4_SIZE], 0
+    mov byte [file_buffer+CONFIG_V4_SIZE+2], 0
     mov byte [file_buffer+4], CONFIG_VERSION
     jmp .copy
 
@@ -160,6 +174,10 @@ config_valid:
     ja .bad
     cmp byte [config_master_volume], 100
     ja .bad
+    movzx ax, byte [config_disk_irq]
+    mov si, disk_irq_values
+    call value_listed
+    jc .done
     cmp byte [config_fm_volume], 100
     ja .bad
     movzx ax, byte [config_volume_step]

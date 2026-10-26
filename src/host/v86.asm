@@ -13,6 +13,7 @@ host_v86_prepare:
     and eax, 0feffffffh
     cmp eax, 34464443h
     jne .done
+.fields:
     mov si, [ds:bp+22]
     mov ax, [si]
     cmp ax, 5605h

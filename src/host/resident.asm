@@ -109,6 +109,21 @@ resident_host_init:
     mov dx, [ds:bp+28]
     mov [cs:resident_due], dx
     mov [cs:resident_due+2], ds
+    ; The disk IRQ mask at +30. Never the timer, keyboard, cascade, RTC,
+    ; coprocessor, or the sound card's own IRQ.
+    push bx
+    push cx
+    mov bx, [ds:bp+30]
+    mov dx, [ds:bx]
+    and dx, 0def8h
+    movzx cx, byte [cs:dpmi_audio_irq]
+    cmp cx, 15
+    ja .disk_mask
+    btr dx, cx
+.disk_mask:
+    mov [cs:dpmi_disk_mask], dx
+    pop cx
+    pop bx
     jmp .version3
 .version4:
     cmp dword [ds:bp+8], 34464443h

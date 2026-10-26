@@ -3,8 +3,8 @@
 
 ; UCDD.CFG contents. At installation, UCDDSET checks the file and copies the
 ; complete record into the driver.
-CONFIG_VERSION equ 4
-CONFIG_SIZE equ 42
+CONFIG_VERSION equ 5
+CONFIG_SIZE equ 45
 HOTKEY_COUNT equ 11
 config_data db 'uCDD',CONFIG_VERSION
 sound_card db 0
@@ -37,3 +37,17 @@ virtual_wss_irq db 11
 ; UCDDSET sets the DSP version reply: minor in the high byte.
 virtual_dsp_version dw 0504h
 config_fm_volume db 100
+; Version 5 adds three bytes after version 4's record. The same layout is used
+; on the fork's feature branches (disk IRQ, step-aside, fast DMA), so any of
+; them can be taken alone or together; a byte a branch does not use is 0.
+; IRQ of a disk controller that the PCI scan does not find, or 0 (UCDDSET's
+; Disk row).
+config_disk_irq db 0
+; Reserved: the step-aside switch and the fast DMA switch on their branches.
+config_reserved db 0, 0
+config_size_check equ 1 / (($-config_data) = CONFIG_SIZE)
+; Not in UCDD.CFG. UCDD -install scans the PCI BIOS (disk_scan.asm) and sets
+; the mask: IRQ 14 and 15, the IRQs of PCI disk controllers, and
+; config_disk_irq. Those IRQs go straight to the real-mode handler (see
+; host/bridge.asm).
+config_disk_mask dw 0c000h

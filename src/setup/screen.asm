@@ -15,7 +15,7 @@
 %define BOX_COL 2
 %define BOX_WIDTH 76
 %define BOX_HEIGHT 22
-%define TITLE_ROW 3
+%define TITLE_ROW 2
 %define TRACK_TOP 5
 %define TRACK_BOTTOM 16
 

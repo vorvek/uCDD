@@ -603,6 +603,9 @@ mon_irq:
     cmp bl, [ebp+dpmi_audio_irq]
     je .real_irq
 %ifdef RESIDENT_HOST
+    ; A disk controller's IRQ goes to its real-mode handler (dpmi_disk_mask).
+    bt word [ebp+dpmi_disk_mask], bx
+    jc .disk_irq
     cmp byte [ebp+resident_refill_busy], 0
     je .queue
     ; The CD refill can wait for a disk or RTC IRQ, and the client cannot run now.

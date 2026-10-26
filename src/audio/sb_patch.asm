@@ -515,6 +515,8 @@ sb_host_ports dw trap_ports
 %endif
 %ifdef OWN_HOST
     dw virtual_irq_due_far
+    ; The disk IRQs that go straight to the real-mode handler.
+    dw config_disk_mask
 %endif
 sb_old_dos dd 0
 %endif

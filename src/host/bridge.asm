@@ -686,6 +686,12 @@ dpmi_bridge_irq_%+irq:
     je .chained
     test byte [cs:dpmi_irq_reflecting+(irq>>3)], 1<<(irq&7)
     jnz .chained
+    ; Disk controller IRQs always go to the real-mode handler. A PCI
+    ; controller holds its level-triggered request until that handler runs,
+    ; and a client waiting in a real-mode call for the disk could never take
+    ; it (dpmi_disk_mask, from the driver's CDF5).
+    test word [cs:dpmi_disk_mask], 1<<irq
+    jnz .chain
 %if irq < 2
     push byte irq
     call dpmi_bridge_owned
@@ -855,6 +861,9 @@ dpmi_bridge_real_return:
     iret
 
 dpmi_bridge_mask dw 0
+; The disk IRQs: IRQ 14 and 15 unless the driver passes the mask it built
+; at installation (CDF5, see host/resident.asm).
+dpmi_disk_mask dw 0c000h
 dpmi_irq_reflecting dd 0
 ; The real-mode stubs read the virtual in-service levels.
 dpmi_pic_service dd 0
