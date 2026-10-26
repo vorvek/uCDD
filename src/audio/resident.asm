@@ -225,6 +225,7 @@ audio_cleanup:
 .dos_restored:
 %endif
     call sb_stop
+    call fast_dma_clear
     call trap_remove
     jnc .trap_removed
     mov byte [audio_detach_failed], 1

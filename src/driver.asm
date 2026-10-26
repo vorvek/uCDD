@@ -1815,6 +1815,15 @@ audio_prepare:
     call disk_scan
     call disk_mask
     mov [config_disk_mask], ax
+%ifdef RESIDENT_AUDIO
+    ; The platform for the fast DMA option, found by the scan.
+    mov al, [platform_method]
+    mov [fast_dma_method], al
+    mov ax, [platform_bridge]
+    mov [fast_dma_bridge], ax
+    mov ax, [platform_device]
+    mov [fast_dma_device], ax
+%endif
     call disk_report
     call guest_configure
     cmp byte [sound_card], 3

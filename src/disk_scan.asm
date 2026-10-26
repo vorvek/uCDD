@@ -7,6 +7,7 @@
 ; directly, or the program never continues. The driver does this for IRQ 14,
 ; IRQ 15, the IRQs found here at installation, and the IRQ set by hand in the
 ; Disk row of UCDDSET. UCDDSET runs the scan too, to show what it finds.
+; The same walk finds the platform for the fast DMA option (platform.asm).
 
 ; Find PCI mass storage controllers (class 01h) and the IRQs that the BIOS
 ; gave them. A machine without a PCI BIOS has none to find. A controller with
@@ -17,6 +18,9 @@ disk_scan:
     mov [disk_found], ax
     mov [disk_unknown], al
     mov [disk_pci], al
+    mov [platform_method], al
+    mov [platform_bridge_vendor], ax
+    mov byte [platform_row], 0ffh
     ; SET UCDDPCI=OFF skips the scan, for a PCI BIOS that fails under the
     ; memory manager.
     call disk_scan_allowed
@@ -34,10 +38,10 @@ disk_scan:
     mov ss, [cs:disk_old_stack+2]
     mov sp, [cs:disk_old_stack]
     sti
-    ret
+    jmp platform_eisa
 .off:
     mov byte [disk_pci], 2
-    ret
+    jmp platform_eisa
 
 disk_scan_pci:
     pushad
@@ -68,6 +72,7 @@ disk_scan_pci:
     mov [disk_header], cl
 .function:
     call disk_function
+    call platform_function
     ; Bit 7 of the header type marks a device with more than one function.
     test byte [disk_header], 80h
     jz .next_device
@@ -139,6 +144,7 @@ disk_function:
 .done:
     ret
 
+%include "platform.asm"
 
 ; BH bus, BL device and function, DI register. Return CL, or CF set.
 pci_read_byte:

@@ -47,8 +47,11 @@ config_disk_irq db 0
 ; driver step aside while no disc is bound for CD audio and the physical card
 ; can stand in for the virtual one (audio/standby.asm).
 config_audio_always db 0
-; Reserved: the fast DMA switch, on its branch.
-config_reserved_dma db 0
+; 1 asks for the platform's fast DMA timing on the output channel while the
+; driver is engaged (docs/platform-dma.md, audio/standby.asm), on a chipset
+; the install's scan finds in its table (platform.asm); nothing happens on
+; another.
+config_fast_dma db 0
 config_size_check equ 1 / (($-config_data) = CONFIG_SIZE)
 ; Not in UCDD.CFG. UCDD -install scans the PCI BIOS (disk_scan.asm) and sets
 ; the mask: IRQ 14 and 15, the IRQs of PCI disk controllers, and
