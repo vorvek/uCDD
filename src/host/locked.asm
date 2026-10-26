@@ -260,6 +260,7 @@ dpmi_deliver_locked:
     mov [ebx+52], edi
     mov dword [ebx+56], DPMI_IRQ_SS
     mov eax, [esi]
+    call dpmi_handler_entry
     mov [ebx+40], eax
     movzx eax, word [esi+4]
     mov [ebx+44], eax
@@ -272,6 +273,56 @@ dpmi_deliver_locked:
 .software_flags:
     inc dword [ebp+dpmi_locked_depth]
     jmp mon_dpmi.done
+
+; EAX=handler offset, ESI=vector (selector at +4). Return the offset past
+; zero bytes at its start. World Rally Fever sets its IRQ 0 vector 4 bytes
+; before the handler, on zero padding: 00 00 is ADD [EAX],AL, and with EAX
+; from the interrupted code it wrote into the IVT. Natively EAX is 0 there.
+dpmi_handler_entry:
+    push ecx
+    push edx
+    push esi
+    push edi
+    mov edi, eax
+    mov ax, [esi+4]
+    call dpmi_descriptor
+    jc .done
+    call dpmi_descriptor_base
+    add eax, edi
+    mov ecx, eax
+    and ecx, 0fffh
+    cmp ecx, 0ff0h
+    ja .done
+    mov ecx, eax
+    shr ecx, 22
+    test byte [0fffff000h+ecx*4], 1
+    jz .done
+    mov ecx, eax
+    shr ecx, 12
+    test byte [0ffc00000h+ecx*4], 1
+    jz .done
+    cmp word [eax], 0
+    jne .done
+    mov ecx, 2
+.zero:
+    cmp byte [eax+ecx], 0
+    jne .code
+    inc ecx
+    cmp ecx, 16
+    jb .zero
+    jmp .done
+.code:
+    test cl, 1
+    jnz .done
+    add edi, ecx
+    inc dword [ebp+dpmi_entry_skips]
+.done:
+    mov eax, edi
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    ret
 
 dpmi_locked_return:
     int 0f4h
@@ -426,6 +477,8 @@ dpmi_locked_linear dd 3fe000h,DPMI_LOCK_BASE,3fa000h,3fb000h,DPMI_LOCK_BASE+4096
 dpmi_locked_pages times DPMI_LOCK_PAGES dd 0
 dpmi_locked_ptes times DPMI_LOCK_PAGES dd 0
 dpmi_locked_cursor dd 4096
+; Hardware and software deliveries that skipped zero bytes at the handler.
+dpmi_entry_skips dd 0
 HOST_REAL
 dpmi_locked_depth dd 0
 HOST_PROTECTED
