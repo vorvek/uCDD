@@ -90,11 +90,7 @@ resident_host_init:
     jz .slot_ready
     mov byte [cs:resident_irq_slot], 1
 .slot_ready:
-    and ah, 1
-    mov [cs:mon_vcpi_flags_slot], ah
     call host_v86_prepare
-    mov [cs:resident_traps], cx
-    mov [cs:resident_traps+2], ds
     movzx eax, bp
     xor ecx, ecx
     mov cx, ds
@@ -237,7 +233,6 @@ resident_port dd 0
 resident_take dd 0
 resident_due dd 0
 resident_wss_event dd 0
-resident_traps dd 0
 resident_game_vector dd 0
 ; The driver's diagnostic block that the host writes (CDF5).
 resident_counters dd 0

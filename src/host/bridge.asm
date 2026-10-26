@@ -630,11 +630,6 @@ dpmi_bridge_done:
     mov ss, ax
     call dpmi_debug_host_restore
     lea esp, [ebp+dpmi_bridge_return_frame]
-    cmp byte [ebp+mon_vcpi_flags_slot], 0
-    je .stack_ready
-    mov word [esp-2], 0
-    sub esp, 2
-.stack_ready:
     sub esp, ebp
     add esp, [ebp+mon_real_base]
     clts

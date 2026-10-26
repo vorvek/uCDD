@@ -7,7 +7,7 @@
 ## Requirements
 
 - 386 or later, DOS 5 or later, and a CD redirector: [SHSUCDX](http://adoxa.altervista.org/shsucdx/) or MSCDEX.
-- For CD-Audio: XMS, VCPI, and an I/O port-trap interface. HIMEM alone does not provide these. μCDD is designed for [JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) 5.86 and 5.87, including the port-trap callback interface changed in 5.87pre1. The published 0.9.0 binary rejects that interface. HIMEM.SYS with EMM386 is best effort; see [Microsoft EMM386 and shared DMA](#microsoft-emm386-and-shared-dma).
+- For CD-Audio: XMS, VCPI, and an I/O port-trap interface. HIMEM alone does not provide these. μCDD is designed for [JEMMEX](https://github.com/Baron-von-Riedesel/Jemm) 5.86 and 5.87, including the port-trap callback interface changed in 5.87pre1. The published 0.9.0 binary rejects that interface. Microsoft EMM386 is not supported for CD-Audio.
 - A Sound Blaster (1.5/2.0, Pro, or 16), a Windows Sound System codec, or an ESS AudioDrive (experimental). **Initialize the card before `UCDD -install`.** μCDD does not configure it. Set the jumpers, or run the card's Plug and Play or setup utility (CTCM, UNISOUND, and so on) first.
 
 **Protected-mode game support is incomplete.**
@@ -143,12 +143,6 @@ Many DOS extenders can use DPMI or VCPI. Some, such as PMODE/W and CauseWay, sel
 The internal host runs 32-bit and 16-bit DPMI programs. A DPMI program can start another DPMI program, with up to eight child levels. The host saves the parent program and restores it when the child exits. A child program still sees VCPI. For 16-bit programs, such as programs made with Borland Pascal 7, the host also translates the DOS calls that use protected-mode addresses.
 
 If a program supports only VCPI, install with `UCDD -install -vcpi`. VCPI then stays visible, but the sound of these programs bypasses μCDD.
-
-### Microsoft EMM386 and shared DMA
-
-EMM386's port-trapping interface cannot trap ports below `100h`, which includes the DMA controller registers. A game can therefore replace the DMA settings used for physical audio output.
-
-With EMM386, select different 16-bit DMA channels for the physical and the virtual card in `UCDDSET`. For example, physical DMA High 7 with virtual DMA High 5 avoids the audio failure. Both streams still play through the same sound card.
 
 ### Images
 

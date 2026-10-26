@@ -1588,11 +1588,6 @@ mon_leave:
     call dpmi_debug_host_restore
 %endif
     lea esp, [ebp+mon_return]
-    cmp byte [ebp+mon_vcpi_flags_slot], 0
-    je .return_stack_ready
-    mov word [esp-2], 0
-    sub esp, 2
-.return_stack_ready:
     sub esp, ebp
     add esp, [ebp+mon_real_base]
     clts
@@ -1709,7 +1704,6 @@ mon_irq_callback dd 0
 mon_virtual_active db 0
 mon_virtual_eip dd 0
 mon_virtual_flags dd 0
-mon_vcpi_flags_slot db 0
 HOST_PROTECTED
 mon_vectors times 256*6 db 0
 HOST_REAL

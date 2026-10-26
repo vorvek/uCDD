@@ -254,11 +254,6 @@ dpmi_nested_pm:
     call .release_table
 .leave:
     lea esp, [ebp+dpmi_nested_return_frame]
-    cmp byte [ebp+mon_vcpi_flags_slot], 0
-    je .return_ready
-    mov word [esp-2], 0
-    sub esp, 2
-.return_ready:
     sub esp, ebp
     add esp, [ebp+mon_real_base]
     clts

@@ -163,7 +163,6 @@ audio_linked db 0
 %include "audio/irq.asm"
 %include "audio/sb_patch.asm"
 %include "audio/host_jemm.asm"
-%include "audio/host_emm.asm"
 %ifdef OWN_HOST
 %include "audio/resident_host.asm"
 %else

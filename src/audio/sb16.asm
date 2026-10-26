@@ -9,17 +9,6 @@ physical_read:
 %ifdef DIRECT_OUTPUT
     in al, dx
 %else
-%ifdef RESIDENT_AUDIO
-    cmp byte [host_backend], 2
-    jne .api
-    cmp byte [emm_in_callback], 0
-    je .api
-    inc byte [emm_bypass]
-    in al, dx
-    dec byte [emm_bypass]
-    ret
-.api:
-%endif
     push bx
     push cx
     mov ax, 1a00h
@@ -33,17 +22,6 @@ physical_write:
 %ifdef DIRECT_OUTPUT
     out dx, al
 %else
-%ifdef RESIDENT_AUDIO
-    cmp byte [host_backend], 2
-    jne .api
-    cmp byte [emm_in_callback], 0
-    je .api
-    inc byte [emm_bypass]
-    out dx, al
-    dec byte [emm_bypass]
-    ret
-.api:
-%endif
     push ax
     push bx
     push cx

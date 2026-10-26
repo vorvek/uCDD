@@ -10,9 +10,6 @@ virtual_irq_init:
     call physical_read
     mov [virtual_pic_mask], al
     mov [physical_pic_initial], al
-%ifdef RESIDENT_AUDIO
-    mov [emm_pic_mask_shadow], al
-%endif
     mov cl, [sb_irq]
     mov al, 1
     shl al, cl
@@ -462,9 +459,6 @@ virtual_pic_write:
     mov byte [virtual_pic_service], 0
     mov byte [virtual_pic_mask], 0
     mov byte [physical_pic_read], 0ah
-%ifdef RESIDENT_AUDIO
-    mov byte [emm_pic_mask_shadow], 0
-%endif
     jmp .physical
 .select:
     mov [physical_pic_read], al
@@ -550,7 +544,6 @@ virtual_pic_write:
     or [cd_refill_old_mask], ah
     or al, 2
 .refill_free:
-    mov [emm_pic_mask_shadow], al
 %endif
     jmp .physical
 
@@ -664,9 +657,9 @@ physical_pic_read db 0ah
 pic_init_words db 0
 virtual_pic_taken db 0
 pic_mask_late db 0
-
 %ifdef RESIDENT_AUDIO
-emm_pic_mask_shadow db 0ffh
+; Unused. Keeps the CDF2 offsets below.
+    db 0
 %endif
 irq_due db 0
 %ifdef RESIDENT_AUDIO

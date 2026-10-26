@@ -1743,7 +1743,7 @@ trap_resident_message db 'uCDD keeps its port-trap code in memory.',13,10,'$'
 audio_unit_message db 'For CD audio, use only one uCDD drive.',13,10,'$'
 dpmi_host_message db 'A compatible DPMI host is not available.',13,10,'$'
 port_trap_missing_message db 'No compatible port-trap service is available.',13,10
-    db 'Use HIMEM with EMM386, JEMMEX, JEMM386, or 386MAX.',13,10,'$'
+    db 'Use JEMMEX or JEMM386 5.86 or later.',13,10,'$'
 port_trap_rejected_message db 'The memory manager rejected the port-trap request.',13,10
     db 'Check for another sound virtualizer.',13,10,'$'
 memory_control_message db 'DOS does not supply the necessary memory functions.',13,10,'$'

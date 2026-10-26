@@ -555,8 +555,6 @@ irq_step_restore:
 host_remove:
     cmp byte [host_installed], 0
     je .ok
-    cmp byte [host_backend], 2
-    je host_emm_remove
     mov ax, 1a0bh
     call far [host_api_entry]
     jc .failed

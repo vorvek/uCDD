@@ -220,13 +220,8 @@ cd_buffer_strategy dw 0
 cd_buffer_umb db 0
 
 %include "audio/host_jemm_init.asm"
-%include "audio/host_emm_init.asm"
 host_install:
-    call host_jemm_install
-    jnc .done
-    call host_emm_install
-.done:
-    ret
+    jmp host_jemm_install
 %ifdef OWN_HOST
 %include "audio/resident_host_init.asm"
 %endif
