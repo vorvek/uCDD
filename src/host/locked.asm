@@ -169,6 +169,13 @@ dpmi_deliver_locked:
     call dpmi_locked_capture
     call dpmi_stack_acquire
 %ifdef RESIDENT_HOST
+    cmp byte [ebp+dpmi_sb_next], 0
+    je .sb_marked
+    mov byte [ebp+dpmi_sb_next], 0
+    mov byte [ebp+dpmi_sb_handler], 1
+    mov eax, [ebp+dpmi_stack_depth]
+    mov [ebp+dpmi_sb_level], eax
+.sb_marked:
     mov ax, [esi+4]
     call dpmi_nested_enter
     setc [ebp+dpmi_nested_entered]
@@ -417,7 +424,46 @@ dpmi_locked_done:
     call dpmi_restore_flags
     mov [esp+48], eax
     call dpmi_stack_release
+%ifdef RESIDENT_HOST
+    cmp byte [ebp+dpmi_sb_resume], 0
+    jne dpmi_sb_resume_deliver
+%endif
     jmp mon_dpmi.done
+
+%ifdef RESIDENT_HOST
+; The SB handler returned. Deliver the SB IRQ that waited for it, as the
+; step check of dpmi.asm does.
+dpmi_sb_resume_deliver:
+    mov byte [ebp+dpmi_sb_resume], 0
+    cmp byte [ebp+dpmi_sti_shadow], 0
+    jne .later
+    cmp byte [ebp+dpmi_sti_sb_held], 0
+    jne .later
+    cmp byte [ebp+dpmi_vif], 1
+    jne .later
+    test byte [esp+44], 3
+    jz .later
+    movzx eax, byte [ebp+dpmi_guest_vector]
+    imul eax, 6
+    cmp word [ebp+mon_vectors+eax+4], 0
+    je .later
+    call dpmi_pic_audio_allowed
+    jc .later
+    call resident_audio_take
+    cmp ax, 1
+    jne .later
+    call resident_audio_deliver
+    jc .later
+    movzx eax, byte [ebp+dpmi_guest_vector]
+    imul eax, 6
+    lea esi, [ebp+mon_vectors+eax]
+    mov byte [ebp+dpmi_sb_next], 1
+    inc dword [ebp+dpmi_sb_resumed]
+    mov ebx, esp
+    jmp dpmi_deliver_hardware
+.later:
+    jmp mon_dpmi.done
+%endif
 
 dpmi_hardware_room:
 %ifdef RESIDENT_HOST
@@ -458,6 +504,16 @@ dpmi_stack_release:
     jz dpmi_locked_abort
     dec eax
     mov [ebp+dpmi_stack_depth], eax
+%ifdef RESIDENT_HOST
+    ; The SB handler has returned: a held SB IRQ can run now.
+    cmp eax, [ebp+dpmi_sb_level]
+    jae .sb_kept
+    cmp byte [ebp+dpmi_sb_handler], 0
+    je .sb_kept
+    mov byte [ebp+dpmi_sb_handler], 0
+    mov byte [ebp+dpmi_sb_resume], 1
+.sb_kept:
+%endif
     mov eax, [ebp+dpmi_stack_cursors+eax*4]
     mov [ebp+dpmi_locked_cursor], eax
     pop eax
@@ -479,6 +535,15 @@ dpmi_locked_ptes times DPMI_LOCK_PAGES dd 0
 dpmi_locked_cursor dd 4096
 ; Hardware and software deliveries that skipped zero bytes at the handler.
 dpmi_entry_skips dd 0
+%ifdef RESIDENT_HOST
+; The stack depth of the running SB handler. SB IRQs held for it, and
+; delivered at its return.
+dpmi_sb_level dd 0
+dpmi_sb_holds dd 0
+dpmi_sb_resumed dd 0
+dpmi_sb_next db 0
+dpmi_sb_resume db 0
+%endif
 HOST_REAL
 dpmi_locked_depth dd 0
 HOST_PROTECTED

@@ -881,6 +881,8 @@ resident_diag:
     popfd
     ret
 resident_audio_take:
+    cmp byte [ebp+dpmi_sb_handler], 0
+    jne .handler
     mov esi, [ebp+resident_audio_request]
     test esi, esi
     jz .take
@@ -903,6 +905,9 @@ resident_audio_take:
     call resident_audio_far
     movzx eax, word [edi+28]
     ret
+.handler:
+    inc dword [ebp+dpmi_sb_holds]
+    jmp .none
 .held:
     HOST_DIAG 24
 .none:

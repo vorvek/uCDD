@@ -309,6 +309,10 @@ virtual_irq_take:
     jnz .done
     cmp byte [virtual_pic_request], 0
     je .done
+%ifdef OWN_HOST
+    call virtual_pic_host_handler
+    jc .done
+%endif
     call physical_pic_isr
 %ifdef OWN_HOST
     call virtual_pic_host_service
@@ -548,6 +552,26 @@ virtual_pic_write:
     jmp .physical
 
 %ifdef OWN_HOST
+; CF=1 while the host runs the game's protected-mode SB handler. A real DSP
+; ends no block during the handler, so the request waits for its return.
+virtual_pic_host_handler:
+    push es
+    push di
+    cmp word [own_host_active+2], 0
+    je .free
+    les di, [own_host_active]
+    cmp byte [es:di], 1
+    jne .free
+    cmp byte [es:di+15], 1
+    cmc
+    jmp .done
+.free:
+    clc
+.done:
+    pop di
+    pop es
+    ret
+
 virtual_pic_host_service:
     push es
     push di

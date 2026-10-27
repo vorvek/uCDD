@@ -485,6 +485,9 @@ mon_iret:
     jmp .shadow_done
 .sb_inject:
     mov byte [ebp+dpmi_sti_sb_held], 0
+%ifdef RESIDENT_HOST
+    mov byte [ebp+dpmi_sb_next], 1
+%endif
     mov ebx, esp
     jmp dpmi_deliver_hardware
 .pic_only:
@@ -620,6 +623,9 @@ dpmi_client_init:
 %endif
     mov byte [ebp+dpmi_sti_sb_held], 0
 %ifdef RESIDENT_HOST
+    mov byte [ebp+dpmi_sb_handler], 0
+    mov byte [ebp+dpmi_sb_next], 0
+    mov byte [ebp+dpmi_sb_resume], 0
     call resident_refill_reset
 %endif
     xor eax, eax
@@ -1191,6 +1197,9 @@ dpmi_finish:
 %endif
     mov byte [ebp+dpmi_sti_sb_held], 0
 %ifdef RESIDENT_HOST
+    mov byte [ebp+dpmi_sb_handler], 0
+    mov byte [ebp+dpmi_sb_next], 0
+    mov byte [ebp+dpmi_sb_resume], 0
     call resident_refill_reset
 %endif
     mov byte [ebp+dpmi_callback_active], 0
@@ -1270,7 +1279,10 @@ dpmi_psp dw 0
 ; no DPMI is offered and VCPI stays visible, so a protected-mode game runs
 ; under its own extender.
 dpmi_dormant db 0
-%if dpmi_psp-dpmi_active != 12 || dpmi_dormant-dpmi_active != 14
+; 1 while the client's SB IRQ handler runs: a new SB IRQ stays a request
+; (World Rally Fever's mixer is not reentrant).
+dpmi_sb_handler db 0
+%if dpmi_psp-dpmi_active != 12 || dpmi_dormant-dpmi_active != 14 || dpmi_sb_handler-dpmi_active != 15
     %error Invalid resident IRQ state layout
 %endif
 ; The saved dpmi_rm_call of a callback, an exception and a raw switch.

@@ -689,6 +689,9 @@ mon_irq:
     sub edi, 4
     loop .compact_frame
     add esp, 8
+%ifdef RESIDENT_HOST
+    mov byte [ebp+dpmi_sb_next], 1
+%endif
     mov ebx, esp
     jmp dpmi_deliver_hardware
 %else
