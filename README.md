@@ -59,7 +59,7 @@ Do not use the JEMMEX option `VME`. When VME is on, a CLI instruction in a game 
 
 AUTOEXEC.BAT:
 ```dos
-LH C:\UCDD\UCDD.EXE -install
+C:\UCDD\UCDD.EXE -install
 C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 ```
 
@@ -77,11 +77,13 @@ C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 
 ### Installation
 
-Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count. `LH` loads the resident driver into upper memory when UMBs are available. Allow about 64 KB of free upper memory for `LH`.
+Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count.
+
+μCDD moves its resident parts into upper memory itself. Do not use `LH` to load `UCDD.EXE`. With `LH`, the command shell can put the environment of `UCDD.EXE` in an upper memory block (UMB). A buffer that needs that UMB then stays in conventional memory. μCDD needs about 75 KB of free upper memory: one block of 43 KB or more for the driver, and smaller blocks for its buffers. The parts that do not fit stay in conventional memory.
 
 It is recommended to load your mouse driver before μCDD.
 
-With one drive, JEMMEX, and free UMBs, a sample installation used 3,120 bytes of conventional memory with `LH UCDD -install`. When loaded low and moved to upper memory, it used 3,408 bytes.
+With one drive, JEMMEX, and free UMBs, a sample installation with `UCDD -install` used 3,408 bytes of conventional memory.
 
 ```dos
 UCDD -mount C:\IMAGES\GAME.CUE
