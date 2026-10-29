@@ -21,6 +21,10 @@ host_irq_previous dd 0
 host_irq_root dd 0
 host_irq_dispatch_previous dd 0
 host_irq_table times 256 dd 0
+; The host reads these two after the install (sb_patch.asm).
+host_info db 2
+    times 27 db 0
+host_jemm_version dw 0
 
 host_mux:
     cmp ax, 1684h

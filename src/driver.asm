@@ -1544,7 +1544,6 @@ break_ignore:
 
 %ifdef RESIDENT_AUDIO
 %include "audio/resident.asm"
-audio_error_text dw audio_unit_message
 %endif
 
 pvd times 192 db 0
@@ -1552,7 +1551,18 @@ pvd times 192 db 0
     times 1024 db 0
 stack_top:
 sda_save:
+%ifdef OWN_HOST
+    ; Room for the SDA copy and the one unit. The install-only code follows;
+    ; the memory after the unit is given back when the activation ends.
+    times 4096+UNIT_SIZE+16 db 0
+    align 16
+resident_tail:
+%include "audio/resident_install.asm"
+    align 16
+resident_tail_end:
+%else
     times 4096+MAX_UNITS*UNIT_SIZE+16 db 0
+%endif
 
 install:
     cld
@@ -1584,6 +1594,12 @@ install:
     cmp cx, 4096
     ja install_fail
     mov [sda_size], cx
+%ifdef OWN_HOST
+    ; The image has room for one unit.
+    cmp byte [unit_count], 1
+    mov dx, audio_unit_message
+    ja install_fail
+%endif
     mov di, sda_save+15
     add di, cx
     and di, 0fff0h
@@ -1909,13 +1925,13 @@ resident_relocate:
     call unit_paragraphs
     mov [resident_paragraphs], dx
     push dx
+    ; The copy holds the install-only code too. It is given back below.
     call resident_allocate_high
     pop dx
     jc .in_place
     mov [relocated_entry+2], ax
     mov es, ax
-    mov cx, dx
-    shl cx, 3
+    mov cx, RESIDENT_PEAK_PARAS*8
     xor si, si
     xor di, di
     rep movsw
@@ -1925,6 +1941,10 @@ resident_relocate:
     jc .activate_bad
     push cs
     pop ds
+    mov es, [relocated_entry+2]
+    mov bx, [es:resident_paragraphs]
+    mov ah, 4ah
+    int 21h
     mov ax, [relocated_entry+2]
     clc
     ret
@@ -1968,7 +1988,7 @@ resident_allocate_high:
     mov bx, 40h
     int 21h
     jc .restore_umb
-    mov bx, [resident_paragraphs]
+    mov bx, RESIDENT_PEAK_PARAS
     mov ah, 48h
     int 21h
     jc .restore
@@ -1990,6 +2010,7 @@ resident_allocate_high:
     stc
     ret
 
+RESIDENT_PEAK_PARAS equ (resident_tail_end-$$)/16
 relocated_entry dw audio_activate_far,0
 resident_allocation dw 0
 resident_strategy dw 0

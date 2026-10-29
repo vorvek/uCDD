@@ -177,9 +177,6 @@ bits 16
 host_linear_base dd 0
 host_switch times 22 db 0
 host_return_frame dd host_jemm_install.return,0,23002h,0,0,0,0,0,0
-host_info db 2
-    times 27 db 0
-host_jemm_version dw 0
 host_device db 'EMMXXXX0',0
 host_device_noems db 'EMMQXXX0',0
 ; The installation path makes no calls.
