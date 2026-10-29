@@ -120,9 +120,10 @@ config_load:
     cmp byte [file_buffer+4], 4
     jne .invalid
 ; Joined from .version4 and .five_keys with a version 4 record in the buffer:
-; version 5's bytes read 0.
+; version 5's bytes take no disk IRQ, uCDD always on, and no fast DMA.
 .extend:
-    mov word [file_buffer+CONFIG_V4_SIZE], 0
+    mov byte [file_buffer+CONFIG_V4_SIZE], 0
+    mov byte [file_buffer+CONFIG_V4_SIZE+1], 1
     mov byte [file_buffer+CONFIG_V4_SIZE+2], 0
     mov byte [file_buffer+4], CONFIG_VERSION
     jmp .copy

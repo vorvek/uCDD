@@ -43,10 +43,10 @@ config_fm_volume db 100
 ; IRQ of a disk controller that the PCI scan does not find, or 0 (UCDDSET's
 ; Disk row).
 config_disk_irq db 0
-; 1 keeps the physical output and the traps on at all times. 0 lets the
-; driver step aside while no disc is bound for CD audio and the physical card
-; can stand in for the virtual one (audio/standby.asm).
-config_audio_always db 0
+; 1 (the default) keeps the physical output and the traps on at all times.
+; 0 lets the driver step aside while no disc is bound for CD audio and the
+; physical card can stand in for the virtual one (audio/standby.asm).
+config_audio_always db 1
 ; 1 asks for the platform's fast DMA timing on the output channel while the
 ; driver is engaged (docs/platform-dma.md, audio/standby.asm), on a chipset
 ; the install's scan finds in its table (platform.asm); nothing happens on
