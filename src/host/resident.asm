@@ -406,6 +406,24 @@ host_gateway_allocate:
     add dx, HOST_STACK_PARAS
     cmp si, dx
     jb .free_bad
+    ; Give back the page alignment space after the prefix. A last-fit block
+    ; keeps its size: a shorter one leaves a free hole above it.
+    push es
+    push dx
+    mov ax, 5800h
+    int 21h
+    pop dx
+    and al, 3
+    cmp al, 2
+    je .sized
+    mov es, [host_gateway_segment]
+    mov bx, dx
+    mov ah, 4ah
+    int 21h
+    jc .sized
+    mov si, dx
+.sized:
+    pop es
     mov ax, [host_gateway_segment]
     add ax, si
     sub ax, HOST_STACK_PARAS
