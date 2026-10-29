@@ -22,7 +22,7 @@
     call far [cs:audio_bind_far]
 %endmacro
 %else
-%define AUDSEG
+%define AUDSEG cs:
 %macro AUDIO_CALL 2
     call %2
 %endmacro
@@ -1786,6 +1786,17 @@ install:
     xor dx, dx
     call ems_guard_build
     pop fs
+    cmp byte [resident_umb_short], 0
+    je .umb_report_done
+    mov ax, (AUDIO_PEAK_PARAS+63)/64
+    mov bl, 10
+    div bl
+    add ax, 3030h
+    mov [umb_short_kb], ax
+    mov dx, umb_short_message
+    mov ah, 9
+    int 21h
+.umb_report_done:
 %endif
     pop bx
     pop es
@@ -2253,7 +2264,11 @@ resident_allocate_high:
     mov bx, [resident_request]
     mov ah, 48h
     int 21h
-    jc .restore
+    jnc .allocated
+    ; Upper memory is there, but no block is large enough.
+    mov byte [resident_umb_short], 1
+    jmp .restore
+.allocated:
     mov [resident_allocation], ax
 .restore:
     mov bx, [resident_strategy]
@@ -2283,6 +2298,9 @@ resident_allocation dw 0
 resident_strategy dw 0
 resident_request dw 0
 resident_umb db 0
+resident_umb_short db 0
+umb_short_message db 'uCDD stays in conventional memory. It needs a free upper memory block of '
+umb_short_kb db '00 KB.',13,10,'$'
 audio_block dw 0
 driver_block dw 0
 driver_alloc dw 0
@@ -2310,6 +2328,8 @@ ems_guard_build:
     mov [ems_guard_blocks+8], ax
     mov ax, [fs:cold_allocation]
     mov [ems_guard_blocks+12], ax
+    mov ax, [fs:host_irq_table_block]
+    mov [ems_guard_blocks+16], ax
     mov ax, [fs:own_host_active+2]
     mov [ems_guard_blocks+10], ax
     test ax, ax
@@ -2385,10 +2405,10 @@ ems_guard_build:
     pop ds
     ret
 
-EMS_GUARD_BLOCKS equ 8
+EMS_GUARD_BLOCKS equ 9
 EMS_MAP_MAX equ 64
-; PSP, relocated image, DMA rings, CD half buffer, CD work buffer, host gateway,
-; cold block.
+; PSP, driver block, DMA rings, CD half buffer, CD work buffer, host gateway,
+; cold block, audio block, JEMMEX IRQ table.
 ems_guard_blocks times EMS_GUARD_BLOCKS dw 0
 ems_map_left dw 0
 ems_map_buffer times EMS_MAP_MAX*4 db 0
