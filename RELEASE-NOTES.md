@@ -1,3 +1,20 @@
+# Beta 0.9.5-a2
+
+## Changes in 0.9.5-a2
+
+- Remove the Microsoft EMM386 support for CD-Audio. CD-Audio now needs JEMMEX or JEMM386. The EMM386 port traps could not catch the DMA ports below 100h.
+- Send the IRQs of PCI disk controllers, and IRQ 14 and 15, directly to their DOS handlers, also during a protected-mode game. UCDDSET has a new Disk row that shows the IRQs that `UCDD -install` finds, and a field for the IRQ of an ISA or VLB disk card. `SET UCDDPCI=OFF` turns off the PCI scan. Backported from the EarBoye/uCDD fork.
+- Step aside while no image with CD-Audio is mounted, when the physical card can also be the virtual card. μCDD then stops its output, releases the sound ports, and does not supply DPMI, so a game uses the card directly. A mount of an image with CD-Audio starts μCDD again. Tick "uCDD always on" in UCDDSET to keep μCDD on. `UCDD -status` shows whether μCDD is active. Backported from the EarBoye/uCDD fork.
+- Add the Fast DMA option (experimental, off by default) in the new UCDDSET Chipset row. With the box ticked, μCDD uses the fast ISA DMA timing of the chipset on the output channel while it plays. Backported from the EarBoye/uCDD fork.
+- DPMI host: when an interrupt handler starts with zero bytes, start it at its first code byte. This fixes the freeze at the stage load of World Rally Fever.
+- DPMI host: hold a new virtual Sound Blaster interrupt until the game's Sound Blaster handler returns. This fixes the drop to DOS ("child error #1") in World Rally Fever.
+- Refuse EMS map calls into the pages that hold μCDD. JEMMEX makes the regions given with `I=` into EMS pages, also with `NOEMS`. The Legacy: Realm of Terror mapped EMS pages over μCDD there, and the PC restarted. The game now stops with an EMS error.
+- Split the resident driver into an audio block of 28 KB and a driver block of 8 KB. μCDD now fits a 32 KB upper memory block. The install-only code is given back after the installation. The stacks, the SDA copy, and the IRQ table for JEMMEX are in their own small blocks.
+- Free the environment of UCDD.EXE before the CD buffers move to upper memory. With `LH`, the CD work buffer stayed in conventional memory on a PC with small UMBs.
+- Give back the page alignment space of the DPMI host gateway, in upper and in conventional memory.
+- When UMBs exist but none holds the audio block, `UCDD -install` shows the size of the block that it needs.
+- Add World Rally Fever: Born on the Road to the [compatibility list](https://github.com/vorvek/uCDD/wiki/Compatibility).
+
 # Beta 0.9.5-a1
 
 ## Changes in 0.9.5-a1

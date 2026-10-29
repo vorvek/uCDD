@@ -3,5 +3,5 @@
 
 ; Change the version for each release.
 %ifndef UCDD_VERSION
-%define UCDD_VERSION '0.9.5-a1'
+%define UCDD_VERSION '0.9.5-a2'
 %endif
