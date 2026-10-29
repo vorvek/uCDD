@@ -79,7 +79,9 @@ C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count.
 
-μCDD moves its resident parts into upper memory itself. Do not use `LH` to load `UCDD.EXE`. With `LH`, the command shell can put the environment of `UCDD.EXE` in an upper memory block (UMB). A buffer that needs that UMB then stays in conventional memory. μCDD needs about 71 KB of free upper memory. The driver has two parts: a block of 29 KB for the audio code (it is 28 KB after the install) and a block of 8 KB. If one block of 37 KB is free, μCDD uses it for both parts. The buffers use smaller blocks. The parts that do not fit stay in conventional memory.
+μCDD moves its resident parts into upper memory blocks (UMBs) itself, so `LH` is not necessary. μCDD needs about 71 KB of free upper memory. The driver has two parts: a block of 29 KB for the audio code (28 KB after the installation) and a block of 8 KB. If one block of 37 KB is free, μCDD uses it for both parts. The buffers use smaller blocks. The parts that do not fit stay in conventional memory. If the audio part does not fit, `UCDD -install` shows the size of the block that it needs.
+
+JEMMEX makes the regions that you give with `I=` available as EMS pages, also with `NOEMS`. A game that maps EMS pages there replaces the programs in those UMBs. μCDD refuses EMS map calls into its own memory, so such a game stops with an EMS error. For these games, use a JEMMEX line with an EMS page frame (for example `FRAME=D000`) and without `I=` for that region.
 
 It is recommended to load your mouse driver before μCDD.
 
