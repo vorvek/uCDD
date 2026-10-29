@@ -341,8 +341,13 @@ audio_irq:
     mov byte [audio_irq_busy], 1
     mov [irq_ss], ss
     mov [irq_sp], sp
+%ifdef OWN_HOST
+    mov ss, [cold_segment]
+    mov sp, COLD_IRQ_TOP
+%else
     mov ss, ax
     mov sp, irq_stack_top
+%endif
     pushad
     push es
     push fs
@@ -774,6 +779,8 @@ mixer_saved times 6 db 0
 %endif
 %include "audio/pro_output.asm"
 ; Word pushes on an odd stack are misaligned: keep the IRQ stack aligned.
+%ifndef OWN_HOST
     align 4
 times 1024 db 0
 irq_stack_top:
+%endif

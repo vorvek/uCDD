@@ -6,6 +6,37 @@
 %endif
 %include "audio/diag.inc"
 
+; The driver part reaches the audio part's data through GS (the audio segment)
+; and its code through far entries. Without the internal host both parts are
+; one segment.
+%ifdef OWN_HOST
+%define AUDSEG gs:
+%macro AUDIO_CALL 2
+    call far [cs:%1]
+%endmacro
+%macro AUDIO_LOAD_GS 0
+    mov gs, [cs:audio_seg]
+%endmacro
+; SI is a unit of the driver part. FS gets the unit's segment for the call.
+%macro AUDIO_BIND 0
+    call far [cs:audio_bind_far]
+%endmacro
+%else
+%define AUDSEG
+%macro AUDIO_CALL 2
+    call %2
+%endmacro
+%macro AUDIO_LOAD_GS 0
+%endmacro
+%macro AUDIO_BIND 0
+    push fs
+    push cs
+    pop fs
+    call audio_bind
+    pop fs
+%endmacro
+%endif
+
 header:
     dd 0ffffffffh
     dw 0c800h
@@ -31,9 +62,19 @@ busy db 0
 old_ss dw 0
 old_sp dw 0
 resident_psp dw 0
+%ifdef OWN_HOST
+; The segment that the audio part's labels use, and the far entries into it.
+; With the whole image in one block it is the driver's own segment.
+audio_seg dw 0
+audio_bind_far dw audio_bind_entry,0
+clear_state_far dw clear_state_entry,0
+reconsider_far dw reconsider_entry,0
+volume_far dw hotkey_volume_entry,0
+%else
 %ifdef RESIDENT_AUDIO
 memory_mode db 0
 keep_vcpi db 0
+%endif
 %endif
 caller_psp dw 0
 ; 1 between dos_enter and dos_leave: DOS calls use the resident PSP.
@@ -75,7 +116,7 @@ stage_next dd 0
 %endif
 units_base dw 0
 %ifdef OWN_HOST
-cold_segment dw 0
+cold_stack dw 0
 %endif
 
 strategy:
@@ -98,8 +139,9 @@ interrupt:
     mov [cs:old_sp], sp
     mov ax, cs
     mov ds, ax
+    AUDIO_LOAD_GS
 %ifdef OWN_HOST
-    mov ss, [cold_segment]
+    mov ss, [cold_stack]
     mov sp, COLD_STACK_TOP
 %else
     mov ss, ax
@@ -196,10 +238,10 @@ interrupt:
     mov si, [unit_pointer]
     cmp dword [si+AUDIO_ENTRY], 0
     je .status
-    cmp byte [cd_started], 0
+    cmp byte [AUDSEG cd_started], 0
     je .status
-    mov edx, [cd_consumed]
-    cmp edx, [cd_length]
+    mov edx, [AUDSEG cd_consumed]
+    cmp edx, [AUDSEG cd_length]
     jae .status
     or ah, 2
 .status:
@@ -224,9 +266,10 @@ interrupt:
     cmp bx, 0fffbh
     ja .return
 %ifdef UCDD_DIAG
-    inc word [cs:diag_busy]
+    AUDIO_LOAD_GS
+    inc word [AUDSEG diag_busy]
     mov al, [es:bx+2]
-    mov [cs:diag_busy_command], al
+    mov [AUDSEG diag_busy_command], al
 %endif
     mov word [es:bx+3], 810ch
     jmp .return
@@ -530,9 +573,9 @@ read_sectors:
     mov cx, ax
     mov bx, [si+HANDLE]
 %ifdef RESIDENT_AUDIO
-    cmp bx, [cd_handle]
+    cmp bx, [AUDSEG cd_handle]
     jne .audio_position_ready
-    mov byte [cd_seek], 1
+    mov byte [AUDSEG cd_seek], 1
 .audio_position_ready:
 %endif
     call dos_enter
@@ -620,9 +663,9 @@ read_sectors:
 read_staged:
     mov [stage_next], eax
     mov bx, [si+HANDLE]
-    cmp bx, [cd_handle]
+    cmp bx, [AUDSEG cd_handle]
     jne .position_ready
-    mov byte [cd_seek], 1
+    mov byte [AUDSEG cd_seek], 1
 .position_ready:
     call dos_enter
 .next:
@@ -656,7 +699,7 @@ read_staged:
     mov cx, ax
     mov bx, [si+HANDLE]
     push ds
-    mov ds, [cd_work_segment]
+    mov ds, [AUDSEG cd_work_segment]
     xor dx, dx
     mov ah, 3fh
     int 21h
@@ -683,7 +726,7 @@ read_staged:
     push ds
     push es
     les di, [read_destination]
-    mov ds, [cd_work_segment]
+    mov ds, [AUDSEG cd_work_segment]
     mov si, ax
     mov cx, 512
     cld
@@ -783,8 +826,9 @@ control:
     mov [cs:path_pointer+2], ds
     mov ax, cs
     mov ds, ax
+    AUDIO_LOAD_GS
 %ifdef OWN_HOST
-    mov ss, [cold_segment]
+    mov ss, [cold_stack]
     mov sp, COLD_STACK_TOP
 %else
     mov ss, ax
@@ -827,7 +871,11 @@ control:
     je .change
     cmp word [si+AUDIO_ENTRY], cd_request
     jne .done
+%ifdef OWN_HOST
+    mov ax, [audio_seg]
+%else
     mov ax, cs
+%endif
     cmp [si+AUDIO_ENTRY+2], ax
 %endif
     jne .done
@@ -866,7 +914,7 @@ control:
 .reconsider:
 %ifdef RESIDENT_AUDIO
     ; A mount or an eject may change whether the driver has anything to add.
-    call audio_reconsider
+    AUDIO_CALL reconsider_far, audio_reconsider
 %endif
     jmp .done
 .query:
@@ -894,32 +942,32 @@ control:
     stosw
     mov ax, cs
     stosw
-    mov ax, [resident_paragraphs]
+    mov ax, [AUDSEG resident_paragraphs]
     stosw
-    mov ax, [output_allocation]
+    mov ax, [AUDSEG output_allocation]
     stosw
-    mov ax, [output_segment]
+    mov ax, [AUDSEG output_segment]
     stosw
-    mov al, [fault]
-    or al, [cd_error]
-    or al, [pm_bridge_fault]
-    or al, [pm_cleanup_fault]
+    mov al, [AUDSEG fault]
+    or al, [AUDSEG cd_error]
+    or al, [AUDSEG pm_bridge_fault]
+    or al, [AUDSEG pm_cleanup_fault]
     xor ah, ah
     stosw
     mov ax, [resident_psp]
     stosw
-    mov ax, [cd_half_allocation]
+    mov ax, [AUDSEG cd_half_allocation]
     stosw
-    mov ax, [cd_half_segment]
+    mov ax, [AUDSEG cd_half_segment]
     stosw
-    mov ax, [cd_work_allocation]
+    mov ax, [AUDSEG cd_work_allocation]
     stosw
-    mov ax, [cd_work_segment]
+    mov ax, [AUDSEG cd_work_segment]
     stosw
-    movzx ax, byte [memory_mode]
+    movzx ax, byte [AUDSEG memory_mode]
     stosw
 %ifdef OWN_HOST
-    mov ax, [own_host_stack]
+    mov ax, [AUDSEG own_host_stack]
 %else
     xor ax, ax
 %endif
@@ -935,18 +983,27 @@ control:
     mov si, diag_block
     mov cx, DIAG_BYTES/4
     cli
+    push ds
+%ifdef OWN_HOST
+    mov ds, [audio_seg]
+%endif
     rep movsd
-    mov eax, [periods]
-    sub eax, [diag_periods]
+    pop ds
+    mov eax, [AUDSEG periods]
+    sub eax, [AUDSEG diag_periods]
     mov [es:di-DIAG_BYTES+4], eax
-    movzx eax, byte [audio_engaged]
+    movzx eax, byte [AUDSEG audio_engaged]
     mov [es:di-4], eax
     cmp word [control_op], 11
     jne .diag_done
-    mov eax, [periods]
-    mov [diag_periods], eax
+    mov eax, [AUDSEG periods]
+    mov [AUDSEG diag_periods], eax
+%ifdef OWN_HOST
+    mov es, [audio_seg]
+%else
     push cs
     pop es
+%endif
     mov di, diag_queue_low
     mov cx, (diag_end-diag_queue_low)/4
     xor eax, eax
@@ -958,9 +1015,9 @@ control:
 .filter:
     les bx, [sda_pointer]
     mov ax, [es:bx+10h]
-    mov [cd_filter_owner], ax
+    mov [AUDSEG cd_filter_owner], ax
     mov eax, [path_pointer]
-    mov [cd_filter_hook], eax
+    mov [AUDSEG cd_filter_hook], eax
     mov word [control_result], 0
     jmp .done
 %endif
@@ -1314,7 +1371,7 @@ mount_image:
     mov si, [unit_pointer]
     mov byte [si+CHANGED], 0ffh
 %ifdef RESIDENT_AUDIO
-    call audio_bind
+    AUDIO_BIND
 %endif
     mov word [control_result], 0
     ret
@@ -1367,8 +1424,8 @@ eject_unit:
 
 clear_unit:
 %ifdef RESIDENT_AUDIO
-    call cd_clear_state
-    mov word [cd_handle], 0ffffh
+    AUDIO_CALL clear_state_far, cd_clear_state
+    mov word [AUDSEG cd_handle], 0ffffh
     mov dword [si+AUDIO_ENTRY], 0
 %endif
     mov word [si+HANDLE], 0ffffh
@@ -1388,12 +1445,19 @@ dos_enter:
 %ifdef UCDD_DIAG
     cmp byte [cs:dos_entered], 0
     je .first
+%ifdef OWN_HOST
+    push gs
+    AUDIO_LOAD_GS
+    inc word [AUDSEG diag_nested]
+    pop gs
+%else
     inc word [cs:diag_nested]
+%endif
 .first:
 %endif
     lds si, [cs:sda_pointer]
 %ifdef OWN_HOST
-    mov es, [cs:cold_segment]
+    mov es, [cs:cold_stack]
     mov di, COLD_SDA_OFFSET
 %else
     push cs
@@ -1545,7 +1609,7 @@ dos_leave:
     les di, [sda_pointer]
     mov cx, [sda_size]
 %ifdef OWN_HOST
-    mov ds, [cs:cold_segment]
+    mov ds, [cs:cold_stack]
     mov si, COLD_SDA_OFFSET
 %else
     mov si, sda_save
@@ -1563,25 +1627,47 @@ critical_error:
 break_ignore:
     iret
 
-%include "mdm.asm"
-
-%ifdef RESIDENT_AUDIO
-%include "audio/resident.asm"
+%ifdef OWN_HOST
+; Far entries for the audio part.
+dos_enter_entry:
+    call dos_enter
+    retf
+dos_leave_entry:
+    call dos_leave
+    retf
 %endif
+
+%include "mdm.asm"
 
 pvd times 192 db 0
     align 16
 %ifdef OWN_HOST
-; The one unit. The SDA copy and the driver stack are in the cold block.
-; The install-only code follows; DOS gets that memory back when the
-; activation ends.
+; The driver part ends with the one unit. The audio part follows at a
+; paragraph boundary, so that it can sit in a block of its own: its segment
+; is the block's segment less audio_start/16, and its labels keep their
+; offsets. The SDA copy and the driver stack are in the cold block.
 units times UNIT_SIZE db 0
     align 16
+audio_start:
+%include "audio/resident.asm"
+    align 16
+; The CD information of the audio part (cd_info) is the last item. Nothing is
+; mounted while the install runs, so the install-only code runs in its place
+; and the install clears the area afterwards. DOS gets back what the install
+; code needs beyond the area.
+cd_overlay:
+cd_info equ cd_overlay-INFO_STRIDE
 resident_tail:
 %include "audio/resident_install.asm"
     align 16
 resident_tail_end:
+CD_INFO_BYTES equ INFO_SIZE-INFO_STRIDE
+audio_end equ cd_overlay+((CD_INFO_BYTES+15)/16)*16
+cd_overlay_check equ 1 / ((resident_tail_end-cd_overlay) >= CD_INFO_BYTES)
 %else
+%ifdef RESIDENT_AUDIO
+%include "audio/resident.asm"
+%endif
     times 1024 db 0
 stack_top:
 sda_save:
@@ -1626,7 +1712,7 @@ install:
 %endif
 %ifdef OWN_HOST
     ; The cold block holds the driver stack and the SDA copy.
-    add cx, 15+COLD_STACK_TOP
+    add cx, 15+COLD_SDA_OFFSET
     shr cx, 4
     mov [cold_paras], cx
     mov di, units
@@ -1681,6 +1767,7 @@ install:
     call audio_prepare
     jc .audio_error
 %ifdef OWN_HOST
+    call resident_prepare
     call resident_relocate
     jc .audio_error
     test ax, ax
@@ -1689,16 +1776,22 @@ install:
     call audio_activate
     jc .audio_error
 %ifdef OWN_HOST
+    push cs
+    pop es
+    call cd_info_clear
     push fs
     push cs
     pop fs
     xor ax, ax
+    xor dx, dx
     call ems_guard_build
     pop fs
 %endif
     pop bx
     pop es
+%ifndef OWN_HOST
     mov byte [audio_linked], 1
+%endif
     jmp .audio_link
 .audio_error:
     pop bx
@@ -1717,13 +1810,12 @@ install:
     cli
     mov word [es:bx], header
     mov [es:bx+2], dx
-    mov byte [fs:audio_linked], 1
     popf
-    mov ax, fs
+    mov ax, [guard_driver]
+    mov dx, [guard_audio]
+    mov fs, [audio_seg]
     call ems_guard_build
-    push fs
-    pop es
-    mov ax, [es:resident_psp]
+    mov ax, [resident_psp]
     mov es, ax
     mov ax, [es:2ch]
     test ax, ax
@@ -1743,7 +1835,7 @@ install:
     mov ss, ax
     mov sp, 100h
     sti
-    mov dx, 16
+    mov dx, [relocated_keep]
     mov ax, 3100h
     int 21h
 %endif
@@ -1779,13 +1871,17 @@ install:
 %endif
     mov ax, 3100h
     int 21h
-; Return DX: paragraphs from the image start to the end of the units.
+; Return DX: paragraphs from the image start to the end of what stays.
 unit_paragraphs:
+%ifdef OWN_HOST
+    mov dx, KEPT_PARAS
+%else
     movzx dx, byte [unit_count]
     imul dx, UNIT_SIZE
     add dx, [units_base]
     add dx, 15
     shr dx, 4
+%endif
     ret
 install_sda_error:
     push cs
@@ -1816,6 +1912,7 @@ xms_memory_message db 'uCDD cannot allocate XMS memory for the CD audio queue.',
 %ifdef EMS_QUEUE
 ems_memory_message db 'uCDD cannot allocate EMS memory for the CD audio queue.',13,10,'$'
 %endif
+irq_table_memory_message db 'uCDD cannot allocate DOS memory for the IRQ table.',13,10,'$'
 cd_half_memory_message db 'uCDD cannot allocate DOS memory for the CD mix buffer.',13,10,'$'
 %ifdef OWN_HOST
 cold_memory_message db 'uCDD cannot allocate DOS memory for the driver data.',13,10,'$'
@@ -1850,7 +1947,7 @@ install_audio_error:
     mov ss, ax
     mov sp, 100h
     sti
-    mov dx, 16
+    mov dx, [relocated_keep]
     jmp .stay
 .in_place:
 %endif
@@ -1953,34 +2050,154 @@ disk_crlf_message db 13,10,'$'
 disk_report_buffer times 56 db 0
 %ifdef OWN_HOST
 
+; Tie the two parts together in the image that is about to be copied.
+; AX: driver segment. DX: segment of the audio part's labels.
+resident_set_segments:
+    mov [audio_seg], dx
+    mov [audio_bind_far+2], dx
+    mov [clear_state_far+2], dx
+    mov [reconsider_far+2], dx
+    mov [volume_far+2], dx
+    mov [driver_seg], ax
+    mov [dos_enter_far+2], ax
+    mov [dos_leave_far+2], ax
+    mov [mdm_scan_far+2], ax
+    mov [mdm_hooks_far+2], ax
+    ret
+
+; ES: the audio segment. The install-only code ran in the area of cd_info.
+cd_info_clear:
+    push ax
+    push cx
+    push di
+    mov di, cd_info+INFO_STRIDE
+    mov cx, (CD_INFO_BYTES+1)/2
+    xor ax, ax
+    cld
+    rep stosw
+    pop di
+    pop cx
+    pop ax
+    ret
+
+; Values for the audio part that only the install knows.
+resident_prepare:
+    mov ax, [resident_psp]
+    mov [audio_psp], ax
+    mov word [resident_paragraphs], KEPT_PARAS
+    mov al, [config_modifiers]
+    mov [hot_modifiers], al
+    mov al, [config_disc_keys]
+    mov [hot_disc_keys], al
+    push ds
+    pop es
+    mov si, config_keys
+    mov di, hot_keys
+    mov cx, 11
+    cld
+    rep movsb
+    ret
+
+; The program image is the driver part and the audio part with the
+; install-only code. In upper memory the parts go in one block, or in two
+; when no block is large enough; the install-only code goes when the
+; activation ends. The driver part stays in the image when it finds no block.
+; Return AX: the driver segment after a copy, or 0 when the install stays in
+; place. [relocated_keep]: paragraphs that DOS keeps at the PSP.
 resident_relocate:
     mov ax, cs
     cmp ax, 0a000h
     jae .in_place
-    call unit_paragraphs
-    mov [resident_paragraphs], dx
-    push dx
-    ; The copy holds the install-only code too. It is given back below.
+    mov word [relocated_keep], 16
+    mov word [driver_alloc], 0
+    mov word [guard_driver], 0
+    mov word [guard_audio], 0
+%ifdef SPLIT_TEST
+    jmp .split
+%endif
+    mov bx, RESIDENT_PEAK_PARAS
     call resident_allocate_high
-    pop dx
-    jc .in_place
-    mov [relocated_entry+2], ax
+    jc .split
+    mov [audio_block], ax
+    mov [driver_block], ax
+    mov [guard_driver], ax
+    mov dx, ax
+    call resident_set_segments
     mov es, ax
     mov cx, RESIDENT_PEAK_PARAS*8
     xor si, si
     xor di, di
     rep movsw
-    mov [es:resident_paragraphs], dx
-    mov ds, ax
+    mov dx, [driver_block]
+    jmp .activate
+.split:
+    mov bx, AUDIO_PEAK_PARAS
+    call resident_allocate_high
+    jc .in_place
+    cmp ax, AUDIO_BASE_PARAS
+    jae .audio_ok
+    mov es, ax
+    mov ah, 49h
+    int 21h
+    jmp .in_place
+.audio_ok:
+    mov [audio_block], ax
+    mov [guard_audio], ax
+%ifdef SPLIT_TEST
+%if SPLIT_TEST == 2
+    jmp .driver_low
+%endif
+%endif
+    mov bx, AUDIO_BASE_PARAS
+    call resident_allocate_high
+    jnc .driver_high
+.driver_low:
+    ; The driver part stays here: DOS keeps it with the PSP.
+    mov ax, cs
+    mov word [relocated_keep], 16+AUDIO_BASE_PARAS
+    jmp .driver_ready
+.driver_high:
+    mov [driver_alloc], ax
+    mov [guard_driver], ax
+.driver_ready:
+    mov [driver_block], ax
+    mov dx, [audio_block]
+    sub dx, AUDIO_BASE_PARAS
+    call resident_set_segments
+    cmp word [driver_alloc], 0
+    je .audio_copy
+    mov es, [driver_alloc]
+    mov cx, AUDIO_BASE_PARAS*8
+    xor si, si
+    xor di, di
+    rep movsw
+.audio_copy:
+    mov es, [audio_block]
+    mov cx, AUDIO_PEAK_PARAS*8
+    mov si, audio_start
+    xor di, di
+    rep movsw
+    mov dx, [audio_seg]
+.activate:
+    mov [relocated_entry+2], dx
+    mov ds, dx
     call far [cs:relocated_entry]
     jc .activate_bad
     push cs
     pop ds
-    mov es, [relocated_entry+2]
-    mov bx, [es:resident_paragraphs]
+    mov es, [audio_seg]
+    call cd_info_clear
+    ; Give back the install-only code: the end of the audio block.
+    mov es, [audio_block]
+    mov bx, AUDIO_KEEP_PARAS
+    mov ax, es
+    cmp ax, [driver_block]
+    jne .shrink
+    mov bx, KEPT_PARAS
+.shrink:
     mov ah, 4ah
     int 21h
-    mov ax, [relocated_entry+2]
+    mov ax, [driver_block]
     clc
     ret
 .activate_bad:
@@ -1992,7 +2209,12 @@ resident_relocate:
     mov [audio_detach_failed], cl
     test cl, cl
     jnz .retained
-    mov es, [relocated_entry+2]
+    mov es, [audio_block]
+    mov ah, 49h
+    int 21h
+    cmp word [driver_alloc], 0
+    je .retained
+    mov es, [driver_alloc]
     mov ah, 49h
     int 21h
 .retained:
@@ -2001,11 +2223,16 @@ resident_relocate:
 .in_place:
     push cs
     pop ds
+    mov ax, cs
+    mov dx, ax
+    call resident_set_segments
     xor ax, ax
     clc
     ret
 
+; BX: paragraphs. Return AX: the block, or CF set.
 resident_allocate_high:
+    mov [resident_request], bx
     mov word [resident_allocation], 0
     mov ax, 5800h
     int 21h
@@ -2023,7 +2250,7 @@ resident_allocate_high:
     mov bx, 40h
     int 21h
     jc .restore_umb
-    mov bx, RESIDENT_PEAK_PARAS
+    mov bx, [resident_request]
     mov ah, 48h
     int 21h
     jc .restore
@@ -2045,22 +2272,35 @@ resident_allocate_high:
     stc
     ret
 
+AUDIO_BASE_PARAS equ (audio_start-$$)/16
+AUDIO_KEEP_PARAS equ (audio_end-audio_start)/16
+AUDIO_PEAK_PARAS equ (resident_tail_end-audio_start)/16
 RESIDENT_PEAK_PARAS equ (resident_tail_end-$$)/16
+KEPT_PARAS equ (audio_end-$$)/16
 relocated_entry dw audio_activate_far,0
+relocated_keep dw 16
 resident_allocation dw 0
 resident_strategy dw 0
+resident_request dw 0
 resident_umb db 0
+audio_block dw 0
+driver_block dw 0
+driver_alloc dw 0
+guard_driver dw 0
+guard_audio dw 0
 
 ; A game can map EMS pages over a UMB. List the mappable pages that overlap a
 ; uCDD block, so that the host refuses EMS map calls into them.
-; FS: resident data. AX: the relocated image block, or 0.
+; FS: the audio segment. AX, DX: the relocated driver block and audio block,
+; or 0.
 ems_guard_build:
     push ds
     push es
     push gs
     pushad
     mov [ems_guard_blocks+2], ax
-    mov ax, [fs:resident_psp]
+    mov [ems_guard_blocks+14], dx
+    mov ax, [resident_psp]
     mov [ems_guard_blocks], ax
     mov ax, [fs:output_allocation]
     mov [ems_guard_blocks+4], ax
@@ -2145,7 +2385,7 @@ ems_guard_build:
     pop ds
     ret
 
-EMS_GUARD_BLOCKS equ 7
+EMS_GUARD_BLOCKS equ 8
 EMS_MAP_MAX equ 64
 ; PSP, relocated image, DMA rings, CD half buffer, CD work buffer, host gateway,
 ; cold block.

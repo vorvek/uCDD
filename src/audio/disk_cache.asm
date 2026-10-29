@@ -65,7 +65,14 @@ cd_cache_warm:
     jne .done
     ; A disc change from a hotkey or a device request has no DOS context.
     ; The handle is not valid in the caller's PSP. Warm at the next refill.
+%ifdef OWN_HOST
+    push es
+    mov es, [driver_seg]
+    cmp byte [es:dos_entered], 0
+    pop es
+%else
     cmp byte [dos_entered], 0
+%endif
     jne .warm
     mov byte [cc_warm_pending], 1
     ret

@@ -11,8 +11,15 @@ audio_activate:
     test bl, 1
     jz .bad
 %endif
+    call environment_detach
+    mov word [audio_error_text], irq_table_memory_message
+    call irq_table_allocate
+    jc .bad
     mov word [audio_error_text], port_trap_missing_message
     call host_install
+    pushf
+    call irq_table_settle
+    popf
     jc .bad
     mov eax, [host_api_entry]
     mov [qpi], eax
@@ -81,12 +88,6 @@ audio_activate:
     mov word [audio_error_text], internal_host_message
     call own_host_install
     jc .cleanup
-    call environment_free
-    call cd_half_promote
-    call cd_work_promote
-%ifdef OWN_HOST
-    call cold_promote
-%endif
     mov al, [guest_irq]
     cmp [sb_irq], al
     jne .dos_vector_ready
@@ -124,7 +125,12 @@ audio_activate:
     int 21h
     mov byte [cd_background_set], 1
     ; The hotkeys work without an MDM list.
+%ifdef OWN_HOST
+    call mdm_key_hooks
+    call far [cs:mdm_hooks_far]
+%else
     call mdm_hooks
+%endif
     ; Nothing is mounted at install: step aside when the pairing allows it.
     call audio_reconsider
     clc
@@ -135,14 +141,149 @@ audio_activate:
     stc
     ret
 
+; JEMMEX may keep a pointer to the IRQ table (host_irq_table_linear), so the
+; block must not move afterwards: upper memory if it is free, else the top of
+; conventional memory (or any block when the image is loaded high).
+irq_table_allocate:
+    mov ax, 5800h
+    int 21h
+    jc .none
+    mov [cd_buffer_strategy], ax
+    mov ax, 5802h
+    int 21h
+    jc .none
+    mov [cd_buffer_umb], al
+    mov ax, 5803h
+    mov bx, 1
+    int 21h
+    jc .low
+    mov ax, 5801h
+    mov bx, 40h
+    int 21h
+    jc .low
+    mov bx, 1024/16
+    mov ah, 48h
+    int 21h
+    jnc .got
+.low:
+    mov ax, 5803h
+    xor bx, bx
+    int 21h
+    mov ax, 5801h
+    xor bx, bx
+    cmp word [RESIDENT_PSP], 0a000h
+    jae .strategy
+    mov bl, 2
+.strategy:
+    int 21h
+    mov bx, 1024/16
+    mov ah, 48h
+    int 21h
+    jnc .got
+    call .restore
+    stc
+    ret
+.got:
+    mov [host_irq_table_block], ax
+    ; JEMMEX takes the table as it is: it must be empty.
+    mov es, ax
+    xor di, di
+    mov cx, 1024/2
+    xor ax, ax
+    cld
+    rep stosw
+    movzx eax, word [host_irq_table_block]
+    shl eax, 4
+    mov [host_irq_table_linear], eax
+    call .restore
+    clc
+    ret
+.none:
+    stc
+    ret
+.restore:
+    mov bx, [cd_buffer_strategy]
+    mov ax, 5801h
+    int 21h
+    movzx bx, byte [cd_buffer_umb]
+    mov ax, 5803h
+    int 21h
+    ret
+
+; Free the table block unless the host keeps the table.
+irq_table_settle:
+    cmp byte [host_table_used], 0
+    jne .keep
+    call irq_table_free
+.keep:
+    ret
+
+irq_table_free:
+    cmp word [host_irq_table_block], 0
+    je .done
+    mov es, [host_irq_table_block]
+    mov ah, 49h
+    int 21h
+    mov word [host_irq_table_block], 0
+    mov dword [host_irq_table_linear], 0
+.done:
+    ret
+
 audio_activate_far:
     call audio_activate
     retf
 
-cd_half_allocate:
-    mov bx, CD_HALF_PARAS
+; BX: paragraphs. Return AX: the block, or CF set. Upper memory first, so that
+; a buffer that fits there never takes conventional memory and leaves a gap
+; when it would move later. The caller's strategy holds for the fallback.
+high_first_allocate:
+    mov [high_first_paras], bx
+    mov ax, 5800h
+    int 21h
+    jc .plain
+    mov [cd_buffer_strategy], ax
+    mov ax, 5802h
+    int 21h
+    jc .plain
+    mov [cd_buffer_umb], al
+    mov ax, 5803h
+    mov bx, 1
+    int 21h
+    jc .plain
+    mov ax, 5801h
+    mov bx, 40h
+    int 21h
+    jc .restore_plain
+    mov bx, [high_first_paras]
     mov ah, 48h
     int 21h
+    pushf
+    push ax
+    mov bx, [cd_buffer_strategy]
+    mov ax, 5801h
+    int 21h
+    movzx bx, byte [cd_buffer_umb]
+    mov ax, 5803h
+    int 21h
+    pop ax
+    popf
+    jnc .done
+    jmp .plain
+.restore_plain:
+    movzx bx, byte [cd_buffer_umb]
+    mov ax, 5803h
+    int 21h
+.plain:
+    mov bx, [high_first_paras]
+    mov ah, 48h
+    int 21h
+.done:
+    ret
+high_first_paras dw 0
+
+cd_half_allocate:
+    mov bx, CD_HALF_PARAS
+    call high_first_allocate
     jc .bad
     mov [cd_half_allocation], ax
     mov [cd_half_segment], ax
@@ -154,8 +295,7 @@ cd_half_allocate:
 
 cd_work_allocate:
     mov bx, CD_WORK_PARAS
-    mov ah, 48h
-    int 21h
+    call high_first_allocate
     jc .bad
     mov [cd_work_allocation], ax
     mov [cd_work_segment], ax
@@ -165,11 +305,51 @@ cd_work_allocate:
     stc
     ret
 
-; LH can put the environment in a UMB that a buffer needs. The host has read
-; the program path from it, so free it before the buffers move up.
+; LH can put the environment in a UMB that a buffer needs. Copy the program
+; path to the command tail of the PSP (the host reads it from there) and free
+; the environment before the first buffer goes to upper memory.
+environment_detach:
+    push ds
+    push es
+    mov es, [RESIDENT_PSP]
+    mov ax, [es:2ch]
+    test ax, ax
+    jz .done
+    mov es, ax
+    xor di, di
+    xor al, al
+    mov cx, 32767
+.scan:
+    repne scasb
+    jne .done
+    cmp byte [es:di], 0
+    jne .scan
+    add di, 3
+    push es
+    pop ds
+    mov si, di
+    mov es, [cs:RESIDENT_PSP]
+    mov di, 80h
+    mov cx, 126
+.copy:
+    lodsb
+    stosb
+    test al, al
+    jz .copied
+    loop .copy
+    mov byte [es:di], 0
+.copied:
+    push cs
+    pop ds
+    call environment_free
+.done:
+    pop es
+    pop ds
+    ret
+
 environment_free:
     push es
-    mov es, [resident_psp]
+    mov es, [RESIDENT_PSP]
     xor ax, ax
     xchg ax, [es:2ch]
     test ax, ax
@@ -184,87 +364,20 @@ environment_free:
 %ifdef OWN_HOST
 cold_allocate:
     mov bx, [cold_paras]
-    mov ah, 48h
-    int 21h
+    call high_first_allocate
     jc .bad
     mov [cold_allocation], ax
     mov [cold_segment], ax
+    push es
+    mov es, [driver_seg]
+    mov [es:cold_stack], ax
+    pop es
     clc
     ret
 .bad:
     stc
     ret
-
-cold_promote:
-    mov bx, [cold_paras]
-    mov si, cold_allocation
-    mov di, cold_segment
-    mov bp, cold_allocation
-    jmp cd_buffer_promote
 %endif
-
-cd_half_promote:
-    mov bx, CD_HALF_PARAS
-    mov si, cd_half_allocation
-    mov di, cd_half_segment
-    mov bp, cd_read_address+2
-    jmp cd_buffer_promote
-
-cd_work_promote:
-    mov bx, CD_WORK_PARAS
-    mov si, cd_work_allocation
-    mov di, cd_work_segment
-    mov bp, cd_write_address+2
-
-cd_buffer_promote:
-    push bx
-    mov ax, 5800h
-    int 21h
-    jc .discard
-    mov [cd_buffer_strategy], ax
-    mov ax, 5802h
-    int 21h
-    jc .discard
-    mov [cd_buffer_umb], al
-    mov ax, 5803h
-    mov bx, 1
-    int 21h
-    jc .discard
-    mov ax, 5801h
-    mov bx, 40h
-    int 21h
-    jc .restore_umb_discard
-    pop bx
-    mov ah, 48h
-    int 21h
-    pushf
-    push ax
-    mov bx, [cd_buffer_strategy]
-    mov ax, 5801h
-    int 21h
-    movzx bx, byte [cd_buffer_umb]
-    mov ax, 5803h
-    int 21h
-    pop ax
-    popf
-    jc .done
-    mov es, [si]
-    push ax
-    mov ah, 49h
-    int 21h
-    pop ax
-    mov [si], ax
-    mov [di], ax
-    mov [ds:bp], ax
-.done:
-    ret
-.restore_umb_discard:
-    movzx bx, byte [cd_buffer_umb]
-    mov ax, 5803h
-    int 21h
-.discard:
-    pop bx
-    ret
 
 cd_buffer_strategy dw 0
 cd_buffer_umb db 0

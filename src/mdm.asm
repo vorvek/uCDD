@@ -17,7 +17,6 @@ mdm_ejected db 0
 ; Left and right bits for Ctrl, Alt, Shift, and Win.
 mdm_modifiers db 0
 mdm_prefix db 0
-mdm_key_active db 0
 mdm_last db 0
 ; A hotkey keeps an ejected single image open for unit 0.
 eject_handle dw 0ffffh
@@ -32,14 +31,24 @@ mdm_move:
     dd 0
     dw 0
     dd 0
-mdm_old_key dd 0
 mdm_old_timer dd 0
 ; Set at the list's mount when any member is bound for CD audio: the list
 ; counts as an audio disc from then on, so a hotkey never changes whether the
 ; driver has stepped aside (audio/standby.asm).
 mdm_audio db 0
-%ifdef RESIDENT_AUDIO
-mdm_old_mouse dd 0
+%ifdef OWN_HOST
+; The hotkey settings that mdm_scan reads, copied from UCDD.CFG's record at
+; install (the record is in the audio part).
+hot_modifiers db 0
+hot_disc_keys db 0
+hot_keys times 11 db 0
+%define HOT_MODIFIERS hot_modifiers
+%define HOT_DISC_KEYS hot_disc_keys
+%define HOT_KEYS hot_keys
+%else
+%define HOT_MODIFIERS config_modifiers
+%define HOT_DISC_KEYS config_disc_keys
+%define HOT_KEYS config_keys
 %endif
 
 ; DS:DX contains the list name, count, image records and transient scratch.
@@ -141,7 +150,7 @@ mdm_mount:
     mov byte [mdm_pending], 0
     mov byte [mdm_ejected], 0
 %ifdef RESIDENT_AUDIO
-    call audio_bind
+    AUDIO_BIND
 %endif
     call mdm_hooks
     mov word [control_result], 0
@@ -279,6 +288,27 @@ mdm_release:
     stc
     ret
 
+%ifdef OWN_HOST
+mdm_hooks:
+    cmp word [mdm_old_timer+2], 0
+    jne .done
+    mov ax, 3508h
+    int 21h
+    mov [mdm_old_timer], bx
+    mov [mdm_old_timer+2], es
+    mov dx, mdm_timer
+    mov ax, 2508h
+    int 21h
+.done:
+    ret
+mdm_hooks_entry:
+    push ds
+    push cs
+    pop ds
+    call mdm_hooks
+    pop ds
+    retf
+%else
 mdm_hooks:
     cmp word [mdm_old_key+2], 0
     jne .done
@@ -308,101 +338,10 @@ mdm_hooks:
 .done:
     ret
 
-mdm_key:
-    push ax
-    in al, 64h
-    and al, 21h
-    cmp al, 1
-    jne .chain
-%ifdef RESIDENT_AUDIO
-    push dx
-    push ds
-    push cs
-    pop ds
-    mov dx, 60h
-    call physical_read
-    pop ds
-    pop dx
-%else
-    in al, 60h
 %endif
-    call mdm_scan
-.chain:
-    pop ax
-    mov byte [cs:mdm_key_active], 1
-    pushf
-    call far [cs:mdm_old_key]
-    mov byte [cs:mdm_key_active], 0
-    iret
 
-%ifdef RESIDENT_AUDIO
-; The BIOS mouse service (INT 15h AH=C2h) sends a mouse command and takes the
-; next byte as the reply. A moving mouse can leave a data byte from the last
-; call in the controller when the caller has IF clear, and the setup fails.
-; Remove such bytes, and do not trap port 60h during the call.
-mdm_mouse:
-    cmp ah, 0c2h
-    jne .chain
-    cmp al, 6
-    ja .chain
-    push bp
-    mov bp, sp
-    test byte [bp+7], 2
-    pop bp
-    jnz .trap
-    push ax
-    push cx
-    mov cx, 400
-.drain:
-    in al, 64h
-    and al, 21h
-    cmp al, 21h
-    jne .idle
-    in al, 60h
-    mov cx, 400
-.idle:
-    loop .drain
-    pop cx
-    pop ax
-.trap:
-    cmp byte [cs:callback_set], 0
-    je .chain
-    push ax
-    smsw ax
-    test al, 1
-    pop ax
-    jz .chain
-    push ax
-    mov ax, 1a0ah
-    call .port
-    pop ax
-    pushf
-    call far [cs:mdm_old_mouse]
-    push ax
-    pushf
-    mov ax, 1a09h
-    call .port
-    popf
-    pop ax
-    ; Return CF in the caller's flags, so that its IF stays as it was.
-    push bp
-    mov bp, sp
-    jc .carry
-    and byte [bp+6], 0feh
-    pop bp
-    iret
-.carry:
-    or byte [bp+6], 1
-    pop bp
-    iret
-.chain:
-    jmp far [cs:mdm_old_mouse]
-.port:
-    pushad
-    mov dx, 60h
-    call far [cs:qpi]
-    popad
-    ret
+%ifndef OWN_HOST
+%include "mdm_keys.asm"
 %endif
 
 ; Observe set-1 bytes without acknowledging the keyboard or PIC.
@@ -491,7 +430,7 @@ mdm_scan:
     jmp .done
 .make:
     mov bl, [cs:mdm_modifiers]
-    mov bh, [cs:config_modifiers]
+    mov bh, [cs:HOT_MODIFIERS]
     mov cx, 4
 .group:
     shr bh, 1
@@ -506,10 +445,10 @@ mdm_scan:
     sete cl
     mov [cs:mdm_last], al
     mov ah, 1
-    cmp byte [cs:config_disc_keys], 1
+    cmp byte [cs:HOT_DISC_KEYS], 1
     je .disc
     mov ah, 3ah
-    cmp byte [cs:config_disc_keys], 2
+    cmp byte [cs:HOT_DISC_KEYS], 2
     jne .hotkey
 .disc:
     mov bl, al
@@ -520,7 +459,7 @@ mdm_scan:
 .hotkey:
     xor bx, bx
 .find:
-    cmp al, [cs:config_keys+bx]
+    cmp al, [cs:HOT_KEYS+bx]
     je .found
     inc bx
     cmp bx, HOTKEY_COUNT
@@ -541,7 +480,11 @@ mdm_scan:
     jmp .done
 %ifdef RESIDENT_AUDIO
 .volume:
+%ifdef OWN_HOST
+    call far [cs:volume_far]
+%else
     call hotkey_volume
+%endif
 %endif
 .done:
     pop cx
@@ -550,43 +493,6 @@ mdm_scan:
     popf
     ret
 
-%ifdef RESIDENT_AUDIO
-; BX 3 to 10 selects a volume key. An even key raises a level and an odd key
-; lowers it: CD, master, FM, then PCM.
-hotkey_volume:
-    push ds
-    push si
-    push di
-    push cs
-    pop ds
-    sub bx, 3
-    mov si, bx
-    and si, 0eh
-    mov di, [volume_levels+si]
-    mov al, [di]
-    mov ah, [config_volume_step]
-    test bl, 1
-    jnz .down
-    add al, ah
-    cmp al, 100
-    jbe .store
-    mov al, 100
-    jmp .store
-.down:
-    sub al, ah
-    jnc .store
-    xor al, al
-.store:
-    mov [di], al
-    call [volume_updates+si]
-    pop di
-    pop si
-    pop ds
-    ret
-
-volume_levels dw config_cd_volume,config_master_volume,config_fm_volume,config_game_volume
-volume_updates dw cd_gain_update,master_update,fm_update,pcm_update
-%endif
 
 mdm_timer:
     pushf
@@ -598,6 +504,7 @@ mdm_timer:
     push gs
     push cs
     pop ds
+    AUDIO_LOAD_GS
     cli
     cmp byte [busy], 0
     jne .done
@@ -610,7 +517,7 @@ mdm_timer:
     mov [old_ss], ss
     mov [old_sp], sp
 %ifdef OWN_HOST
-    mov ss, [cold_segment]
+    mov ss, [cold_stack]
     mov sp, COLD_STACK_TOP
 %else
     mov ax, cs
@@ -630,6 +537,12 @@ mdm_timer:
     pop ds
     popad
     iret
+
+%ifdef OWN_HOST
+mdm_scan_entry:
+    call mdm_scan
+    retf
+%endif
 
 ; Called with the driver lock and stack. No DOS or image I/O is required.
 mdm_switch:
@@ -652,7 +565,11 @@ mdm_switch:
 %ifdef RESIDENT_AUDIO
     cmp word [si+AUDIO_ENTRY], cd_request
     jne .done
+%ifdef OWN_HOST
+    mov ax, [audio_seg]
+%else
     mov ax, cs
+%endif
     cmp [si+AUDIO_ENTRY+2], ax
     jne .done
 %else
@@ -714,13 +631,13 @@ mdm_switch:
     mov [mdm_current], bl
     mov byte [mdm_ejected], 0
 %ifdef RESIDENT_AUDIO
-    call cd_clear_state
-    mov word [cd_handle], 0ffffh
+    AUDIO_CALL clear_state_far, cd_clear_state
+    mov word [AUDSEG cd_handle], 0ffffh
 %endif
     mov si, [unit_pointer]
     mov byte [si+CHANGED], 0ffh
 %ifdef RESIDENT_AUDIO
-    call audio_bind
+    AUDIO_BIND
 %endif
     jmp .done
 .rollback:
@@ -761,7 +678,7 @@ mdm_switch:
     mov [si+SECTORS], eax
     mov byte [si+CHANGED], 0ffh
 %ifdef RESIDENT_AUDIO
-    call audio_bind
+    AUDIO_BIND
 %endif
     jmp .done
 .single_eject:

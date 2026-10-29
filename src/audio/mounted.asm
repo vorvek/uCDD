@@ -33,7 +33,7 @@ cd_memory_low:
 %ifdef RESIDENT_AUDIO
     ; A program loaded low frees its image when it stays resident. Put the
     ; buffers at the top of conventional RAM, above that free space.
-    cmp word [resident_psp], 0a000h
+    cmp word [RESIDENT_PSP], 0a000h
     jae .strategy
     mov bl, 2
 .strategy:
@@ -691,7 +691,14 @@ cd_head:
 
 cd_foreground:
 %ifdef DRIVER_STAGE
+%ifdef OWN_HOST
+    push es
+    mov es, [driver_seg]
+    mov byte [es:stage_valid], 0
+    pop es
+%else
     mov byte [stage_valid], 0
+%endif
 %endif
 %ifdef OWN_HOST
     cmp byte [cd_background_reads], 0ffh
@@ -700,7 +707,11 @@ cd_foreground:
     cmp dword [cd_remaining], 0
     je .done
 %ifdef EXTERNAL_CD_BUFFERS
+%ifdef OWN_HOST
+    call far [cs:dos_enter_far]
+%else
     call dos_enter
+%endif
     cmp byte [cc_warm_pending], 0
     je .warmed
     call cd_cache_warm
@@ -737,7 +748,11 @@ cd_foreground:
     mov byte [cd_error], 1
 .restore:
 %ifdef RESIDENT_AUDIO
+%ifdef OWN_HOST
+    call far [cs:dos_leave_far]
+%else
     call dos_leave
+%endif
 %else
     pop bx
     mov ah, 50h
@@ -1277,8 +1292,10 @@ cd_drives dw 0
 cd_devices times 26*5 db 0
 %endif
 %ifdef RESIDENT_AUDIO
+%ifndef OWN_HOST
 cd_info equ $-INFO_STRIDE
     times INFO_SIZE-INFO_STRIDE db 0
+%endif
 %else
 cd_info times INFO_SIZE db 0
 %endif

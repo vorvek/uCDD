@@ -15,6 +15,20 @@
 %include "audio/diag.inc"
 
 qpi dd 0
+%ifdef OWN_HOST
+; The driver part's segment, the far entries into it and the PSP.
+driver_seg dw 0
+audio_psp dw 0
+dos_enter_far dw dos_enter_entry,0
+dos_leave_far dw dos_leave_entry,0
+mdm_scan_far dw mdm_scan_entry,0
+mdm_hooks_far dw mdm_hooks_entry,0
+memory_mode db 0
+keep_vcpi db 0
+%define RESIDENT_PSP audio_psp
+%else
+%define RESIDENT_PSP resident_psp
+%endif
 audio_error_text dw audio_unit_message
 output_segment dw 0
 output_allocation dw 0
@@ -25,6 +39,7 @@ cd_work_allocation dw 0
 cd_work_segment dw 0
 %ifdef OWN_HOST
 cold_allocation dw 0
+cold_segment dw 0
 cold_paras dw 0
 %endif
 fault db 0
@@ -172,24 +187,31 @@ audio_linked db 0
 %include "audio/standby.asm"
 %include "audio/host_jemm.asm"
 %ifdef OWN_HOST
+%include "mdm_keys.asm"
+%endif
+%ifdef OWN_HOST
 %include "audio/resident_host.asm"
 %else
 %include "audio/resident_pm.asm"
 %endif
 
+; DS=CS, FS:SI the unit (a segment of the driver part).
 audio_bind:
-    cmp word [si+STRIDE], 2352
+    cmp word [fs:si+STRIDE], 2352
     je .bind
-    cmp word [si+TRACK_COUNT], 1
+    cmp word [fs:si+TRACK_COUNT], 1
     jbe .done
 .bind:
     pushad
     push es
-    mov ax, [si+HANDLE]
+    push ds
+    mov ax, [fs:si+HANDLE]
     mov [cd_handle], ax
     mov di, cd_info+INFO_STRIDE
     push ds
     pop es
+    push fs
+    pop ds
     push si
     add si, STRIDE
     mov cx, 4
@@ -206,14 +228,48 @@ audio_bind:
     stosd
     mov word [si+AUDIO_ENTRY], cd_request
     mov [si+AUDIO_ENTRY+2], cs
-    mov byte [cd_error], 0
     mov eax, [si+ORIGIN]
+    pop ds
+    mov byte [cd_error], 0
     mov [cd_head_lba], eax
     call cd_cache_warm
     pop es
     popad
 .done:
     ret
+
+%ifdef OWN_HOST
+; Far entries for the driver part. The caller's DS is the driver's.
+%macro DRIVER_ENTRY 2
+%1:
+    push fs
+    push gs
+    push ds
+    push cs
+    pop ds
+    call %2
+    pop ds
+    pop gs
+    pop fs
+    retf
+%endmacro
+
+audio_bind_entry:
+    push fs
+    push gs
+    push ds
+    pop fs
+    push ds
+    push cs
+    pop ds
+    call audio_bind
+    pop ds
+    pop gs
+    pop fs
+    retf
+DRIVER_ENTRY clear_state_entry, cd_clear_state
+DRIVER_ENTRY reconsider_entry, audio_reconsider
+%endif
 
 %ifndef OWN_HOST
 %include "audio/resident_install.asm"

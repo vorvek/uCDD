@@ -5,10 +5,13 @@
 ; Raw sectors that one short data read stages in the CD work buffer.
 %define CD_STAGE_SECTORS 6
 %ifdef OWN_HOST
-; The cold block holds the driver stack (1024 bytes), then the SDA copy. Its
-; size is set at install.
+; The cold block holds the stacks of the driver (1024 bytes), the sound card
+; interrupt (1024) and the port callback (512), then the SDA copy. Its size is
+; set at install.
 %define COLD_STACK_TOP 1024
-%define COLD_SDA_OFFSET 1024
+%define COLD_IRQ_TOP 2048
+%define COLD_CALLBACK_TOP 2560
+%define COLD_SDA_OFFSET 2560
 %endif
 %define MAX_TRACKS 99
 %define TRACK_SIZE 12

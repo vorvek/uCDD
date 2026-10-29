@@ -35,7 +35,14 @@ audio_reconsider:
     cmp word [cd_handle], 0ffffh
     jne .engage
 %ifdef MDM_SUPPORT
+%ifdef OWN_HOST
+    push ds
+    mov ds, [driver_seg]
     cmp byte [mdm_audio], 0
+    pop ds
+%else
+    cmp byte [mdm_audio], 0
+%endif
     jne .engage
 %endif
     cmp byte [audio_engaged], 0

@@ -62,6 +62,10 @@ audio_cleanup:
     mov word [cold_allocation], 0
 %endif
 .memory:
+    cmp byte [audio_detach_failed], 0
+    jne .restore
+    call irq_table_free
+.restore:
     call cd_memory_restore
     cmp byte [audio_detach_failed], 0
     je .ok

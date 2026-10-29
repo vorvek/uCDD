@@ -265,9 +265,14 @@ mixer_read:
     jne %%nested
     mov [cs:callback_ss], ss
     mov [cs:callback_sp], sp
+%ifdef OWN_HOST
+    mov ss, [cs:cold_segment]
+    mov sp, COLD_CALLBACK_TOP
+%else
     push cs
     pop ss
     mov sp, callback_stack_top
+%endif
 %%nested:
     inc byte [cs:callback_depth]
 %endmacro
@@ -311,7 +316,11 @@ port_callback:
     jne .result
     cmp byte [mdm_key_active], 0
     jne .result
+%ifdef OWN_HOST
+    call far [cs:mdm_scan_far]
+%else
     call mdm_scan
+%endif
     jmp .result
 .keyboard_write:
     call physical_write
@@ -2260,9 +2269,11 @@ callback_value db 0
 callback_ss dw 0
 callback_sp dw 0
 callback_depth db 0
+%ifndef OWN_HOST
     align 4
 times 512 db 0
 callback_stack_top:
+%endif
 %endif
 %ifdef WSS_INPUT
 %include "audio/wss_state.inc"

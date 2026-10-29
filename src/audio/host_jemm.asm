@@ -20,7 +20,11 @@ host_irq_slot dd 0
 host_irq_previous dd 0
 host_irq_root dd 0
 host_irq_dispatch_previous dd 0
-host_irq_table times 256 dd 0
+; JEMMEX keeps a pointer to this table when it has none of its own (1 KB,
+; allocated at install in a block of its own: audio_activate).
+host_irq_table_linear dd 0
+host_irq_table_block dw 0
+host_table_used db 0
 ; The host reads these two after the install (sb_patch.asm).
 host_info db 2
     times 27 db 0
@@ -399,7 +403,7 @@ host_irq_remove:
     lea ecx, [eax+ecx*4+8*4]
     cmp ecx, edx
     jne .bad
-    lea eax, [ebx+host_irq_table]
+    mov eax, [ebx+host_irq_table_linear]
     cmp [esi], eax
     jne .restore
     lea ecx, [ebx+host_irq_call]
@@ -497,9 +501,14 @@ irq_step:
     cld
     mov [callback_ss], ss
     mov [callback_sp], sp
+%ifdef OWN_HOST
+    mov ss, [cold_segment]
+    mov sp, COLD_CALLBACK_TOP
+%else
     mov ax, cs
     mov ss, ax
     mov sp, callback_stack_top
+%endif
     inc byte [callback_depth]
     DIAG_INC diag_due_step
     call virtual_irq_due_fire

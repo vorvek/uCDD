@@ -93,9 +93,14 @@ virtual_irq_due_far:
     jne .leave
     mov [callback_ss], ss
     mov [callback_sp], sp
+%ifdef OWN_HOST
+    mov ss, [cold_segment]
+    mov sp, COLD_CALLBACK_TOP
+%else
     push cs
     pop ss
     mov sp, callback_stack_top
+%endif
     inc byte [callback_depth]
     DIAG_INC diag_due_step
     call virtual_irq_due_fire

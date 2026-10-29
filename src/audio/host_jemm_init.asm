@@ -156,8 +156,9 @@ host_protected_install:
     mov eax, [edx]
     test eax, eax
     jnz .irq_table
-    lea eax, [ebx+host_irq_table]
+    mov eax, [ebx+host_irq_table_linear]
     mov [edx], eax
+    mov byte [ebx+host_table_used], 1
     mov ecx, [edx+4]
     mov [ebx+host_irq_dispatch_previous], ecx
     lea ecx, [ebx+host_irq_call]
@@ -180,5 +181,5 @@ host_return_frame dd host_jemm_install.return,0,23002h,0,0,0,0,0,0
 host_device db 'EMMXXXX0',0
 host_device_noems db 'EMMQXXX0',0
 ; The installation path makes no calls.
-times 256 db 0
+times 128 db 0
 host_init_stack_top:

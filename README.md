@@ -79,7 +79,7 @@ C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 
 Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count.
 
-μCDD moves its resident parts into upper memory itself. Do not use `LH` to load `UCDD.EXE`. With `LH`, the command shell can put the environment of `UCDD.EXE` in an upper memory block (UMB). A buffer that needs that UMB then stays in conventional memory. μCDD needs about 75 KB of free upper memory: one block of 43 KB or more for the driver, and smaller blocks for its buffers. The parts that do not fit stay in conventional memory.
+μCDD moves its resident parts into upper memory itself. Do not use `LH` to load `UCDD.EXE`. With `LH`, the command shell can put the environment of `UCDD.EXE` in an upper memory block (UMB). A buffer that needs that UMB then stays in conventional memory. μCDD needs about 71 KB of free upper memory. The driver has two parts: a block of 29 KB for the audio code (it is 28 KB after the install) and a block of 8 KB. If one block of 37 KB is free, μCDD uses it for both parts. The buffers use smaller blocks. The parts that do not fit stay in conventional memory.
 
 It is recommended to load your mouse driver before μCDD.
 

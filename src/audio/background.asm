@@ -193,13 +193,25 @@ cd_timer_refill:
     mov cx, cs
     cmp ax, cx
     je .frame_ready
+%ifdef OWN_HOST
+    ; The timer hook of the hotkeys is in the driver part.
+    cmp ax, [driver_seg]
+    je .frame_ready
+%endif
     cmp ax, [own_host_active+2]
     jne .refuse
 .frame_ready:
     ; The walk ends at the last conventional block, so code in upper memory
     ; is refused. The owner of the block that holds CS+IP/16 must be the
     ; current PSP, the client PSP or its parent.
+%ifdef OWN_HOST
+    push ds
+    mov ds, [driver_seg]
     les bx, [sda_pointer]
+    pop ds
+%else
+    les bx, [sda_pointer]
+%endif
     mov cx, [es:bx+10h]
     mov ax, [ss:bp+40]
     shr ax, 4
@@ -339,7 +351,14 @@ cd_client_live:
 
 ; CF set: the refill waits. A gate that refuses counts in the diagnostics.
 cd_refill_wait:
+%ifdef OWN_HOST
+    push es
+    mov es, [driver_seg]
+    cmp byte [es:busy], 0
+    pop es
+%else
     cmp byte [busy], 0
+%endif
     je .bios
     DIAG_REF diag_ref_busy
     stc
@@ -376,7 +395,14 @@ cd_refill_wait:
 
 ; Run the refill on the CD stack. Interrupts are off.
 cd_refill_run:
+%ifdef OWN_HOST
+    push es
+    mov es, [driver_seg]
+    mov byte [es:busy], 1
+    pop es
+%else
     mov byte [busy], 1
+%endif
     mov [cd_call_ss], ss
     mov [cd_call_sp], sp
 %ifdef EXTERNAL_CD_BUFFERS
@@ -399,7 +425,14 @@ cd_refill_run:
     mov byte [cd_background_reads], 0
     mov ss, [cd_call_ss]
     mov sp, [cd_call_sp]
+%ifdef OWN_HOST
+    push es
+    mov es, [driver_seg]
+    mov byte [es:busy], 0
+    pop es
+%else
     mov byte [busy], 0
+%endif
     ret
 
 cd_bios:

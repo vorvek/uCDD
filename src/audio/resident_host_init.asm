@@ -2,21 +2,9 @@
 ; SPDX-License-Identifier: GPL-3.0-only
 
 own_host_install:
-    mov es, [resident_psp]
-    mov es, [es:2ch]
-    xor di, di
-    xor al, al
-    mov cx, 32767
-.environment:
-    repne scasb
-    jne .bad
-    cmp byte [es:di], 0
-    jne .environment
-    add di, 3
     push ds
-    push es
-    pop ds
-    mov dx, di
+    mov ds, [RESIDENT_PSP]
+    mov dx, 80h
     mov ax, 3d00h
     int 21h
     pop ds
