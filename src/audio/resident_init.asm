@@ -76,6 +76,7 @@ audio_activate:
     mov word [audio_error_text], internal_host_message
     call own_host_install
     jc .cleanup
+    call environment_free
     call cd_half_promote
     call cd_work_promote
     mov al, [guest_irq]
@@ -154,6 +155,22 @@ cd_work_allocate:
     ret
 .bad:
     stc
+    ret
+
+; LH can put the environment in a UMB that a buffer needs. The host has read
+; the program path from it, so free it before the buffers move up.
+environment_free:
+    push es
+    mov es, [resident_psp]
+    xor ax, ax
+    xchg ax, [es:2ch]
+    test ax, ax
+    jz .done
+    mov es, ax
+    mov ah, 49h
+    int 21h
+.done:
+    pop es
     ret
 
 cd_half_promote:
