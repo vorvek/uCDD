@@ -1705,12 +1705,6 @@ install:
     ja install_fail
     mov [sda_size], cx
 %ifdef OWN_HOST
-    ; The image has room for one unit.
-    cmp byte [unit_count], 1
-    mov dx, audio_unit_message
-    ja install_fail
-%endif
-%ifdef OWN_HOST
     ; The cold block holds the driver stack and the SDA copy.
     add cx, 15+COLD_SDA_OFFSET
     shr cx, 4
@@ -1912,7 +1906,6 @@ sda_message db 'DOS did not supply its swappable data area.',13,10,'$'
 duplicate_message db 'uCDD is already installed.',13,10,'$'
 %ifdef RESIDENT_AUDIO
 trap_resident_message db 'uCDD keeps its port-trap code in memory.',13,10,'$'
-audio_unit_message db 'For CD audio, use only one uCDD drive.',13,10,'$'
 dpmi_host_message db 'A compatible DPMI host is not available.',13,10,'$'
 port_trap_missing_message db 'No compatible port-trap service is available.',13,10
     db 'Use JEMMEX or JEMM386 5.86 or later.',13,10,'$'
@@ -1973,9 +1966,7 @@ install_audio_error:
 %include "audio/ess_install.asm"
 %include "disk_scan.asm"
 audio_prepare:
-    mov word [audio_error_text], audio_unit_message
-    cmp byte [unit_count], 1
-    jne .bad
+    mov word [audio_error_text], sound_card_message
     call audio_configure
     jc .bad
     call sb_model

@@ -77,7 +77,7 @@ C:\DOS\SHSUCDX.COM /D:UCDD0001 /L:F
 
 ### Installation
 
-Install once per boot, before the redirector. `UCDD -install -units 2` creates two empty drives (1 to 4). Restart DOS to change the unit count.
+Install once per boot, before the redirector. μCDD supplies one CD-ROM drive.
 
 μCDD moves its resident parts into upper memory blocks (UMBs) itself, so `LH` is not necessary. μCDD needs about 71 KB of free upper memory. The driver has two parts: a block of 29 KB for the audio code (28 KB after the installation) and a block of 8 KB. If one block of 37 KB is free, μCDD uses it for both parts. The buffers use smaller blocks. The parts that do not fit stay in conventional memory. If the audio part does not fit, `UCDD -install` shows the size of the block that it needs.
 
@@ -85,16 +85,14 @@ JEMMEX makes the regions that you give with `I=` available as EMS pages, also wi
 
 It is recommended to load your mouse driver before μCDD.
 
-With one drive, JEMMEX, and free UMBs, a sample installation with `UCDD -install` used 3,408 bytes of conventional memory.
+With JEMMEX and free UMBs, a sample installation with `UCDD -install` used 3,408 bytes of conventional memory.
 
 ```dos
 UCDD -mount C:\IMAGES\GAME.CUE
-UCDD -mount C:\IMAGES\DATA.ISO -drive G
 UCDD -unmount
-UCDD -unmount -drive G
 ```
 
-Without `-drive`, mount uses the first empty μCDD letter and unmount uses the first mounted one. Close files on a drive before you change its image. A locked drive cannot be changed.
+`-drive` gives the letter of the μCDD drive. It is optional. Close files on the drive before you change its image. A locked drive cannot be changed.
 
 `UCDD /?` and `UCDDSET /?` print command help.
 
@@ -117,7 +115,7 @@ UCDD -unmount C:\IMAGES\GAME.MDM
 
 The first disc is mounted. At the game's disc-change prompt, use the [hotkeys](#hotkeys). A held key selects its disc once. A key with no disc assigned does nothing.
 
-Only one MDM file can be mounted at a time, on one virtual unit. The usual `-drive` selection applies. Mounting a single image over that unit releases the list. It can also be unmounted normally.
+Only one MDM file can be mounted at a time. Mounting a single image releases the list. It can also be unmounted normally.
 
 Paths may be absolute or relative to the MDM file. A CUE sheet's BIN path is relative to the CUE sheet. Nested MDM files are not supported. Blank lines and spaces at the start or end of a line are ignored. Only the first ten non-empty lines count.
 
@@ -137,7 +135,7 @@ All listed images are opened before the mount replaces the current disc. If a li
 
 The modifier keys can be any mix of Ctrl, Alt, Shift, and Win. The keys still reach the game.
 
-Eject makes the drive report no disc and keeps the image open. A disc key, or next or previous disc, inserts a disc again. The hotkeys control the MDM drive, or the first μCDD drive when no MDM file is mounted.
+Eject makes the drive report no disc and keeps the image open. A disc key, or next or previous disc, inserts a disc again. The hotkeys control the μCDD drive.
 
 Some BIOSes change the CPU speed with Ctrl+Alt+Keypad + and -. KEYB uses Ctrl+Alt+F1 and Ctrl+Alt+F2.
 
@@ -174,7 +172,7 @@ Other MODE2 sector formats, compressed audio, and multi-file CUE sheets are not 
 
 ![UCDDPLAY](docs/ucddplay.png)
 
-- **OPEN** shows CD drives and the images on local hard disks. Select a CD drive to use its disc, or select a CUE sheet, an ISO or BIN image, or an MDM file to mount it. If a physical drive is selected, images mount on the first μCDD drive. **EJECT** unmounts an image or opens the physical drive tray.
+- **OPEN** shows CD drives and the images on local hard disks. Select a CD drive to use its disc, or select a CUE sheet, an ISO or BIN image, or an MDM file to mount it. If a physical drive is selected, images mount on the μCDD drive. **EJECT** unmounts an image or opens the physical drive tray.
 - **SHUF** plays the tracks in a random order. **REPEAT** repeats one track or all tracks.
 - The equalizer has a preamp, 10 bands from 31 Hz to 16 kHz, and presets. It changes only the CD-Audio, and only while `UCDDPLAY` runs. If the CPU is too slow for it, it stays off.
 - Push V or click the bottom window to select Warp Speed, Spectra, Firebars, Lavaflow, Bubbles, Plasma, Tunnel, Lissajous, Landscape, Cubes, Vector Balls, Chorus Line, Fireworks, or Random. Tunnel shows moving wireframe rings. Their speed changes with the audio level. Lissajous draws a stereo trace with fading trails: the left channel sets its horizontal position, and the right channel sets its vertical position. Landscape shows the frequency levels as wireframe ridges that move from the horizon toward you. Cubes shows eight rotating wireframe cubes. Their sizes change with the frequency levels. Vector Balls shows a gold and a chrome strand of shaded balls that turn as a double helix. Louder frequency bands make the helix wider and the balls larger. Chorus Line shows a row of gold and chrome vector dancers with linked arms. A wave of kicks moves along the row, and louder frequency bands give higher kicks. Fireworks shows rockets that rise on bass hits and burst into gold, chrome, and burgundy sparks. Louder music starts more rockets.

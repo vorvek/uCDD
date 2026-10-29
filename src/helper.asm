@@ -28,8 +28,6 @@ command_entry:
     jne usage
     cmp byte [operation], 0
     jne usage
-    cmp byte [requested_units], 0
-    jne usage
     cmp byte [wanted_drive], 0ffh
     jne usage
 %ifdef RESIDENT_AUDIO
@@ -58,9 +56,6 @@ command_entry:
     mov di, install_option
     call option_equal
     je .install
-    mov di, units_option
-    call option_equal
-    je .units
 %ifdef RESIDENT_AUDIO
     mov di, vcpi_option
     call option_equal
@@ -82,20 +77,6 @@ command_entry:
     cmp byte [operation], 0
     jne usage
     mov byte [operation], 3
-    jmp .parse
-.units:
-    cmp byte [requested_units], 0
-    jne usage
-    call token
-    jc usage
-    cmp byte [bx+1], 0
-    jne usage
-    mov al, [bx]
-    sub al, '1'
-    cmp al, MAX_UNITS-1
-    ja usage
-    inc al
-    mov [requested_units], al
     jmp .parse
 %ifdef RESIDENT_AUDIO
 .status:
@@ -179,11 +160,6 @@ command_entry:
     jne .image_command
     cmp byte [wanted_drive], 0ffh
     jne usage
-    mov al, [requested_units]
-    test al, al
-    jz .install_main
-    mov [fs:unit_count], al
-.install_main:
     push fs
     pop ds
     push fs
@@ -198,8 +174,6 @@ command_entry:
     cmp byte [fs:keep_vcpi], 0
     jne usage
 %endif
-    cmp byte [requested_units], 0
-    jne usage
     cmp byte [operation], 0
     je usage
 %ifdef RESIDENT_AUDIO
@@ -836,7 +810,6 @@ status_inactive db 'uCDD is inactive (no CD-Audio image mounted).',13,10,'$'
 status_number times 12 db 0
 %endif
 operation db 0
-requested_units db 0
 %ifdef RESIDENT_AUDIO
 status_reset db 0
 %endif
@@ -854,7 +827,6 @@ mount_option db '-MOUNT',0
 unmount_option db '-UNMOUNT',0
 drive_option db '-DRIVE',0
 install_option db '-INSTALL',0
-units_option db '-UNITS',0
 %ifdef RESIDENT_AUDIO
 vcpi_option db '-VCPI',0
 status_option db '-STATUS',0
@@ -871,7 +843,7 @@ packet:
     dd 0
     dw 2
 change_buffer db 9,0
-usage_message db 'UCDD -install [-units n]'
+usage_message db 'UCDD -install'
 %ifdef RESIDENT_AUDIO
 %ifdef EMS_QUEUE
     db ' [-ems]'
@@ -884,7 +856,7 @@ usage_message db 'UCDD -install [-units n]'
 %ifdef RESIDENT_AUDIO
     db 'UCDD -status [-reset]',13,10
 %endif
-    db 'n: 1 to 4; d: drive letter.',13,10
+    db 'd: drive letter.',13,10
 %ifdef RESIDENT_AUDIO
     db 'Use -status to see what uCDD counted. Use -reset to set the counts to 0.',13,10
 %endif

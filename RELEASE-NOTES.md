@@ -13,6 +13,7 @@
 - Free the environment of UCDD.EXE before the CD buffers move to upper memory. With `LH`, the CD work buffer stayed in conventional memory on a PC with small UMBs.
 - Give back the page alignment space of the DPMI host gateway, in upper and in conventional memory.
 - When UMBs exist but none holds the audio block, `UCDD -install` shows the size of the block that it needs.
+- Remove the `-units` option. μCDD supplies one CD-ROM drive. CD-Audio already worked with one drive only.
 - Add World Rally Fever: Born on the Road to the [compatibility list](https://github.com/vorvek/uCDD/wiki/Compatibility).
 
 # Beta 0.9.5-a1

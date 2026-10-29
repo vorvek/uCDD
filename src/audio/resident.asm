@@ -29,7 +29,7 @@ keep_vcpi db 0
 %else
 %define RESIDENT_PSP resident_psp
 %endif
-audio_error_text dw audio_unit_message
+audio_error_text dw sound_card_message
 output_segment dw 0
 output_allocation dw 0
 output_spare dw 0
