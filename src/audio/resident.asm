@@ -23,6 +23,10 @@ cd_half_allocation dw 0
 cd_half_segment dw 0
 cd_work_allocation dw 0
 cd_work_segment dw 0
+%ifdef OWN_HOST
+cold_allocation dw 0
+cold_paras dw 0
+%endif
 fault db 0
 %ifdef UCDD_DIAG
 ; UCDD -status reads this block with control 10 and 11 (driver.asm). Counters

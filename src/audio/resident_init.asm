@@ -53,6 +53,11 @@ audio_activate:
     mov word [audio_error_text], cd_work_memory_message
     call cd_work_allocate
     jc .cleanup
+%ifdef OWN_HOST
+    mov word [audio_error_text], cold_memory_message
+    call cold_allocate
+    jc .cleanup
+%endif
     mov word [audio_error_text], xms_memory_message
 %ifdef EMS_QUEUE
     cmp byte [memory_mode], 0
@@ -79,6 +84,9 @@ audio_activate:
     call environment_free
     call cd_half_promote
     call cd_work_promote
+%ifdef OWN_HOST
+    call cold_promote
+%endif
     mov al, [guest_irq]
     cmp [sb_irq], al
     jne .dos_vector_ready
@@ -172,6 +180,28 @@ environment_free:
 .done:
     pop es
     ret
+
+%ifdef OWN_HOST
+cold_allocate:
+    mov bx, [cold_paras]
+    mov ah, 48h
+    int 21h
+    jc .bad
+    mov [cold_allocation], ax
+    mov [cold_segment], ax
+    clc
+    ret
+.bad:
+    stc
+    ret
+
+cold_promote:
+    mov bx, [cold_paras]
+    mov si, cold_allocation
+    mov di, cold_segment
+    mov bp, cold_allocation
+    jmp cd_buffer_promote
+%endif
 
 cd_half_promote:
     mov bx, CD_HALF_PARAS

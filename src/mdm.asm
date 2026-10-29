@@ -609,9 +609,14 @@ mdm_timer:
     mov byte [busy], 1
     mov [old_ss], ss
     mov [old_sp], sp
+%ifdef OWN_HOST
+    mov ss, [cold_segment]
+    mov sp, COLD_STACK_TOP
+%else
     mov ax, cs
     mov ss, ax
     mov sp, stack_top
+%endif
     cld
     call mdm_switch
     cli

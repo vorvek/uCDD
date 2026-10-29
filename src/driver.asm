@@ -74,6 +74,9 @@ stage_count dd 0
 stage_next dd 0
 %endif
 units_base dw 0
+%ifdef OWN_HOST
+cold_segment dw 0
+%endif
 
 strategy:
     mov [cs:request], bx
@@ -94,9 +97,14 @@ interrupt:
     mov [cs:old_ss], ss
     mov [cs:old_sp], sp
     mov ax, cs
+    mov ds, ax
+%ifdef OWN_HOST
+    mov ss, [cold_segment]
+    mov sp, COLD_STACK_TOP
+%else
     mov ss, ax
     mov sp, stack_top
-    mov ds, ax
+%endif
     mov eax, [request]
     mov [active_request], eax
     sti
@@ -774,9 +782,14 @@ control:
     mov [cs:path_pointer], dx
     mov [cs:path_pointer+2], ds
     mov ax, cs
+    mov ds, ax
+%ifdef OWN_HOST
+    mov ss, [cold_segment]
+    mov sp, COLD_STACK_TOP
+%else
     mov ss, ax
     mov sp, stack_top
-    mov ds, ax
+%endif
     sti
     cld
     mov word [control_result], 8001h
@@ -1379,9 +1392,14 @@ dos_enter:
 .first:
 %endif
     lds si, [cs:sda_pointer]
+%ifdef OWN_HOST
+    mov es, [cs:cold_segment]
+    mov di, COLD_SDA_OFFSET
+%else
     push cs
     pop es
     mov di, sda_save
+%endif
     mov cx, [cs:sda_size]
     cld
     rep movsb
@@ -1524,9 +1542,14 @@ dos_leave:
     int 21h
     push cs
     pop ds
-    mov si, sda_save
     les di, [sda_pointer]
     mov cx, [sda_size]
+%ifdef OWN_HOST
+    mov ds, [cs:cold_segment]
+    mov si, COLD_SDA_OFFSET
+%else
+    mov si, sda_save
+%endif
     cld
     rep movsb
     pop es
@@ -1548,19 +1571,20 @@ break_ignore:
 
 pvd times 192 db 0
     align 16
-    times 1024 db 0
-stack_top:
-sda_save:
 %ifdef OWN_HOST
-    ; Room for the SDA copy and the one unit. The install-only code follows;
-    ; the memory after the unit is given back when the activation ends.
-    times 4096+UNIT_SIZE+16 db 0
+; The one unit. The SDA copy and the driver stack are in the cold block.
+; The install-only code follows; DOS gets that memory back when the
+; activation ends.
+units times UNIT_SIZE db 0
     align 16
 resident_tail:
 %include "audio/resident_install.asm"
     align 16
 resident_tail_end:
 %else
+    times 1024 db 0
+stack_top:
+sda_save:
     times 4096+MAX_UNITS*UNIT_SIZE+16 db 0
 %endif
 
@@ -1600,9 +1624,17 @@ install:
     mov dx, audio_unit_message
     ja install_fail
 %endif
+%ifdef OWN_HOST
+    ; The cold block holds the driver stack and the SDA copy.
+    add cx, 15+COLD_STACK_TOP
+    shr cx, 4
+    mov [cold_paras], cx
+    mov di, units
+%else
     mov di, sda_save+15
     add di, cx
     and di, 0fff0h
+%endif
     mov [units_base], di
     push ds
     pop es
@@ -1785,6 +1817,9 @@ xms_memory_message db 'uCDD cannot allocate XMS memory for the CD audio queue.',
 ems_memory_message db 'uCDD cannot allocate EMS memory for the CD audio queue.',13,10,'$'
 %endif
 cd_half_memory_message db 'uCDD cannot allocate DOS memory for the CD mix buffer.',13,10,'$'
+%ifdef OWN_HOST
+cold_memory_message db 'uCDD cannot allocate DOS memory for the driver data.',13,10,'$'
+%endif
 cd_work_memory_message db 'uCDD cannot allocate DOS memory for the CD work buffer.',13,10,'$'
 dma_memory_message db 'uCDD cannot allocate DOS memory for the DMA buffer.',13,10,'$'
 sound_card_message db 'The selected sound card did not start.',13,10
@@ -2033,6 +2068,8 @@ ems_guard_build:
     mov [ems_guard_blocks+6], ax
     mov ax, [fs:cd_work_allocation]
     mov [ems_guard_blocks+8], ax
+    mov ax, [fs:cold_allocation]
+    mov [ems_guard_blocks+12], ax
     mov ax, [fs:own_host_active+2]
     mov [ems_guard_blocks+10], ax
     test ax, ax
@@ -2108,9 +2145,10 @@ ems_guard_build:
     pop ds
     ret
 
-EMS_GUARD_BLOCKS equ 6
+EMS_GUARD_BLOCKS equ 7
 EMS_MAP_MAX equ 64
-; PSP, relocated image, DMA rings, CD half buffer, CD work buffer, host gateway.
+; PSP, relocated image, DMA rings, CD half buffer, CD work buffer, host gateway,
+; cold block.
 ems_guard_blocks times EMS_GUARD_BLOCKS dw 0
 ems_map_left dw 0
 ems_map_buffer times EMS_MAP_MAX*4 db 0

@@ -47,11 +47,20 @@ audio_cleanup:
     mov word [cd_half_allocation], 0
 .work_memory:
     cmp word [cd_work_allocation], 0
-    je .memory
+    je .cold_memory
     mov es, [cd_work_allocation]
     mov ah, 49h
     int 21h
     mov word [cd_work_allocation], 0
+.cold_memory:
+%ifdef OWN_HOST
+    cmp word [cold_allocation], 0
+    je .memory
+    mov es, [cold_allocation]
+    mov ah, 49h
+    int 21h
+    mov word [cold_allocation], 0
+%endif
 .memory:
     call cd_memory_restore
     cmp byte [audio_detach_failed], 0
