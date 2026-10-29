@@ -406,8 +406,7 @@ host_gateway_allocate:
     add dx, HOST_STACK_PARAS
     cmp si, dx
     jb .free_bad
-    ; Give back the page alignment space after the prefix. A last-fit block
-    ; keeps its size: a shorter one leaves a free hole above it.
+    ; Give back the page alignment space after the prefix.
     push es
     push dx
     mov ax, 5800h
@@ -415,7 +414,7 @@ host_gateway_allocate:
     pop dx
     and al, 3
     cmp al, 2
-    je .sized
+    je .last_fit
     mov es, [host_gateway_segment]
     mov bx, dx
     mov ah, 4ah
@@ -429,6 +428,65 @@ host_gateway_allocate:
     sub ax, HOST_STACK_PARAS
     mov [host_stack_segment], ax
     clc
+    ret
+.last_fit:
+    ; A shorter last-fit block must still end at the top of its free area,
+    ; or a free hole stays above it. The prefix depends on the start, so find
+    ; the smallest size that fits there and allocate again.
+    mov bx, [host_gateway_segment]
+    add bx, si
+    mov cx, HOST_GATEWAY_MIN_PARAS+HOST_STACK_PARAS
+.fit:
+    cmp cx, si
+    jae .sized
+    mov ax, bx
+    sub ax, cx
+    movzx di, al
+    shl di, 4
+    mov dx, di
+    add dx, host_gateway_end+4095
+    and dx, 0f000h
+    sub dx, di
+    shr dx, 4
+    add dx, HOST_STACK_PARAS
+    cmp dx, cx
+    jbe .refit
+    inc cx
+    jmp .fit
+.refit:
+    mov es, [host_gateway_segment]
+    mov ah, 49h
+    int 21h
+    mov bx, cx
+    mov ah, 48h
+    int 21h
+    jc .refit_bad
+    mov [host_gateway_segment], ax
+    call host_gateway_measure
+    mov dx, [host_prefix_bytes]
+    shr dx, 4
+    add dx, HOST_STACK_PARAS
+    cmp cx, dx
+    jb .refit_free
+    mov si, cx
+    jmp .sized
+.refit_free:
+    mov es, [host_gateway_segment]
+    mov ah, 49h
+    int 21h
+.refit_bad:
+    ; Take the first size again: the same place at the top.
+    mov bx, si
+    mov ah, 48h
+    int 21h
+    jc .refit_lost
+    mov [host_gateway_segment], ax
+    call host_gateway_measure
+    jmp .sized
+.refit_lost:
+    pop es
+    mov word [host_gateway_segment], 0
+    stc
     ret
 .free_bad:
     mov es, [host_gateway_segment]
