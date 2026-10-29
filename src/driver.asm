@@ -1640,6 +1640,14 @@ install:
 %endif
     call audio_activate
     jc .audio_error
+%ifdef OWN_HOST
+    push fs
+    push cs
+    pop fs
+    xor ax, ax
+    call ems_guard_build
+    pop fs
+%endif
     pop bx
     pop es
     mov byte [audio_linked], 1
@@ -1663,6 +1671,8 @@ install:
     mov [es:bx+2], dx
     mov byte [fs:audio_linked], 1
     popf
+    mov ax, fs
+    call ems_guard_build
     push fs
     pop es
     mov ax, [es:resident_psp]
@@ -1984,5 +1994,104 @@ relocated_entry dw audio_activate_far,0
 resident_allocation dw 0
 resident_strategy dw 0
 resident_umb db 0
+
+; A game can map EMS pages over a UMB. List the mappable pages that overlap a
+; uCDD block, so that the host refuses EMS map calls into them.
+; FS: resident data. AX: the relocated image block, or 0.
+ems_guard_build:
+    push ds
+    push es
+    push gs
+    pushad
+    mov [ems_guard_blocks+2], ax
+    mov ax, [fs:resident_psp]
+    mov [ems_guard_blocks], ax
+    mov ax, [fs:output_allocation]
+    mov [ems_guard_blocks+4], ax
+    mov ax, [fs:cd_half_allocation]
+    mov [ems_guard_blocks+6], ax
+    mov ax, [fs:cd_work_allocation]
+    mov [ems_guard_blocks+8], ax
+    mov ax, [fs:own_host_active+2]
+    mov [ems_guard_blocks+10], ax
+    test ax, ax
+    jz .done
+    cmp word [fs:own_host_guard], 0
+    je .done
+    mov ax, 5801h
+    int 67h
+    test ah, ah
+    jnz .done
+    cmp cx, EMS_MAP_MAX
+    ja .done
+    mov [ems_map_left], cx
+    push ds
+    pop es
+    mov di, ems_map_buffer
+    mov ax, 5800h
+    int 67h
+    test ah, ah
+    jnz .done
+    mov es, [fs:own_host_active+2]
+    mov di, [fs:own_host_guard]
+    mov si, ems_map_buffer
+.page:
+    cmp word [ems_map_left], 0
+    je .done
+    ; The page covers segments AX to AX+3FFh.
+    mov ax, [si]
+    mov bx, ems_guard_blocks
+    mov cx, EMS_GUARD_BLOCKS
+.block:
+    mov dx, [bx]
+    test dx, dx
+    jz .next_block
+    dec dx
+    mov gs, dx
+    cmp byte [gs:0], 'M'
+    je .arena
+    cmp byte [gs:0], 'Z'
+    jne .next_block
+.arena:
+    ; The block with its arena header covers DX to BP-1.
+    mov bp, dx
+    add bp, [gs:3]
+    inc bp
+    cmp ax, bp
+    jae .next_block
+    mov bp, ax
+    add bp, 400h
+    cmp dx, bp
+    jae .next_block
+    mov bp, [es:di]
+    cmp bp, [es:di+2]
+    jae .done
+    shl bp, 2
+    add bp, di
+    mov dx, [si+2]
+    mov [es:bp+4], dx
+    mov [es:bp+6], ax
+    inc word [es:di]
+    jmp .next_page
+.next_block:
+    add bx, 2
+    loop .block
+.next_page:
+    add si, 4
+    dec word [ems_map_left]
+    jmp .page
+.done:
+    popad
+    pop gs
+    pop es
+    pop ds
+    ret
+
+EMS_GUARD_BLOCKS equ 6
+EMS_MAP_MAX equ 64
+; PSP, relocated image, DMA rings, CD half buffer, CD work buffer, host gateway.
+ems_guard_blocks times EMS_GUARD_BLOCKS dw 0
+ems_map_left dw 0
+ems_map_buffer times EMS_MAP_MAX*4 db 0
 %endif
 %endif

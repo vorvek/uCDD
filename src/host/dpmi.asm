@@ -116,10 +116,27 @@ dpmi_ems_gateway dw 0
 dpmi_hide_vcpi db 1
     times 0ah-($-dpmi_ems_base) db 0
 dpmi_ems_name times 8 db 0
-; An extender in its own VCPI mode bypasses the port traps. Offer DPMI instead.
+; The driver lists the mappable EMS pages over its own memory. A map call into
+; one of them would page out uCDD's code, so it fails with error 8Bh.
+EMS_GUARD_MAX equ 12
+dpmi_ems_guard_count dw 0
+dpmi_ems_guard_max dw EMS_GUARD_MAX
+; Physical page number and segment of each page.
+dpmi_ems_guard times EMS_GUARD_MAX*2 dw 0
 dpmi_ems:
+    cmp ah, 44h
+    je .map_page
+    cmp ah, 50h
+    je .map_pages
+    cmp ah, 55h
+    je .map_call
+    cmp ah, 56h
+    je .map_call
     cmp ax, 0de00h
     jne .chain
+    ; An extender in its own VCPI mode bypasses the port traps. Offer DPMI instead.
+    cmp byte [cs:dpmi_hide_vcpi-dpmi_ems_base], 0
+    je .chain
     ; Stepped aside, the driver offers no DPMI: VCPI stays visible.
     push ds
     mov ds, [cs:dpmi_ems_gateway-dpmi_ems_base]
@@ -142,6 +159,92 @@ dpmi_ems:
     iret
 .chain:
     jmp far [cs:dpmi_old_ems-dpmi_ems_base]
+; AL: physical page number.
+.map_page:
+    push bx
+    push dx
+    movzx bx, al
+    xor dl, dl
+    call .guarded
+    pop dx
+    pop bx
+    jc .refuse
+    jmp .chain
+; AL: 0 for page numbers, 1 for segments. DS:SI: CX pairs.
+.map_pages:
+    cmp al, 1
+    ja .chain
+    push dx
+    mov dl, al
+    call .list_guarded
+    pop dx
+    jc .refuse
+    jmp .chain
+; DS:SI: target address, pair count byte, pointer to the pairs.
+.map_call:
+    cmp al, 1
+    ja .chain
+    push cx
+    push dx
+    push si
+    push ds
+    mov dl, al
+    movzx cx, byte [si+4]
+    lds si, [si+5]
+    call .list_guarded
+    pop ds
+    pop si
+    pop dx
+    pop cx
+    jc .refuse
+    jmp .chain
+.refuse:
+    mov ah, 8bh
+    iret
+; DS:SI: CX pairs of logical page and physical page. DL: mode. CF=1 for a guarded page.
+.list_guarded:
+    push bx
+    push cx
+    push si
+    jcxz .list_free
+.list_next:
+    mov bx, [si+2]
+    call .guarded
+    jc .list_done
+    add si, 4
+    loop .list_next
+.list_free:
+    clc
+.list_done:
+    pop si
+    pop cx
+    pop bx
+    ret
+; BX: page number (DL=0) or segment (DL=1). CF=1 for a guarded page.
+.guarded:
+    push cx
+    push si
+    mov cx, [cs:dpmi_ems_guard_count-dpmi_ems_base]
+    mov si, dpmi_ems_guard-dpmi_ems_base
+    test dl, dl
+    jz .guard_first
+    add si, 2
+.guard_first:
+    jcxz .guard_free
+.guard_next:
+    cmp bx, [cs:si]
+    je .guard_hit
+    add si, 4
+    loop .guard_next
+.guard_free:
+    clc
+    jmp .guard_done
+.guard_hit:
+    stc
+.guard_done:
+    pop si
+    pop cx
+    ret
 %endif
 dpmi_mux:
     cmp ax, 1687h

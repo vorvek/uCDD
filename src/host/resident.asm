@@ -191,8 +191,9 @@ resident_host_init:
     mov dx, dpmi_mux
     mov ax, 252fh
     int 21h
-    cmp byte [cs:dpmi_hide_vcpi], 0
-    je .vcpi_ready
+    ; The hook hides VCPI and guards uCDD's memory against EMS map calls.
+    cmp word [dpmi_old_ems+2], 0
+    je .ems_ready
     mov [dpmi_ems_gateway], ds
     push ds
     pop es
@@ -212,7 +213,7 @@ resident_host_init:
     mov ax, 2567h
     int 21h
     pop ds
-.vcpi_ready:
+.ems_ready:
     pop ds
     call host_v86_install
     popad
@@ -227,6 +228,8 @@ resident_host_init:
     je .refill_ready
     mov byte [ds:di+6], 1
 .refill_ready:
+    ; The driver fills the EMS guard list when its blocks are final.
+    mov word [ds:di+7], dpmi_ems_guard_count
     clc
     retf
 .release_bad:
