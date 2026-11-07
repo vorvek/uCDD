@@ -1,3 +1,9 @@
+# Beta 0.9.5-a3
+
+## Changes in 0.9.5-a3
+
+- DPMI host: report less free memory than before, so that a program that takes the largest free block can still allocate more. The host now keeps 1/8 of the free memory, up to 4 MB. This fixes the stop at "Unable to initialize temp image memory pool." in I Have No Mouth and I Must Scream.
+
 # Beta 0.9.5-a2
 
 ## Changes in 0.9.5-a2
