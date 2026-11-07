@@ -61,7 +61,17 @@ dpmi_memory_info:
     jc dpmi_error
     mov edi, eax
     call dpmi_free_pages
-    sub edx, 64
+    ; Keep 64 pages for page tables and a margin of 1/8 of the free pages, up
+    ; to 4 MiB. I Have No Mouth and I Must Scream allocates the largest block
+    ; and then 404 KiB more.
+    mov eax, edx
+    shr eax, 3
+    cmp eax, 1024
+    jbe .margin
+    mov eax, 1024
+.margin:
+    add eax, 64
+    sub edx, eax
     jnc .count
     xor edx, edx
 .count:
